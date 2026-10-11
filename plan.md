@@ -731,6 +731,29 @@ settled and P2.3 enrollment exists). Finish one slice, record exact checks and t
 next slice ID, commit/push and stop. Phase 1 is complete with successful real PHP
 8.3/8.4 CI. Port 9000 is the selected local panel port; Rust remains deferred.
 
+Concrete P2.4 starting notes from session 009 (verify against the installed code
+before relying on them):
+
+- Fortify's two-factor feature is already enabled, but `config/fortify.php`
+  defines `pipelines.login` **without** `RedirectsIfTwoFactorAuthenticatable` so
+  enrolled admins are not locked out yet. P2.4 must add that pipe back (and can
+  then drop the override caveat) so a confirmed admin is sent to the challenge.
+- `views => false`, so Fortify does not register the GET challenge route. P2.4
+  must register a GET route named `two-factor.login` (Fortify's redirect uses that
+  name) rendering a challenge screen; Fortify already owns POST
+  `two-factor.login.store`. The challenge POST expects `code` and optionally
+  `recovery_code` (see `TwoFactorLoginRequest`).
+- Add the `mfa_version` generation column and a `EnsureMfaVerified`-style gate on
+  the `/panel` group: unconfirmed admin -> enrollment, confirmed admin without a
+  matching generation-bound session proof -> challenge. Keep enrollment/settings
+  exempt from the full gate to avoid redirect loops.
+- Replay protection for TOTP is provided by Fortify's
+  `TwoFactorAuthenticationProvider` cache (`verifyKeyNewer`); recovery-code
+  consumption is sequential-reuse safe but not yet proven atomic, and recent-auth
+  gating of provisioning/regeneration remains P2.5.
+- Fortify's own `/user/two-factor-*` HTTP endpoints are registered and reachable by
+  the single authenticated administrator; the P2.3 UI calls the actions directly.
+
 ### Current blockers
 
 - No blocker to local web work; scaffold/dependency resolution/build/tests now pass.
