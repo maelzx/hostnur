@@ -462,6 +462,10 @@ ask only when the choice materially changes scope, cost, access, or product beha
   419 for login/logout POSTs without a token. MFA is not implemented yet, so the
   `/panel` placeholder is deliberately not MFA-gated and exposes no operations;
   Livewire-update middleware persistence is deferred until a component mutates state.
+- Feature commit `f8352d8` pushed; remote CI **passed** for PHP 8.3/Node 24 and PHP
+  8.4/Node 24 (locked installs, static gates, asset build, migration,
+  template/queue and tests): <https://github.com/maelzx/hostnur/actions/runs/38146321207>,
+  verified with `gh run watch 38146321207 --exit-status`.
 - Next slice: **P2.3** (MFA enrollment) from section 9.4. Phase 2 remains in progress.
 
 ### Session 007 — Detailed DeepSeek handoff (2026-10-11)
