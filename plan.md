@@ -175,7 +175,8 @@ integrate and validate real host operations. Phase numbers below replace the pri
 session's numbering. All phases after 1 are pending unless explicitly noted.
 
 ### Phase 1 — Web-only foundation
-- Status: in progress; baseline inspected; panel scaffolding and CI remain.
+- Status: in progress; baseline and runnable panel scaffold complete. Web-only
+  CI/static checks and actual PHP 8.3 validation remain.
 - Depends on: 0.
 - Slices: Laravel 13 in `panel/`, Livewire 4, Tailwind 4/Vite, SQLite and DB queue
   defaults, lockfiles, local run instructions, formatting and web-only CI.
@@ -406,6 +407,59 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ## 8. Current handoff
 
+### Session 004 — Web panel scaffolding (2026-10-11)
+
+- Completed Laravel scaffold `panel/` (upstream skeleton v13.11.0), locked Laravel
+  13.35.0, Livewire 4.4.7, Tailwind 4.3.3 and Vite 8.3.4 with existing tools.
+- Added a typed full-page Livewire foundation component and shared Blade layout,
+  Hostnur identity, system-font styling and a visibly disconnected-agent message.
+  No administrator or host-operation functionality is implied by this page.
+- SQLite, database-backed sessions/cache/queue and the baseline user/cache/job
+  migrations are configured. Local database and application key were initialized;
+  secrets/state/dependency directories/builds remain ignored by Git.
+- Added PHP platform 8.3.0 resolution, dependency lockfiles, Node 24 engine metadata,
+  project guidance and local setup/run/check instructions in `panel/README.md`.
+- Removed the template's default-user seed; administrator creation belongs to the
+  forthcoming one-time bootstrap flow, without default credentials.
+- Verified `php artisan db:seed --no-interaction` and `php artisan db:show --counts
+  --no-interaction`: users table remains empty. Reran formatter and baseline tests
+  after the seeder edit; both passed.
+- Laravel skeleton `AGENTS.md` required project-local Laravel Boost setup; installed
+  Boost 2.10.3 as a dev dependency and generated framework guidance. Replaced its
+  prerequisite-install bootstrap instructions with Hostnur environment constraints.
+- Used `composer create-project laravel/laravel panel "^13.0" --no-install
+  --no-scripts --no-interaction`, then `composer require laravel/boost --dev
+  --no-interaction` and `composer require livewire/livewire "^4.0" --no-interaction`.
+- Verification passed: `composer validate` (license warning),
+  `composer check-platform-reqs`, `composer audit`, `php artisan migrate
+  --no-interaction`, `php artisan migrate:status --no-interaction`,
+  `php artisan test --compact` (2 baseline tests / 2 assertions),
+  `php artisan route:list --except-vendor`, `php artisan view:cache --no-interaction`,
+  `php artisan queue:work --once --no-interaction`, `vendor/bin/pint --dirty
+  --format agent`, full `vendor/bin/pint --format agent`, `npm audit` and
+  `npm run build`. Cleared cached views afterward for development.
+- Confirmed effective config: `app.name=Hostnur`, `database.default=sqlite`,
+  `queue.default=database`. Application Composer/npm audits reported no advisories.
+- Real local HTTP smoke: root page, `/up`, Livewire JavaScript and built Tailwind
+  stylesheet all returned 200. Temporary server/process group stopped afterward.
+- Reproducible installs verified with `composer install --no-interaction` and
+  `npm ci --no-fund`, followed by `npm run build`. First `npm ci` exposed a missing
+  optional WASI dependency in the generated npm lock; `npm install --include=optional
+  --no-fund` repaired the lock, then clean installation/build passed without tool
+  upgrades or advisory-check bypasses.
+- Initial migration failed because a no-script scaffold does not create SQLite;
+  created the ignored database and reran successfully. Setup documentation includes
+  this prerequisite. Removed unused template font fetching from Vite.
+- `composer validate --strict` reports the deferred license warning and does not
+  pass yet; normal validation passes with that warning. License remains a user
+  decision. Existing Composer-tool diagnostics are distinct from application audits.
+- No runtime/global-tool installations or upgrades; Rust, actual PHP 8.3 runtime,
+  browser visual checks and disposable-VM host gates remain unverified/deferred.
+- Reviewed staged source/documentation and intended file list;
+  `git diff --cached --check` passed. Git ignores local `.env`, SQLite, vendor,
+  node_modules and generated asset manifests.
+- Publication: commit/push at session close; verify the commit on `origin/main`.
+
 ### Session 003 — Web-first roadmap revision (2026-10-11)
 
 - User requested web panel first, Rust later in a prepared environment, and no
@@ -462,20 +516,22 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ### Next session's single slice
 
-Begin **phase 1, slice 2: scaffold the web panel** using existing PHP 8.4.26,
-Composer 2.9.2, Node 24.12.0 and npm 11.6.2. Create Laravel 13 in `panel/`, add
-Livewire 4, retain Tailwind 4/Vite, configure Hostnur identity and SQLite/database
-queue defaults, and commit lockfiles with local secrets/build output excluded.
-Verify migrations, panel boot, baseline tests and asset build; document the exact
-run commands. If concrete compatibility blocks occur, record them without adding
-tools or suppressing advisory checks. Leave web CI as a separate slice if needed.
-Update this handoff, commit, push and stop. Rust begins at phase 10 elsewhere.
+Begin **phase 1, slice 3: web-only CI and static checks**. Add GitHub Actions for
+locked Composer/npm installation, PHP 8.3/8.4, Node 24, migrations/tests, PHP
+format/style and asset build. Use maintained tools in CI without modifying local
+tooling. Confirm what runs on pull requests/pushes and inspect actual CI outcomes;
+do not claim PHP 8.3 validation until its job passes. Keep Rust out of web CI.
+Handle the known license-warning status honestly until the user selects a license.
+Then update this handoff, commit, push and stop. Administrator bootstrap/login/MFA
+is the following phase, split into small slices.
 
 ### Current blockers
 
-- No known demonstrated blocker to web scaffolding with installed tools; dependency
-  resolution is still untested. Prior Composer diagnostic findings remain recorded
-  and the shared tool is not to be changed under the user's environment constraint.
+- No blocker to local web work; scaffold/dependency resolution/build/tests now pass.
+  Prior Composer-tool diagnostic findings remain recorded, and the shared tool is
+  not to be changed under the user's environment constraint.
+- Actual PHP 8.3 runtime validation awaits CI; strict Composer validation awaits a
+  project license decision. Neither is recorded as passing.
 - Missing Rust does not block web work; Rust development waits for phase 10 and the
   prepared environment. The existing toolchain pin is metadata for that later work.
 - Disposable VM access is unavailable; real install/systemd/TLS/upgrade/restore

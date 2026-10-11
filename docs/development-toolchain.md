@@ -2,7 +2,8 @@
 
 Selected on 2026-10-11 during phase 1, slice 1; revised in session 003 for web-first
 development. Use installed tools without runtime/global-tool installation or
-upgrades. Application dependency resolution, builds and CI follow in scaffolding.
+upgrades. Application dependency resolution and builds passed in session 004;
+web CI is the next slice.
 Rust prerequisites apply only to the later prepared agent environment.
 
 ## Selected versions
@@ -89,6 +90,10 @@ If actual incompatibility blocks a check, record it and continue independent wor
 
 ## Next web-only checkpoint
 
+The scaffold steps below were completed in session 004. Reproduction commands
+are in [`panel/README.md`](../panel/README.md). The next active checkpoint is item 4,
+web-only CI/static checks, followed by the web features in item 5.
+
 1. Scaffold Laravel 13 in `panel/` with installed PHP/Composer, stable constraints,
    Livewire 4 and the compatible Tailwind 4/Vite scaffold. Use scaffold PHPUnit
    initially and verify PHP 8.3 compatibility during dependency resolution.
@@ -110,8 +115,20 @@ the independent agent and add its own build/test/format/Clippy CI. Phase 11 adds
 the actual transport and cross-language validation; later VM gates prove host
 operations. The current machine does not need Rust, Docker, QEMU or new packages.
 
-No tool installation, application dependency resolution, application build or VM
-validation has yet been performed. The next active slice is web scaffolding.
+## Verified scaffold checkpoint (session 004)
+
+- Locked Laravel 13.35.0, Livewire 4.4.7, Tailwind 4.3.3, Vite 8.3.4 and Laravel
+  Vite plugin 3.2.0. Laravel Boost 2.10.3 is a project-local dev dependency required
+  by the upstream scaffold's repository guidance.
+- Existing PHP 8.4.26/Composer 2.9.2/Node 24.12.0/npm 11.6.2 resolved dependencies
+  and passed application platform checks, two baseline tests, migrations, empty
+  database queue-worker startup, template compilation and asset build.
+- Application Composer/npm audits passed. `composer validate` passed with the
+  missing-license warning; strict validation awaits the license decision.
+- Local HTTP checks passed for the foundation page, health endpoint, Livewire
+  JavaScript and built CSS. Actual PHP 8.3 validation awaits CI.
+- No runtime/global tools were installed/upgraded; no real host-operation VM
+  validation or browser visual automation has been performed.
 
 ## Source references
 
