@@ -1,8 +1,9 @@
 # Development toolchain baseline
 
-Selected on 2026-10-11, during phase 1, slice 1. These are project engineering
-decisions; application dependency resolution, builds, and CI validation follow
-in the scaffolding slice.
+Selected on 2026-10-11 during phase 1, slice 1; revised in session 003 for web-first
+development. Use installed tools without runtime/global-tool installation or
+upgrades. Application dependency resolution, builds and CI follow in scaffolding.
+Rust prerequisites apply only to the later prepared agent environment.
 
 ## Selected versions
 
@@ -13,16 +14,17 @@ in the scaffolding slice.
 | Livewire | 4.x | Its Composer metadata explicitly supports Laravel 13 |
 | Tailwind | 4.x | Matches the Laravel 13 asset scaffold |
 | Vite | 8.x with Laravel Vite plugin 3.x | Matches the current Laravel 13 asset scaffold |
-| Composer | 2.10.3 or newer compatible 2.x | Installed 2.9.2 has reported advisories; resolve before dependency installation |
-| Node.js | Latest patched 24.x LTS | `.nvmrc` selects the 24 line; check exact patch at provisioning |
+| Composer | Existing 2.9.2 locally; intended 2.10.3+ in CI/releases | Do not upgrade shared tooling here; preserve diagnostic findings and verify actual dependency compatibility |
+| Node.js | Existing 24.12.0 locally; patched 24.x for CI | `.nvmrc` selects the 24 line; no local runtime installation/upgrade |
 | npm | Compatible with selected Node 24 | Commit the scaffold's `package-lock.json`; use `npm ci` thereafter |
-| Rust/Cargo | 1.99.0, stable, edition 2024 | Exact build toolchain pinned in `rust-toolchain.toml` |
-| Rust MSRV | Initially 1.99 | Set `rust-version = "1.99"` in the future crate; do not promise an untested older compiler |
+| Rust/Cargo | Deferred baseline 1.99.0, edition 2024 | Stored pin in `rust-toolchain.toml`; recheck in prepared environment at phase 10 |
+| Rust MSRV | Deferred initial 1.99 | Verify with future crate/dependencies in phase 10; not a web prerequisite |
 | SQLite | Ubuntu-provided SQLite, accessed through PDO | Local 3.45.1 available; actual queue/locking behavior remains to be tested |
 
 The selected Rust version is present in the official stable manifest dated
-2026-10-01. The pin includes rustfmt and Clippy. Rust is a **development/build**
-dependency; an installed Hostnur agent will be a compiled executable.
+2026-10-01. The pin includes rustfmt and Clippy, but requires no action in the current
+environment. Rust is a later **agent build** dependency; the web panel builds and
+tests independently. An installed Hostnur agent will be a compiled executable.
 
 PHP 8.3 is the initial production baseline, avoiding an extra PHP repository for
 the panel on Ubuntu 24.04. PHP versions managed for hosted applications are a
@@ -33,7 +35,7 @@ then test on actual PHP 8.3 and 8.4; emulated resolution is not runtime proof.
 Node/npm are asset-build tools. Plan prebuilt assets in release packages so users
 do not need Node merely to run the panel.
 
-## Development prerequisites
+## Current web-development prerequisites
 
 - PHP CLI with Laravel-required Ctype, cURL, DOM, Fileinfo, Filter, Hash, Mbstring,
   OpenSSL, PCRE, PDO, Session, Tokenizer, and XML support.
@@ -41,13 +43,16 @@ do not need Node merely to run the panel.
   available for later secret-management work.
 - PCNTL and POSIX in the CLI environment for Linux worker/process lifecycle work.
   Verify the PHP-FPM configuration separately when production services are added.
-- Composer meeting the version baseline, with working release-verification keys.
-- Node 24 LTS and npm; an nvm user can run `nvm install` / `nvm use` at the repo root.
-  nvm is optional; an equivalent Node installation is sufficient.
-- rustup-managed Rust 1.99.0, Cargo, Clippy and rustfmt; C compiler/linker and make.
-  Install Rust as the development user, using the official rustup instructions.
-- Git, SSH, cURL and unzip. Add pkg-config/native development packages only when
-  selected dependencies require them.
+- Existing Composer 2.9.2; confirm package compatibility during scaffold resolution.
+- Existing Node 24.12.0 and npm 11.6.2. `.nvmrc` is version metadata, not an
+  instruction to install nvm or another Node version in this environment.
+- Existing Git, SSH, cURL and unzip.
+- Install only project-local Composer/npm dependencies for the panel. No runtime,
+  system-package, global-tool installation, Composer self-update or key-setup changes.
+
+Rust/Cargo/rustup, Clippy/rustfmt and C linker prerequisites belong to phase 10 in
+the user's prepared agent environment. Native dependency additions there must be
+based on actual selected crates, rather than blocking current web work.
 
 Docker/QEMU are not required for initial local scaffolding. A disposable Ubuntu
 24.04 amd64 VM is required later for real systemd, installer, TLS, upgrade, and
@@ -61,8 +66,8 @@ Inspection on 2026-10-11:
 |---|---|
 | Host architecture | Linux x86_64 |
 | PHP CLI | 8.4.26, `/usr/bin/php`; CLI configuration `/etc/php/8.4/cli/php.ini` |
-| Composer | 2.9.2, `/usr/local/bin/composer`; below selected baseline |
-| Node/npm | 24.12.0 / 11.6.2; Node patch currency still needs checking |
+| Composer | 2.9.2, `/usr/local/bin/composer`; retained for local web work |
+| Node/npm | 24.12.0 / 11.6.2; retained for local web work |
 | PHP extensions | All prerequisites above available |
 | SQLite / PDO | SQLite 3.45.1; PDO sqlite and mysql available |
 | Rust/Cargo/rustup | Unavailable in PATH |
@@ -77,24 +82,36 @@ keys and 10 advisories affecting its bundled Composer/Symfony packages. This was
 a diagnostic of the existing **tool**, not Hostnur application dependencies.
 Do not describe it as a clean diagnostic or a Hostnur dependency audit.
 
-## Next setup checkpoint
+These diagnostic findings remain on record. The user has chosen to keep existing
+tools. Do not treat the intended newer CI/release Composer baseline as a mandatory
+local installation step, or disable advisory checks to force package resolution.
+If actual incompatibility blocks a check, record it and continue independent work.
 
-1. Provision a verified Composer 2.10.3+ binary and release-verification keys;
-   prefer a user-local installation over changing shared tooling. Follow the
-   official installer verification procedure and run `composer diagnose` again.
-2. Check the latest patched Node 24 release and use it for dependency installation.
-3. Install the pinned Rust toolchain as the development user; verify versions and
-   that rustfmt/Clippy are present. The pin alone does not install rustup.
-4. Scaffold the Laravel 13 application and add Livewire 4 with stable constraints;
-   retain Tailwind 4/Vite 8 from the compatible scaffold. Use PHPUnit initially,
-   matching the Laravel scaffold; verify its PHP 8.3 compatibility during resolution.
-5. Scaffold the independent Rust binary crate with edition 2024 and MSRV 1.99.
-6. Commit application lockfiles and document successfully executed run/check
-   commands. Verify panel boot, migrations, tests and asset build; verify agent
-   build, tests, rustfmt and Clippy. Add CI in its own small slice if needed.
+## Next web-only checkpoint
 
-No tool installation, application dependency resolution, application build, or VM
-validation was performed in the baseline slice. Phase 1 remains in progress.
+1. Scaffold Laravel 13 in `panel/` with installed PHP/Composer, stable constraints,
+   Livewire 4 and the compatible Tailwind 4/Vite scaffold. Use scaffold PHPUnit
+   initially and verify PHP 8.3 compatibility during dependency resolution.
+2. Configure Hostnur identity, SQLite and database-backed queues. Exclude local
+   `.env`, credentials, SQLite state, vendor/node_modules and generated assets
+   from source control; retain examples and lockfiles.
+3. Verify panel boot, migrations, baseline tests and asset build using installed
+   tools. Document exact commands and any blocked checks.
+4. Add PHP 8.3/8.4 web CI with appropriate maintained tools in a subsequent small
+   slice if needed. Rust jobs must not gate web-only progress.
+5. Build authentication, PHP contracts/local test adapters, tasks and panel workflows
+   through phases 2–9. Keep fixture results visibly simulated and unavailable
+   production operations rejected server-side.
+
+## Later agent checkpoint
+
+At phase 10, switch to the prepared environment, recheck the Rust pin/MSRV, scaffold
+the independent agent and add its own build/test/format/Clippy CI. Phase 11 adds
+the actual transport and cross-language validation; later VM gates prove host
+operations. The current machine does not need Rust, Docker, QEMU or new packages.
+
+No tool installation, application dependency resolution, application build or VM
+validation has yet been performed. The next active slice is web scaffolding.
 
 ## Source references
 

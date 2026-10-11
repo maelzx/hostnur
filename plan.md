@@ -36,10 +36,14 @@ when this plan was created.
 | Deployment model | Native Linux users, systemd, Nginx, PHP-FPM | Specification |
 | Session size | One small, verified slice per session, then handoff and commit/push | Clarification, 2026-10-11 |
 | Destructive validation | Disposable Ubuntu VM; VM will be supplied later | Clarification, 2026-10-11 |
+| Development order | Web panel first; Rust development later in another prepared environment | User steering, session 003 |
+| Current environment | Use installed tools; no additional runtimes/system tools or tool upgrades | User steering, session 003 |
 
-Engineering baseline selected in session 002: Laravel 13, Livewire 4, Tailwind 4,
-PHP minimum 8.3 (local 8.4 allowed), Composer 2.10.3+, Node 24 LTS, Rust/Cargo
-1.99.0 with initial MSRV 1.99 and edition 2024. See
+Framework baseline: Laravel 13, Livewire 4, Tailwind 4 and PHP minimum 8.3.
+Current web development uses installed PHP 8.4.26, Composer 2.9.2, Node 24.12.0
+and npm 11.6.2. Composer 2.10.3+ remains the intended CI/release baseline, not a
+required local upgrade. Rust/Cargo 1.99.0, MSRV 1.99 and edition 2024 are deferred
+to the agent environment and will be rechecked there. See
 [`docs/development-toolchain.md`](docs/development-toolchain.md) for evidence,
 prerequisites, and the distinction between selected and actually validated versions.
 
@@ -63,11 +67,34 @@ database is separate from any database hosted for applications.
 
 ## 3. Architecture and implementation rules
 
+### Web-first development boundary
+
+- Build and test the panel independently using a PHP agent-client interface and
+  deterministic fixtures/fakes for development/tests. No local Rust prerequisite.
+- Keep the fake adapter opt-in and restricted to local/testing environments, with
+  visible simulated status/data. Production defaults to agent unavailable until a
+  real adapter is configured; reject privileged actions server-side in that state.
+- The web stage delivers authentication, persistent application configuration,
+  request validation, tasks/audit, and working UI flows. Fixture-driven deployment,
+  metrics and service results are not proof of actual host operations.
+- Never substitute PHP root commands or direct host mutations for the missing agent.
+- Freeze operation schemas and representative fixtures early; actual transport,
+  version negotiation, registry and cross-language compatibility are validated later.
+- Use existing PHP/Composer/Node/npm. Project-local Composer/npm dependencies are
+  part of building the panel; do not install or upgrade runtimes, system packages,
+  Rust, Docker, QEMU, or global development tools in this environment.
+- If a concrete dependency/tool incompatibility occurs, record the exact blocker
+  and continue independent web work where possible. Do not silently install tools
+  or disable package advisory checks to force dependency resolution.
+
+### Full-system rules
+
 - Panel runs unprivileged. Agent operations are allowlisted and resolve managed
   resource IDs independently; no arbitrary root command endpoint.
 - Local Unix-domain socket with restrictive permissions and peer checks;
   versioned structured JSON protocol, framed messages, request IDs, bounded
-  payloads, timeouts, and capability reporting. Exact framing is decided in phase 2.
+  payloads, timeouts, and capability reporting. Initial schema is in phase 3;
+  final transport compatibility is validated in phase 11.
 - Persist intent before execution. Define job states, ownership, leases,
   cancellation semantics, idempotency, and reconciliation after worker/agent
   restart. Do not claim exactly-once execution across process boundaries.
@@ -132,7 +159,7 @@ do not assume the last attempted operation completed.
 
 ## 5. Phased roadmap
 
-Status values: **pending**, **in progress**, **blocked**, **complete**. A phase is
+Status values: **pending**, **in progress**, **deferred**, **blocked**, **complete**. A phase is
 complete only when its exit checks pass. Phase 1 is in progress; later implementation
 phases are pending. Dependencies reference phase numbers; partial scaffolding can happen
 earlier, but dependencies must pass before declaring the dependent phase complete.
@@ -142,184 +169,201 @@ earlier, but dependencies must pass before declaring the dependent phase complet
 - Exit: decisions and remaining questions documented; planning committed/pushed.
 - Status: complete; planning commit `f654136` was pushed and remote-verified.
 
-### Phase 1 — Monorepo and reproducible development foundation
-- Status: in progress; toolchain/compatibility baseline slice complete in session
-  002. Tool provisioning, runnable scaffolds, lockfiles and CI remain.
+Roadmap reordered in session 003: phases 1–9 deliver the independent web panel;
+phases 10–11 begin Rust development in the prepared environment; phases 12–21
+integrate and validate real host operations. Phase numbers below replace the prior
+session's numbering. All phases after 1 are pending unless explicitly noted.
+
+### Phase 1 — Web-only foundation
+- Status: in progress; baseline inspected; panel scaffolding and CI remain.
 - Depends on: 0.
-- Slices: inspect PHP/Composer/Node/Rust toolchains; choose mutually compatible,
-  supported Laravel/Livewire/PHP versions and an MSRV; scaffold panel and agent;
-  add setup instructions, lockfiles, formatting/static checks, and initial CI.
-- Exit: panel boots locally, agent builds, each component's baseline checks pass,
-  and CI uses documented versions. No production installation is implied.
+- Slices: Laravel 13 in `panel/`, Livewire 4, Tailwind 4/Vite, SQLite and DB queue
+  defaults, lockfiles, local run instructions, formatting and web-only CI.
+- Exit: panel boots, migrations/tests/asset build pass with installed local tools;
+  PHP 8.3/8.4 CI checks use documented versions. No Rust job gates web CI.
 
-### Phase 2 — Protocol and operation contract
+### Phase 2 — Administrator onboarding, authentication and MFA
 - Depends on: 1.
-- Slices: define envelopes, framing, error taxonomy, capabilities/version rules,
-  authentication boundary, request IDs, and operations; add shared fixtures and
-  cross-language contract checks; decide job/agent correlation and retry semantics.
-- Exit: PHP and Rust agree on valid/invalid messages and unsupported-version errors.
+- Slices: local one-time administrator bootstrap, login, TOTP/recovery codes,
+  sessions, rate limits, CSRF and reauthentication for consequential changes.
+- Exit: setup/login/recovery work; no public registration or default password;
+  unauthenticated users cannot invoke administrative actions.
 
-### Phase 3 — Agent transport and execution boundary
-- Depends on: 2.
-- Slices: socket service, peer validation, managed-resource registry, validated
-  dispatch, bounded subprocess runner, health/capabilities and read-only inventory.
-- Exit: permitted callers can invoke predefined operations; unknown operations,
-  malformed requests, unauthorized peers, unsafe paths, and oversized input fail.
-
-### Phase 4 — Administrator onboarding, authentication, and MFA
+### Phase 3 — PHP agent abstraction and initial operation schemas
 - Depends on: 1.
-- Slices: local one-time bootstrap, administrator login, TOTP MFA/recovery codes,
-  secure sessions, rate limits, CSRF, reauthentication for consequential changes.
-- Exit: no default password/public registration; setup and recovery flows work;
-  unauthorized requests cannot reach administrative actions.
+- Slices: agent-client interface, versioned request/response schemas, request IDs,
+  errors/capabilities, operation catalog, deterministic fixtures, fake and
+  unavailable adapters. Define correlation, retries and cancellation semantics.
+- Exit: PHP validates contracts; fakes are local/test-only and visibly simulated;
+  unavailable mode fails closed. Rust compatibility is deferred to phase 11.
 
-### Phase 5 — Durable jobs, audit, and reconciliation
+### Phase 4 — Panel tasks, database queue and audit
+- Depends on: 2, 3.
+- Slices: persisted intent, state transitions, dedicated DB worker, bounded/redacted
+  output, actor attribution, progress views, leases/idempotency and interruption
+  tests using deterministic fake operations.
+- Exit: refresh/disconnect preserves task history; authorization and redaction
+  pass. Real agent crash/reconciliation evidence is deferred to phases 11 and 15.
+
+### Phase 5 — Panel shell, dashboard and agent availability
 - Depends on: 2, 3, 4.
-- Slices: task/audit schema, DB worker, state transitions, bounded/redacted logs,
-  actor attribution, progress views, leases/idempotency, restart reconciliation.
-- Exit: browser disconnect does not stop a job; worker/agent interruption produces
-  a recoverable state and cannot blindly duplicate privileged mutations.
+- Slices: responsive/accessibility baseline, navigation, overview cards, task/audit
+  history, CPU/RAM/disk/uptime and service views with simulated/stale/offline states.
+- Exit: useful authenticated UI without a running agent; no fake metrics presented
+  as live production readings; polling and database writes are bounded.
 
-### Phase 6 — Panel shell and server overview
-- Depends on: 3, 4, 5.
-- Slices: responsive navigation, accessible common components, CPU/RAM/disk/uptime,
-  OS information, managed-service status, job history and failure presentation.
-- Exit: authenticated overview uses real agent data with bounded polling and clear
-  stale/unavailable states; no unbounded metrics writes to SQLite.
+### Phase 6 — Application, source and secret configuration
+- Depends on: 2, 3, 4.
+- Slices: app inventory, runtime selection, public/private Git repository/ref
+  configuration, encrypted credential references, environment/secrets, domains,
+  persistent-data/health settings and deployment configuration validation.
+- Exit: authorized CRUD and secret masking work; configuration remains distinct
+  from agent-provisioned resources. No Linux users or source builds created yet.
 
-### Phase 7 — Application inventory and Linux isolation
-- Depends on: 3, 5.
-- Slices: app identities, runtime configuration, dedicated Linux users, managed
-  directory layouts, ownership/permissions, secret files, registry reconciliation.
-- Exit: isolated apps can be provisioned safely and retries preserve identity;
-  traversal/symlink cases and cross-application secret access are tested.
+### Phase 7 — Deployment workflows and application operation UI
+- Depends on: 4, 5, 6.
+- Slices: Laravel deployment wizard, preflight/confirmation, task progress, history,
+  logs, restart/rollback requests, worker/scheduler settings and migration policy.
+- Exit: fake success/failure/timeout flows are meaningfully tested; unavailable
+  agent cannot produce a successful real deployment. Code/data rollback distinction
+  is clear and uploads/secrets are never exposed in task output.
 
-### Phase 8 — Public/private Git sources and credential lifecycle
-- Depends on: 5, 7.
-- Slices: public HTTPS sources; encrypted credential references; private source
-  access; strict SSH host-key verification where used; ref/commit pinning; timeouts,
-  bounded checkout, credential rotation/deletion, redacted diagnostics.
-- Exit: public and private repositories produce reproducible source snapshots as
-  the app user; secrets do not leak into logs, URLs, or command-line diagnostics.
+### Phase 8 — Server administration configuration and views
+- Depends on: 4, 5, 6.
+- Slices: domains/TLS requests, managed-service/package views, schedules, firewall
+  status, database and backup settings, version/capability-aware unavailable states.
+- Exit: validated panel data/actions and simulated UI flows work without direct
+  privileged execution. Actual provisioning, renewal and restore remain deferred.
 
-### Phase 9 — PHP runtime, PHP-FPM, and Laravel build provider
-- Depends on: 7, 8.
-- Slices: approved PHP packages/extensions and supported versions; isolated FPM
-  pools; Composer/build execution as app user; environment/shared storage; Artisan
-  preparation; provider lifecycle interface; optional worker/scheduler definitions.
-- Exit: a sample Laravel release builds and runs through its FPM pool without
-  privileged build scripts or using the panel's own credentials.
+### Phase 9 — Web milestone, quality checks and integration handoff
+- Depends on: 1–8.
+- Slices: web regression, authorization/CSRF/MFA checks, responsive/accessibility
+  review, queue/audit failure tests, schema/fixture review, documented adapter map
+  and instructions for the future agent environment.
+- Exit: web-only CI passes and the panel is independently runnable; contracts and
+  acceptance cases are ready for Rust. This is a web milestone, not public beta.
 
-### Phase 10 — Transactional Nginx sites and domain routing
-- Depends on: 3, 7, 9.
-- Slices: domain validation/conflict detection, managed templates, staged config,
-  `nginx -t`, reload/recovery, PHP routing and static sites, panel-route isolation.
-- Exit: an application is reachable by HTTP; invalid configuration or reload
-  failure preserves/reinstates the last working managed configuration.
+### Phase 10 — Rust foundation in the prepared environment
+- Status: deferred until web milestone and user-provided agent environment.
+- Depends on: 9.
+- Slices: recheck Rust pin/MSRV/dependencies, scaffold `agent/`, build/test,
+  rustfmt/Clippy, agent-specific CI and environment handoff.
+- Exit: agent independently builds/checks in that environment; web development
+  remains independent of local Rust installation.
 
-### Phase 11 — Deployment orchestration, health, logs, and rollback
-- Depends on: 5, 8, 9, 10.
-- Slices: release directories, complete deployment job, health gates, controlled
-  current-symlink switch, restart/log views, release retention, worker handling,
-  explicit migration policy, code rollback and partial-failure reconciliation.
-- Exit: deploy/redeploy/restart/inspect/roll back a sample Laravel application
-  through the UI; persistent uploads survive and unsafe migration rollback is not
-  implied. Local checks precede real-system checks on a disposable Ubuntu VM.
-- Milestone: first complete native application vertical slice.
+### Phase 11 — Real protocol, transport and execution boundary
+- Depends on: 3, 10.
+- Slices: final framing/version rules, cross-language fixture checks, Unix socket
+  peer/permission checks, PHP real adapter, agent resource registry, validated
+  dispatch, health/inventory, bounded subprocess runner and restart correlation.
+- Exit: PHP/Rust agree on envelopes/errors; unauthorized peers, unknown operations,
+  unsafe input/paths and oversized messages fail. No arbitrary root command API.
 
-### Phase 12 — TLS lifecycle
-- Depends on: 10, 11.
-- Slices: certificate-provider interface, Let's Encrypt staging then HTTP-01,
-  renewal scheduling/expiry visibility, uploaded certificates/key validation,
-  transactional activation, failure recovery and secure key storage.
-- Exit: HTTPS and renewal work on a VM with a real DNS name; failed issuance or
-  renewal does not remove a working certificate or expose private keys.
+### Phase 12 — Linux application isolation and resource reconciliation
+- Depends on: 6, 11.
+- Slices: app-owned users/directories, permissions, secret files, registry mapping,
+  safe retries, traversal/symlink handling and interrupted provisioning recovery.
+- Exit: identities reconcile reliably; cross-app secret access tests pass on VM.
 
-### Phase 13 — Managed services, approved packages, and scheduled jobs
-- Depends on: 3, 5, 7, 11.
-- Slices: allowlisted package operations with package-manager locking; managed
-  service controls; app-user timers/jobs, history and bounded logs; read-only
-  firewall status. Exclude arbitrary root execution and unmanaged-service control.
-- Exit: valid operations survive failure/retry; schedules run as the intended user;
-  simultaneous package operations are coordinated.
+### Phase 13 — Real public/private Git source lifecycle
+- Depends on: 6, 12.
+- Slices: unprivileged checkout, HTTPS/scoped tokens and/or SSH deploy keys,
+  verified host keys, commit pinning, time/output limits, rotation and deletion.
+- Exit: public/private snapshots are reproducible as app user; logs and diagnostics
+  do not leak credentials. Confirm Git authentication modes before implementation.
 
-### Phase 14 — Early application database provisioning
-- Depends on: 3, 5, 7, 11; database engine decision required.
-- Slices: first engine module, app-scoped database/users, credential delivery and
-  rotation, connection checks, import/export limitations, explicit deletion rules.
-- Exit: a Laravel app can use an isolated provisioned database; one app cannot
-  access another app's data. Panel storage remains independently managed.
+### Phase 14 — PHP/Laravel provider and transactional Nginx routing
+- Depends on: 12, 13.
+- Slices: approved PHP packages/extensions, isolated FPM pools, provider interface,
+  Composer/build/Artisan as app user, shared storage, worker/scheduler services,
+  domains, Nginx templates, staged validation/reload/recovery and static sites.
+- Exit: sample Laravel app runs via its FPM pool and HTTP site; failed Nginx/FPM
+  changes preserve/recover working config; build scripts receive no root privilege.
 
-### Phase 15 — Backup, restore, and recovery
-- Depends on: 5, 7, 11, 12, 13; include 14 when enabled.
-- Slices: consistency/retention policy; panel DB/config, agent registry, keys,
-  application metadata/data and database backups; encryption/key custody; restore
-  orchestration; disk-full handling and operator recovery documentation.
-- Exit: restore onto a separate disposable VM and verify panel access, resource
-  identity, application health, secrets, and supported database state.
+### Phase 15 — Real deployment orchestration, logs, health and rollback
+- Depends on: 4, 7, 11, 14.
+- Slices: release directories, health gates, symlink/traffic switch, retention,
+  migrations policy, worker handling, restart/logs, code rollback and partial-failure
+  reconciliation including actual worker/agent interruption.
+- Exit: UI deploy/redeploy/restart/logs/rollback pass on disposable Ubuntu VM;
+  persistent data survives. No automatic database rollback claim.
+- Milestone: first complete native Laravel deployment vertical slice.
 
-### Phase 16 — Debian packaging, installer, and production onboarding
-- Depends on: 4, 11, 12, 15.
-- Slices: `hostnur-agent`/`hostnur` packages, systemd permissions/units, runtime
-  dependencies, architecture/OS detection, verified artifact bootstrap, local setup
-  and SSH-tunnel instructions, idempotent install and explicit existing-host policy.
-- Exit: clean Ubuntu 24.04 amd64 installation reaches a healthy panel/agent and
-  supports deployment without exposing an unauthenticated setup page publicly.
+### Phase 16 — Real TLS lifecycle
+- Depends on: 8, 15.
+- Slices: provider abstraction, Let's Encrypt staging/HTTP-01, renewal/expiry,
+  uploaded certificate/key validation, transactional activation and key storage.
+- Exit: real-DNS HTTPS/renewal pass; failure preserves working certificates.
 
-### Phase 17 — Signed releases and upgrade lifecycle
-- Depends on: 16; signing identity/domain/hosting decisions required.
-- Slices: version tags, CI artifacts/signatures/checksums, GitHub Releases, verifier,
-  coordinated panel/agent compatibility, pre-upgrade backup, migrations, health
-  checks, failed-upgrade recovery; signed APT hosting before wider adoption.
-- Exit: install verified built artifacts, upgrade a previous package version,
-  preserve apps/data, and test documented recovery after a failed upgrade.
+### Phase 17 — Real services, packages and scheduled jobs
+- Depends on: 8, 12, 15.
+- Slices: allowlisted packages with package-manager locking, managed services,
+  app-user timers/jobs and logs, read-only firewall status, safe failure/retry.
+- Exit: app-scoped jobs and managed actions execute correctly; package operations
+  coordinate; unmanaged services and arbitrary root commands are rejected.
 
-### Phase 18 — Beta integration, boundary review, and release gate
-- Depends on: 1–17 and disposable VM access.
-- Slices: complete cross-process/VM regression; filesystem/socket/operation abuse
-  cases; app isolation; job disconnect/crash behavior; certificate and Nginx failure
-  recovery; SQLite contention/load checks; release verification and restore drill.
-- Exit: every beta requirement in section 7 has evidence; unresolved blockers are
-  fixed or scope changes explicitly agreed. Do not label mocked checks as VM proof.
-- Milestone: first public beta, after an explicit release decision.
+### Phase 18 — Application database provisioning
+- Depends on: 8, 12, 15; engine decision required.
+- Slices: first engine module, isolated app databases/users, credentials/rotation,
+  connection checks, import/export constraints and explicit deletion semantics.
+- Exit: Laravel app uses a provisioned database; cross-app database access fails.
 
-### Phase 19 — First-party module lifecycle
-- Depends on: 18 (provider interfaces already introduced in phase 9).
-- Slices: versioned manifests, compatibility/capabilities/dependencies, install
-  state, reviewed upgrade/uninstall plans, data preservation, first-party catalog.
-- Exit: a first-party module can be installed/upgraded/removed safely without
-  treating its manifest as a sandbox or deleting user data by default.
+### Phase 19 — Backup, restore and recovery
+- Depends on: 15, 16, 17; include 18 for managed databases.
+- Slices: panel DB/config, agent registry, keys, app metadata/data and databases;
+  consistency/retention, encrypted backup/key custody, disk-full handling and runbook.
+- Exit: separate-VM restore verifies access, identities, secrets and app health.
 
-### Phase 20 — Python, generic services, and additional runtime providers
-- Depends on: 19.
-- Slices: Python venv/systemd deployment first; generic non-root build/start
-  service; then Node.js, Go, Java, and .NET according to demand and tested support.
-  Each provider is its own set of small sessions, with health/rollback checks.
-- Exit: each advertised provider passes the same isolation/deployment contract.
+### Phase 20 — Packages, installer, signed releases and upgrades
+- Depends on: 2, 16, 19; signing/domain/hosting decisions required.
+- Slices: `hostnur`/`hostnur-agent` Debian packages, systemd units/permissions,
+  idempotent clean-host installation, verified bootstrap, secure local onboarding,
+  release CI/artifacts/signatures, version compatibility, pre-upgrade backups,
+  migration/health recovery and signed APT hosting before wider distribution.
+- Exit: clean Ubuntu installation, verified artifacts, data-preserving upgrade
+  and failed-upgrade recovery pass. Each substantial package/release task is a
+  separate session; no unauthenticated public setup page.
 
-### Phase 21 — Extended monitoring, backups, and integrations
-- Depends on: 19; subsequent scope decided from beta feedback.
-- Slices: bounded metric retention/alerts, remote backup providers, second database
-  engine, DNS-01 providers, optional archive uploads and deployment hooks.
-- Exit: enabled integrations have documented credentials, limits, recovery paths,
-  and tests; no support claim is made for unvalidated integrations.
+### Phase 21 — Integrated beta validation and release gate
+- Depends on: 1–20 and disposable VM access.
+- Slices: full cross-process/VM regression, privilege/path/socket abuse cases,
+  app isolation, crashes/disconnects, Nginx/TLS failures, SQLite contention,
+  signed release verification, restore/recovery drill and operator documentation.
+- Exit: every section 7 beta requirement has actual evidence; fakes do not satisfy
+  host-operation gates. Resolve blockers and make an explicit beta release decision.
 
-### Phase 22 — Opt-in AI-assisted operations
-- Depends on: 18 and stable authorized operation interfaces.
-- Slices: provider-neutral configuration, evidence-grounded diagnostics, redaction,
-  spending limits, plan proposals, approvals, structured tool calls, health
-  verification and audit attribution. Core features continue without an AI key.
-- Exit: AI can diagnose/propose/invoke authorized operations with required approval;
-  neither model output nor untrusted logs grant arbitrary privileged execution.
+### Phase 22 — First-party module lifecycle
+- Depends on: 21; provider interfaces introduced in phase 14.
+- Slices: manifests, capabilities/dependencies/compatibility, version/install state,
+  reviewed upgrade/uninstall plans, preservation of user data and module catalog.
+- Exit: module lifecycle passes; metadata is not treated as a root-code sandbox.
 
-### Phase 23 — Expanded platforms and ecosystem
-- Depends on: 18–20 and demonstrated demand.
-- Slices: validate Ubuntu 26.04/arm64 before advertising; explore team RBAC,
-  optional Docker module, multi-server control and reviewed/signed external modules
-  as separately planned projects after the single-server experience is reliable.
-- Exit: each added capability has a dedicated agreed scope and support matrix.
+### Phase 23 — Python, generic services and additional runtimes
+- Depends on: 22.
+- Slices: Python venv/systemd first, generic non-root build/start services, then
+  Node.js/Go/Java/.NET according to demand; each provider gets separate small slices.
+- Exit: advertised providers pass shared deployment/isolation/health contracts.
+
+### Phase 24 — Extended monitoring, backups and integrations
+- Depends on: 22; scope selected from beta feedback.
+- Slices: bounded metrics/alerts, remote backups, second DB engine, DNS-01 providers,
+  archive uploads and deployment hooks with credential/recovery/limit documentation.
+- Exit: each enabled integration passes its tests and actual compatibility gates.
+
+### Phase 25 — Opt-in AI assistance
+- Depends on: 21 and stable authorized operation interfaces.
+- Slices: provider-neutral setup, redaction/spending limits, evidence-grounded
+  diagnostics/plans, required approvals, structured operations, verification/audit.
+- Exit: useful approved operations without arbitrary privileged commands; core
+  features remain useful without an AI key.
+
+### Phase 26 — Expanded platforms and ecosystem
+- Depends on: 21–23 and demonstrated demand.
+- Slices: validate Ubuntu 26.04/arm64; separately scope team RBAC, optional Docker,
+  multi-server management and reviewed/signed third-party modules.
+- Exit: each advertised capability has agreed scope and tested support matrix.
 - Deferred: full email hosting, browser root terminal, unrestricted marketplace,
-  unreviewed autonomous AI, and broad untested Linux compatibility.
+  unreviewed autonomous AI and untested broad Linux support.
 
 ## 6. Open decisions and recommended starting defaults
 
@@ -328,16 +372,17 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 | Decision | Proposed direction / outstanding question | Resolve by |
 |---|---|---|
-| Framework/tool versions | Baseline selected in session 002; verify resolved dependencies, lockfiles, actual PHP 8.3/8.4 runtime checks and pinned Rust build | Remaining phase 1 slices |
-| Protocol framing and registry | Bounded length-prefixed JSON on UDS; agent-owned durable registry; compare implementation complexity and recovery needs | Phases 2–3 |
-| Git credentials | Prefer read-only per-repository deploy keys and/or scoped HTTPS tokens, verified host keys, no credential in repository URL; confirm required Git providers and auth modes | Phase 8 |
-| App database engine | MariaDB is a proposed first engine for Laravel users; confirm MariaDB versus PostgreSQL | Phase 14 |
-| Secret and backup keys | Encrypt panel-managed secrets using established primitives; keep keys outside DB and define encrypted off-host recovery-key handling, rotation and restore | Before phase 8; complete in 15 |
-| Installer on existing hosts | Propose clean supported VPS only for beta; do not adopt or overwrite existing unmanaged services/configuration implicitly | Phase 16 |
-| Product domain | User to supply official panel/install/docs domain; use no advertised placeholder installer URL | Phases 12, 16–17 |
-| Release signing and hosting | GitHub Releases initially; choose verifiable signing identity and signed APT repository hosting before wider distribution | Phase 17 |
-| VM access and DNS | Disposable Ubuntu 24.04 amd64 VM plus test domain/DNS for real deployment, TLS, upgrade and separate restore tests | Before VM portion of phase 11 |
-| Licensing/public beta | Confirm repository license and public-beta distribution terms before publishing releases | Before phase 18 release |
+| Web framework/tool compatibility | Use installed tools without upgrades; verify actual dependency resolution/lockfiles; PHP 8.3 checks belong in CI | Phase 1 |
+| Rust environment | User supplies prepared environment; recheck stored pin/MSRV before implementation | Phase 10 |
+| Protocol framing and registry | Proposed length-prefixed JSON on UDS and agent-owned registry; finalize with Rust implementation | Schema in 3; transport in 11 |
+| Git credentials | Read-only deploy keys and/or scoped HTTPS tokens, verified host keys, no credential in repository URL; confirm providers/auth modes | Config in 6; execution in 13 |
+| App database engine | Proposed MariaDB first for Laravel; confirm MariaDB versus PostgreSQL | Before 18 |
+| Secret and backup keys | Established encryption primitives, key outside DB, rotation and encrypted off-host recovery-key handling | Config in 6; recovery in 19 |
+| Existing-host installer | Propose clean supported VPS beta; no implicit adoption/overwrite of unmanaged services | Phase 20 |
+| Product domain | Official panel/install/docs domain from user | Before real TLS in 16 and installer in 20 |
+| Release signing/hosting | GitHub Releases initially; select signing identity and signed APT hosting before wider distribution | Phase 20 |
+| VM access and DNS | Disposable Ubuntu 24.04 amd64 VM, test DNS and separate restore VM | Host checks from 12; TLS in 16 |
+| License/public beta | Confirm license and distribution terms before publishing releases | Phases 20–21 |
 
 ## 7. Beta acceptance checklist
 
@@ -360,6 +405,24 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 003 — Web-first roadmap revision (2026-10-11)
+
+- User requested web panel first, Rust later in a prepared environment, and no
+  additional tooling installations in the current environment.
+- Reordered phases 0–26: web phases 1–9, deferred Rust phases 10–11, real host
+  integration/release phases 12–21, subsequent capabilities 22–26.
+- Defined the local/test fake adapter, production-unavailable behavior and clear
+  simulated-data labeling; real deployment/VM gates remain required for beta.
+- Replaced local tool provisioning with panel scaffolding using installed tools.
+  Existing Composer diagnostic findings remain recorded; no upgrades or installs
+  were performed. Project-local panel dependencies are the next build step.
+- Updated `docs/development-toolchain.md` and `README.md` to match this sequence.
+- Historical session notes below record prior decisions; this session's steering
+  supersedes their tool-provisioning and Rust-first prerequisites.
+- Validation: reviewed documentation, phase dependencies and references;
+  `git diff --check` passed. No application tests apply to this planning revision.
+- Publication: commit/push at session close; verify the commit on `origin/main`.
 
 ### Session 002 — Toolchain and compatibility baseline (2026-10-11)
 
@@ -399,17 +462,22 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ### Next session's single slice
 
-Begin **phase 1, slice 2: provision development tools**. Obtain a verified user-local
-Composer 2.10.3+ with verification keys, check/use patched Node 24, install pinned
-Rust 1.99.0 plus rustfmt/Clippy, and repeat the relevant diagnostics. Keep the setup
-user-local and record executable paths for the next session. Once tool checks pass,
-the following slice is minimal Laravel/Livewire and Rust scaffolding. Record exact
-commands/results, update this handoff, commit, push, and stop at the checkpoint.
+Begin **phase 1, slice 2: scaffold the web panel** using existing PHP 8.4.26,
+Composer 2.9.2, Node 24.12.0 and npm 11.6.2. Create Laravel 13 in `panel/`, add
+Livewire 4, retain Tailwind 4/Vite, configure Hostnur identity and SQLite/database
+queue defaults, and commit lockfiles with local secrets/build output excluded.
+Verify migrations, panel boot, baseline tests and asset build; document the exact
+run commands. If concrete compatibility blocks occur, record them without adding
+tools or suppressing advisory checks. Leave web CI as a separate slice if needed.
+Update this handoff, commit, push and stop. Rust begins at phase 10 elsewhere.
 
 ### Current blockers
 
-- PHP and Node are present, but Composer tooling needs updating/key setup and Rust
-  is missing. Resolve these prerequisites before dependency installation/scaffolding.
+- No known demonstrated blocker to web scaffolding with installed tools; dependency
+  resolution is still untested. Prior Composer diagnostic findings remain recorded
+  and the shared tool is not to be changed under the user's environment constraint.
+- Missing Rust does not block web work; Rust development waits for phase 10 and the
+  prepared environment. The existing toolchain pin is metadata for that later work.
 - Disposable VM access is unavailable; real install/systemd/TLS/upgrade/restore
   gates remain unverified until supplied.
 - Official domain, Git authentication details, database engine, release signing,
