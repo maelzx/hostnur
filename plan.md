@@ -426,9 +426,17 @@ ask only when the choice materially changes scope, cost, access, or product beha
   `npm ci --no-fund`, `npm audit`, `npm run build`, and `git diff --check`.
 - Parsed workflow YAML with already installed PyYAML and checked triggers, matrix
   and permissions. GitHub Actions is enabled on the repository. No local tools
-  installed/upgraded and no project dependencies changed.
-- Remote PHP 8.3/8.4 jobs are pending the initial commit/push; record actual run
-  URL/conclusion below after inspection before marking phase 1 complete.
+  installed/upgraded and no direct dependency constraints changed.
+- First CI run on `40356b3` failed at clean frontend installation, after both PHP
+  versions passed Composer/platform and syntax/style gates:
+  <https://github.com/maelzx/hostnur/actions/runs/38119646698>.
+- CI's npm 11.19.0 exposed missing optional React and bundled WASI lock entries.
+  Regenerated the lock from scratch with existing npm 11.6.2 in a clean temporary
+  Git worktree (no node_modules), applied its minimal diff and retained root
+  dependency constraints. No npm/runtime upgrade or dependency-policy bypass.
+- `npm ci --no-fund` and `npm run build` passed with the repaired lock in both the
+  current panel and clean worktree; installation audits reported no advisories.
+  Push the repair and inspect the next CI run before marking phase 1 complete.
 - Publication: push the workflow commit, inspect CI, then save/push its handoff
   result in a documentation-only checkpoint.
 
