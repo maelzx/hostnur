@@ -161,7 +161,7 @@ do not assume the last attempted operation completed.
 ## 5. Phased roadmap
 
 Status values: **pending**, **in progress**, **deferred**, **blocked**, **complete**. A phase is
-complete only when its exit checks pass. Phase 1 is in progress; later implementation
+complete only when its exit checks pass. Phase 1 is complete; later implementation
 phases are pending. Dependencies reference phase numbers; partial scaffolding can happen
 earlier, but dependencies must pass before declaring the dependent phase complete.
 
@@ -176,8 +176,8 @@ integrate and validate real host operations. Phase numbers below replace the pri
 session's numbering. All phases after 1 are pending unless explicitly noted.
 
 ### Phase 1 — Web-only foundation
-- Status: in progress; baseline, runnable scaffold and web CI/static gates added.
-  Actual remote PHP 8.3/8.4 workflow outcomes await session 005 push verification.
+- Status: complete; scaffold, local checks and actual PHP 8.3/8.4 CI passed.
+  Session 005 records the successful run and repaired-lock commit.
 - Depends on: 0.
 - Slices: Laravel 13 in `panel/`, Livewire 4, Tailwind 4/Vite, SQLite and DB queue
   defaults, lockfiles, local run instructions, formatting and web-only CI.
@@ -436,9 +436,17 @@ ask only when the choice materially changes scope, cost, access, or product beha
   dependency constraints. No npm/runtime upgrade or dependency-policy bypass.
 - `npm ci --no-fund` and `npm run build` passed with the repaired lock in both the
   current panel and clean worktree; installation audits reported no advisories.
-  Push the repair and inspect the next CI run before marking phase 1 complete.
-- Publication: push the workflow commit, inspect CI, then save/push its handoff
-  result in a documentation-only checkpoint.
+- Workflow commit `40356b3` and repaired-lock commit `6e0a998` were pushed.
+- Final remote result: **success**, both PHP 8.3/Node 24 and PHP 8.4/Node 24 jobs,
+  including all dependency/static/build/migration/template/queue/test stages:
+  <https://github.com/maelzx/hostnur/actions/runs/38119851396>.
+- Verified using `gh run watch 38119851396 --exit-status --interval 30`. This is
+  actual PHP 8.3 and 8.4 execution, not emulated Composer platform resolution.
+- Phase 1 is complete. Strict Composer validation still emits the known license
+  warning; it is not claimed as passing and the release license decision remains.
+- Publication: save/push this documentation-only handoff checkpoint; code tested
+  by the successful run is unchanged. Temporary lock-repair worktree was removed
+  after inspection; `git worktree list` contains only the main workspace.
 
 ### Session 004 — Web panel scaffolding (2026-10-11)
 
@@ -549,21 +557,21 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ### Next session's single slice
 
-After the session 005 workflow passes, begin **phase 2, slice 1: one-time local
+Begin **phase 2, slice 1: one-time local
 administrator bootstrap**. Implement deliberate CLI account creation without
 default credentials/public registration, meaningful first-run/repeat-run validation,
 and tests against isolated SQLite. Login/MFA follow in separate small slices.
 Read panel guidance first, use existing tools, update handoff, commit/push and stop.
-If CI is blocked/failing, resolve its documented blocker before declaring phase 1
-complete. Port 9000 is the selected local panel port; Rust remains deferred.
+Phase 1 is complete with successful real PHP 8.3/8.4 CI. Port 9000 is the selected
+local panel port; Rust remains deferred.
 
 ### Current blockers
 
 - No blocker to local web work; scaffold/dependency resolution/build/tests now pass.
   Prior Composer-tool diagnostic findings remain recorded, and the shared tool is
   not to be changed under the user's environment constraint.
-- Actual PHP 8.3 runtime validation awaits CI; strict Composer validation awaits a
-  project license decision. Neither is recorded as passing.
+- Strict Composer validation awaits a project license decision; the normal
+  metadata check passes with that warning. PHP 8.3/8.4 CI now passes.
 - Missing Rust does not block web work; Rust development waits for phase 10 and the
   prepared environment. The existing toolchain pin is metadata for that later work.
 - Disposable VM access is unavailable; real install/systemd/TLS/upgrade/restore
