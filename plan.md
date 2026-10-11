@@ -2,6 +2,13 @@
 
 Last updated: 2026-10-11.
 
+**DeepSeek handoff:** start with section **9.1**, then read only the selected
+phase's detailed subsection in **9.3–9.11**, plus `panel/AGENTS.md`. Phase 1 and
+phase 2 slice `P2.1` are implemented. The next work item is **P2.2**. Section 9 is
+the detailed web-only implementation playbook; its proposed files/features are
+not claims that those features already exist. Stop development at phase 9 until
+the user resumes Rust work in the prepared environment.
+
 ## 1. Purpose and planning authority
 
 Hostnur is a modular, native-first VPS control panel. The web panel manages durable,
@@ -248,6 +255,9 @@ session's numbering. All phases after 1 are pending unless explicitly noted.
 - Exit: web-only CI passes and the panel is independently runnable; contracts and
   acceptance cases are ready for Rust. This is a web milestone, not public beta.
 
+Detailed implementation, file maps, slice IDs, schemas and test requirements for
+phases 1–9 are in **section 9** below. Use that playbook to continue development.
+
 ### Phase 10 — Rust foundation in the prepared environment
 - Status: deferred until web milestone and user-provided agent environment.
 - Depends on: 9.
@@ -378,6 +388,7 @@ ask only when the choice materially changes scope, cost, access, or product beha
 | Decision | Proposed direction / outstanding question | Resolve by |
 |---|---|---|
 | Web framework/tool compatibility | Use installed tools without upgrades; verify actual dependency resolution/lockfiles; PHP 8.3 checks belong in CI | Phase 1 |
+| Authentication pipeline | Proposed first-party Fortify for session/TOTP/recovery; not installed; confirm project-local dependency before adding it | P2.2, section 9.4 |
 | Rust environment | User supplies prepared environment; recheck stored pin/MSRV before implementation | Phase 10 |
 | Protocol framing and registry | Proposed length-prefixed JSON on UDS and agent-owned registry; finalize with Rust implementation | Schema in 3; transport in 11 |
 | Git credentials | Read-only deploy keys and/or scoped HTTPS tokens, verified host keys, no credential in repository URL; confirm providers/auth modes | Config in 6; execution in 13 |
@@ -410,6 +421,22 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 007 — Detailed DeepSeek handoff (2026-10-11)
+
+- User requested a lower-cost development handoff and detailed implementation
+  planning through phase 9, immediately before Rust development.
+- Expanded section 9 with current-state inventory, low-cost session protocol,
+  implementation boundaries, proposed file/data maps, slice-by-slice tasks,
+  security/interaction rules, tests and acceptance gates for every web phase.
+- This session changes documentation only. Application code remains the bootstrap
+  implementation tested in CI run `38142904116` on commit `3939afd`.
+- Next development item: **P2.2**, subject to the small authentication-package
+  decision described in section 9.4. Preserve the existing bootstrap and port 9000.
+- Reviewed document consistency/phase dependencies and added the auth dependency
+  checkpoint to section 6. Verified all nine detailed phase subsections and
+  `git diff --check`; only `plan.md` and the README handoff link changed. Commit/push
+  this handoff; unchanged application tests/assets require no additional run.
 
 ### Session 006 — One-time administrator bootstrap (2026-10-11)
 
@@ -597,13 +624,9 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ### Next session's single slice
 
-Begin **phase 2, slice 2: administrator web login and logout**. Session 006 CI
-passed. Add the login form, administrator-only authorization, rate limiting,
-session rotation on login and invalidation on logout, CSRF and isolated tests.
-Use the bootstrapped account; do not add public registration or default credentials.
-Define the next MFA-enrollment gate so login alone will not grant production
-administrative operations before MFA is implemented in the following slice.
-Read panel guidance first, use existing tools, update handoff, commit/push and stop.
+Use the **DeepSeek starter prompt in section 9.1** and implement **P2.2** from
+section 9.4. Read the authentication-package checkpoint before changing dependencies.
+Finish one slice, record exact checks and the next slice ID, commit/push and stop.
 Phase 1 is complete with successful real PHP 8.3/8.4 CI. Port 9000 is the selected
 local panel port; Rust remains deferred.
 
@@ -620,3 +643,802 @@ local panel port; Rust remains deferred.
   gates remain unverified until supplied.
 - Official domain, Git authentication details, database engine, release signing,
   and license await the decision checkpoints listed in section 6.
+
+## 9. Detailed web-only implementation playbook for DeepSeek
+
+### 9.1 Resume card, cost control and starter prompt
+
+#### What actually exists
+
+| Item | Existing implementation / evidence |
+|---|---|
+| Web foundation | `panel/`; Laravel 13.35.0, Livewire 4.4.7, Tailwind 4.3.3, Vite 8.3.4 |
+| Current browser entry | `routes/web.php`: named `home` route `/` -> `App\Livewire\Foundation`; informational page only |
+| Layout/assets | `resources/views/layouts/app.blade.php`, `resources/css/app.css`, `vite.config.js`; Livewire supplies Alpine |
+| Database | SQLite; database sessions/cache/queue; baseline user/cache/job migrations |
+| Administrator bootstrap | `app/Console/Commands/BootstrapAdministrator.php`; `hostnur:admin:bootstrap` |
+| Bootstrap state | `2026_10_11_131611_add_administrator_bootstrap_state.php`; `users.is_admin` defaults false; `panel_setup` row 1 records completion |
+| User model | `app/Models/User.php`; hashed password cast, boolean admin cast; admin flag excluded from mass assignment |
+| Tests | 20 bootstrap feature tests and 2 scaffold tests; 22 tests / 155 assertions at handoff |
+| CI | `.github/workflows/web-panel.yml`; PHP 8.3/8.4, Node 24, actual runtime/static/build/migration/test gates |
+| Last application CI | Passed: <https://github.com/maelzx/hostnur/actions/runs/38142904116>, code commit `3939afd` |
+| Current local URL | `http://127.0.0.1:9000`; committed example uses port 9000 |
+| Remaining work | Web login/MFA, agent abstractions, tasks/audit, dashboard and all app/server-management flows |
+
+Do not scaffold again, regenerate the app key, reset the database, create test
+users in the real DB, reinstall Boost, or install Rust. The last inspection found
+zero real users, but the user may have subsequently run bootstrap. Inspect state
+read-only when necessary; never assume the account needs recreating. There is no
+login route, dashboard, agent client or application-management schema yet.
+
+#### Low-cost session protocol
+
+1. Read this resume card, `panel/AGENTS.md`, the relevant applicable guidance and
+   the chosen phase subsection. Search for the slice ID rather than rereading the
+   entire plan, original requirements, generated framework guidance and vendor tree.
+2. Check Git status. Inspect the few existing files the slice touches. Treat local
+   `.env`, database contents, running port 9000 server and unrelated edits as user work.
+3. Select one slice ID from the tables below. Aim for one coherent behavior change,
+   its meaningful tests and a small number of production files. Split a large table
+   item if necessary; phase completion is not a one-session requirement.
+4. Write a short active-slice note in section 8 before substantial work. Implement
+   directly using installed APIs and existing patterns. Do not build speculative
+   abstractions, add decorative placeholder features, or explore unrelated packages.
+5. Run the focused tests first. Run the full existing suite once before finishing
+   a behavior change; rerun only when later edits/failures justify it. Build assets
+   only for frontend changes. Run dependency audits when dependency changes warrant
+   them; CI already performs the complete routine checks.
+6. Record files/behavior changed, exact checks/outcomes, unresolved issues and next
+   slice ID. Keep the result compact. Preserve detailed design decisions in this
+   phase subsection or linked docs rather than repeating them in every session log.
+7. Inspect status/diff/history, stage intended files, commit/push and verify remote.
+   Prefer one implementation commit per session. After push, inspect CI once and
+   report its result; record that result at the start of the next planned commit.
+   A separate documentation checkpoint is justified for a phase gate or meaningful
+   decision, not automatically after every small change.
+8. On failure, read the failing step and relevant error window, fix the cause and
+   rerun the affected checks. Do not repeatedly fetch full successful CI logs or
+   reinstall the same dependencies hoping for a different result. If an environment
+   blocker remains, save a precise handoff and the next diagnostic action.
+
+Do not generate tests that only assert a method was called or copy its implementation.
+Test observable authorization, persisted state, validation, recovery and UI output.
+No whole-repository audits or screenshot runs are necessary for every reversible edit.
+The total plan may be long; each development session should load a small excerpt.
+
+#### Copy/paste starter prompt
+
+> Continue Hostnur using `plan.md` section 9.1 and the detailed subsection for the
+> next slice named in section 8. Read `panel/AGENTS.md` and applicable guidance.
+> Current code already has Laravel/Livewire/Tailwind, SQLite, passing PHP 8.3/8.4
+> CI and one-time CLI admin bootstrap. Do not redo that work. Use existing tools,
+> local port 9000, and keep Rust deferred. Implement exactly one small web slice
+> with meaningful tests, update the handoff with the next slice ID, commit and
+> push. Report changed behavior, test results, commit and CI status concisely.
+> Proposed names in section 9 are implementation guidance; check for existing
+> equivalents before creating files. Ask only about material unresolved decisions.
+
+### 9.2 Shared implementation approach and invariants
+
+#### Application boundaries
+
+Use a conventional Laravel monolith: Blade/Livewire renders UI; Laravel policies,
+middleware and application actions validate/authorize changes; Eloquent persists
+configuration/tasks; queued jobs invoke an `AgentClient` interface. Rust later
+implements the other side of that interface. No separate SPA, browser terminal,
+root shell wrapper, remote VPS connector or module marketplace in these phases.
+
+Suggested structure as features are introduced, not empty folders to scaffold now:
+
+```text
+panel/app/Actions/Auth/                 Small orchestration for auth-specific changes
+panel/app/Actions/Tasks/                Request, approve, retry and cancel task intents
+panel/app/Actions/Applications/         Save/archive app configuration; request deployment
+panel/app/Contracts/AgentClient.php     Interface only, independent of transport
+panel/app/Agent/                        DTOs, operation catalog, fake/unavailable adapters
+panel/app/Enums/                        Backed enums for states/modes/credential types
+panel/app/Http/Middleware/              Administrator, MFA and recent-authentication gates
+panel/app/Livewire/                     Class-based full pages, following existing Foundation
+panel/app/Jobs/                         Jobs containing task IDs, not plaintext secrets
+panel/app/Models/                       Resource/task/audit records
+panel/app/Policies/                     App/resource/task permissions
+panel/app/Services/                     Focused secret, validation and redaction helpers
+panel/resources/views/                 Shared layouts, Blade components and Livewire views
+panel/config/hostnur.php                Panel-owned limits and agent mode configuration
+contracts/v1/                          Operation schemas, catalog and valid/invalid fixtures
+```
+
+Create only classes actually needed by the current slice. Avoid a generic repository
+layer on top of Eloquent, an event bus, multi-tenant framework or a DI abstraction for
+every class. Use explicit PHP types and Laravel's installed v13 APIs. Keep PHP 8.3
+compatibility. Use Artisan generators where appropriate and commit incremental
+migrations; do not rewrite migrations already applied to the user's DB.
+
+#### Universal authorization rule
+
+Guest -> authenticate. Authenticated non-admin -> deny. Admin lacking confirmed
+MFA/current MFA session proof -> enrollment/challenge only. Sensitive mutation ->
+also require recent password confirmation and a clear operation confirmation.
+This chain is enforced on the server, not only by navigation or disabled buttons.
+No operation becomes permitted simply because the configured agent is fake.
+
+Use route middleware plus policies/actions. Livewire requests can hydrate modified
+properties: re-authorize inside each mutation, resolve IDs from the DB, and never
+trust public properties such as `is_admin`, actor ID, task status, agent mode,
+capabilities or approval flags. Persist custom middleware for Livewire updates
+using the installed Livewire API where required; test subsequent update requests,
+not only the initial GET. A locked ID property helps integrity but is not permission.
+
+Keep one owner for each DOM region. Blade/Livewire is the default. Add HTMX only
+for a separately owned flow with a concrete advantage and the same CSRF/auth rules;
+there is no requirement to add HTMX solely to make it appear in `package.json`.
+
+#### Desired state versus observed state
+
+- Desired state is user configuration: domain, Git ref, runtime, schedule, etc.
+- Observed state is evidence from an adapter: sampled metrics, execution outcome,
+  active release, service health. It includes mode, time and resource identity.
+- Simulation never changes a record to falsely claim a real site, user, certificate
+  or database exists. Display a distinct simulated result/observation with source
+  `fake`; real applied-state fields remain empty until genuine agent evidence.
+- Offline, unsupported, stale and failed are different conditions. Do not turn
+  unavailable data into zero CPU, healthy services or a successful deployment.
+
+#### Proposed initial limits
+
+Use configurable, documented values, not magic numbers spread across components.
+Suggested first values: 1 MiB protocol message, 64 KiB event chunk, 2 MiB retained
+output per task, 255-character display names, 254-character emails, 100 environment
+variables per app, 64 KiB per secret input, 50 rows per paginated table. Bound both
+number of entries and total bytes. Test the boundary and above-boundary cases.
+
+Task polling: roughly 2–5 seconds while active, stop on terminal states; dashboard
+read-only refresh: roughly 15–30 seconds, pause on hidden tabs where feasible.
+These are engineering defaults to validate, not performance promises. SQLite should
+not receive a permanent metric-history row on each poll. Keep writes/transactions
+short; do not hold a DB lock while waiting for an agent/network response.
+
+### 9.3 Phase 1 — Existing foundation and maintenance obligations
+
+**Status: complete. Do not redo.** Preserve the documented locked dependency tree
+and current `.npmrc` script/audit policy. PHP platform emulation in Composer is
+8.3.0; actual 8.3 and 8.4 jobs already passed. The complete baseline commands are
+in `panel/README.md` and the workflow, not a new tool-install checklist.
+
+| Slice | State | Existing deliverable |
+|---|---|---|
+| P1.1 Toolchain baseline | Done | `docs/development-toolchain.md`; installed-tool constraints |
+| P1.2 Web scaffold | Done | Laravel, Livewire page/layout, SQLite/queue defaults and lockfiles |
+| P1.3 Web CI/static gates | Done | PHP 8.3/8.4 CI, syntax/style gates, audits/build/migration/test checks |
+
+Important maintenance details:
+
+- Root route is currently public **because it is only an informational scaffold**.
+  Replace its behavior when introducing authentication, without exposing future
+  authenticated dashboard data through that public route.
+- `composer check:syntax` uses tracked PHP; stage intended new files before running.
+  `composer check:style` runs Pint then checks unstaged PHP drift. Run the prescribed
+  formatter and review both staged and unstaged changes before committing.
+- `.env`, key material, SQLite, dependency folders and generated assets are ignored.
+  Preserve the user's current `APP_KEY`; encrypted data will depend on it.
+- The npm lock was repaired in a clean worktree after CI found missing bundled/peer
+  entries. If clean install fails again, diagnose the lock; do not update Node/npm,
+  use `--force`/peer-dependency bypasses, or switch package managers as a shortcut.
+- CI paths cover `panel/**`, its workflow and `.nvmrc`. Documentation-only changes
+  outside those paths do not require another identical application test run.
+- Project license is still undecided. Normal Composer validation passes with its
+  visible warning; do not invent a license or claim strict validation is passing.
+
+Acceptance for future foundation changes: reproducible install, migration, tests,
+asset build and both runtime jobs pass; browser assets load; local instructions
+stay accurate. No production installer claim follows from this phase.
+
+### 9.4 Phase 2 — Administrator authentication, MFA and recovery
+
+**Status: P2.1 done; next item P2.2.** Existing bootstrap is the only account-creation
+path. Preserve its command, password policy, `panel_setup` marker and atomic tests.
+Do not promote existing ordinary accounts, add web registration, seed credentials
+or reset that marker when building login/recovery.
+
+#### Authentication implementation decision
+
+Recommended approach: Laravel's session guard and first-party **Laravel Fortify**
+for the login/logout/password-confirmation/TOTP/recovery pipeline, with Hostnur
+Blade/Livewire screens and custom administrator/MFA gates. Reuse established
+authentication/TOTP logic rather than writing cryptography or creating a second
+competing login backend. Fortify is **not installed** at this handoff.
+
+Before adding it, confirm this one project-local dependency with the user, following
+the repository dependency-approval rule. Inspect its actual Laravel 13 compatibility
+and installed APIs; commit the resulting Composer lock. No global tool installation
+or complete starter-kit replacement is needed. If approval is not available, keep
+MFA-sensitive operations closed and record the precise blocker; do not invent a
+home-grown TOTP algorithm to avoid the dependency decision.
+
+Fortify should own authentication POST endpoints if selected. Livewire can render
+screens and settings, but the same login must not also be independently implemented
+as a Livewire mutation with different authorization/rate-limit rules. Native POST
+forms with `@csrf` are acceptable within Blade/Livewire layouts. Never populate
+password inputs with old submitted values or stored hashes.
+
+#### Proposed files and routes
+
+- `config/fortify.php`, `app/Providers/FortifyServiceProvider.php`, provider registered
+  in `bootstrap/providers.php`; explicitly enable only approved authentication features.
+- `resources/views/auth/{login,two-factor-challenge,confirm-password}.blade.php` and
+  `app/Livewire/Auth/MfaEnrollment.php` / matching view where reactive settings help.
+- `app/Http/Middleware/EnsureAdministrator.php`, `EnsureMfaVerified.php` and, when
+  needed, `EnsureRecentAuthentication.php`; aliases in `bootstrap/app.php`.
+- `app/Actions/Auth/` only for actual Hostnur orchestration/custom Fortify actions.
+- Auth feature tests, using factories in isolated SQLite, never the real admin DB.
+- Guest screens: GET login plus login POST. Logout is POST only. Enrollment,
+  challenge, password confirmation and security settings are authenticated but
+  carefully exempted from the full-MFA gate to avoid redirect loops.
+- App screens under `/panel` require auth + administrator + confirmed MFA session.
+  Root `/` eventually redirects guests to login and authorized users to the panel.
+  Registration, public setup and email-reset routes remain absent unless explicitly
+  planned later; current mail driver logs mail and is not a recovery-email service.
+
+#### Authentication states and security flow
+
+1. Normalize email consistently with bootstrap (trim/lowercase), validate bounded
+   input and attempt credentials only for `is_admin=true` users. Failure uses a
+   generic message for unknown email, wrong password and ordinary account.
+2. Rate-limit password attempts by normalized email + IP, and add an IP-wide limit.
+   Initial recommendation: 5 failed attempts/minute per identity/IP plus 30/minute
+   per IP; configure named limiters and test expiry. Do not put passwords in keys.
+3. Rotate session ID after password authentication. No remember-me feature until
+   its MFA/session implications are intentionally supported and tested.
+4. If MFA is unconfirmed, permit only enrollment, logout and required security
+   confirmation. If confirmed, require TOTP or a recovery code before app access.
+   Never equate `auth()->check()` with full administrator authorization.
+5. Bind MFA session proof to user ID and a persisted `mfa_version`/generation. Gate
+   against the current DB state. Password/MFA recovery or secret rotation must
+   invalidate old proof; do not rely on a permanent `session('mfa_ok')` boolean.
+6. Logout clears guard state, invalidates the session and regenerates CSRF token.
+   POST logout without CSRF must not succeed. Do not redirect to arbitrary URLs
+   supplied by the request; use named same-origin routes/intended-path validation.
+7. Use HttpOnly, SameSite and production HTTPS cookie settings. Development on
+   port 9000 can remain HTTP locally; never implement a blanket insecure production
+   exception. Do not require verified email for the bootstrap account yet: the
+   command deliberately does not claim email verification and mail is not configured.
+
+MFA schema: add incremental migration for the selected Fortify fields
+`two_factor_secret`, `two_factor_recovery_codes`, `two_factor_confirmed_at`, plus
+Hostnur `mfa_version` if required for revocation. Use TEXT for encrypted values.
+Hide them from model serialization and snapshots. Follow the selected library's
+encryption conventions; do not double-encrypt values that it already encrypts.
+Use the existing app key, and record that recovery depends on key custody.
+
+Enrollment must confirm a valid code before setting `two_factor_confirmed_at`.
+Provisioning secrets/QR information are available only to the current admin with
+recent password confirmation, not public URLs, logs or external QR web services.
+Treat TOTP input as a fixed-width digit string so leading zeroes are preserved.
+Use a narrowly bounded TOTP clock window. Test wrong, expired and replayed codes;
+persist a last-accepted counter if the selected library does not prevent replay.
+Recovery codes are shown once, consumed once and regenerated only after strong
+reauthentication; consumption must be atomic so concurrent requests cannot reuse
+one code. Check actual Fortify behavior and add a transactional custom action if
+needed. Do not assume package defaults satisfy all of these concurrency requirements.
+
+Recent-authentication recommendation: password confirmation within 5 minutes,
+bound to the same user/session/MFA generation. Sensitive changes include password,
+MFA reset/code regeneration, credential replacement, destructive resource requests
+and backup/private-key changes. A recent-auth token is server-generated evidence,
+not a checkbox or a Livewire public boolean.
+
+#### Slices and acceptance
+
+| Slice | Deliverable | Main proof |
+|---|---|---|
+| P2.1 CLI bootstrap | Done; preserve existing implementation | Existing 20 tests and passing CI |
+| P2.2 Login/logout foundation | Dependency decision, views/endpoints, admin gate, throttling, session rotation, restricted post-login state | Wrong/ordinary users rejected; genuine admin can reach restricted auth state; logout invalidates session; no app access before MFA |
+| P2.3 MFA enrollment | Encrypted secret, local provisioning display, code confirmation, recovery-code creation | Unconfirmed secret grants no access; secret never serialized/logged; valid confirmation advances state |
+| P2.4 MFA login challenge | TOTP/recovery challenge, generation-bound session proof, persistent Livewire middleware | Password-only/forged/stale proof denied; valid factor permits app access; replay/reuse rejected |
+| P2.5 Recent-auth/security settings | Password confirmation/change, MFA/code rotation, session revocation | Stale confirmation rejected; recovery/rotation invalidates old sessions/proof |
+| P2.6 Local recovery and runbook | Deliberate CLI password recovery for an existing admin; documented MFA lost-code handling | Cannot create/promote accounts or reopen bootstrap; secrets hidden; relevant sessions invalidated |
+
+P2.6 recovery is not a public endpoint. A password-recovery CLI command must target
+an existing admin explicitly, ask for confirmation/new hidden password, preserve
+the setup marker and preserve MFA unless a separately designed, explicit local
+MFA-reset procedure is chosen. Never clear MFA silently as a side effect of changing
+password. Recovery tests cover wrong targets, cancellation, failed writes and stale
+sessions. Keep a record of authentication/security events for the phase 4 auditor;
+do not log passwords, codes, recovery strings or provisioning secrets.
+
+Test CSRF explicitly: Laravel's normal testing environment may bypass CSRF checks.
+A passing feature suite alone is not proof; use a production-like middleware test
+or real HTTP check that demonstrates missing-token rejection. Also test role removal
+after login and Livewire hydration attempts with forged IDs/privilege properties.
+Phase exit: correct bootstrap/login/MFA/recovery flows and server-side access gates
+pass, including denied paths. No root/agent capability is introduced here.
+
+### 9.5 Phase 3 — Agent contract, unavailable mode and deterministic simulation
+
+**Goal:** make every later web flow depend on a small typed interface, not Rust,
+shell commands, HTTP calls to arbitrary hosts or ad-hoc fake values in components.
+Start with `unavailable` as the default in `config/hostnur.php`. `HOSTNUR_AGENT_MODE`
+can opt into `fake` only in local/testing environments. Reject fake mode in production
+both when binding the adapter and when executing a task; do not silently fall back.
+`real` must report unavailable until phase 11 actually implements transport.
+
+#### Interface shape and data contracts
+
+Proposed `AgentClient` responsibilities:
+
+- `capabilities(): CapabilitySnapshot` — protocol versions, mode, operation support,
+  module/runtime identifiers, sample time and availability reason.
+- `snapshot(): ServerSnapshot` — bounded read-only metric/service observation.
+- `submit(OperationRequest): OperationReceipt` — accepts intent; acceptance is not
+  completion. Include execution/request IDs and supported idempotency semantics.
+- `inspect(string $executionId): OperationSnapshot` — durable state, bounded progress,
+  event sequence and result/error. Unknown execution is explicit.
+- `cancel(string $executionId): CancellationReceipt` — requested/unsupported/already
+  finished; never promises rollback or reports cancellation before confirmation.
+
+The exact method syntax can evolve, but keep these responsibilities and test all
+callers against the same interface. Mutation parameters are operation-specific,
+not an arbitrary dictionary that can become a generic root executor later.
+
+Request envelope example, with UUIDs generated by the panel:
+
+```json
+{
+  "protocol_version": 1,
+  "request_id": "6c9dc595-fc9c-4c13-8c72-ed9a489ab9e7",
+  "idempotency_key": "cf36a770-2abf-42e6-83cf-a0f042bcfc3c",
+  "operation": "application.restart",
+  "resource": {"kind": "application", "id": "224065ac-4bc7-4ba4-a06d-8c8bca950c32"},
+  "parameters": {},
+  "timeout_seconds": 60
+}
+```
+
+Response/error envelopes must echo correlation/version, distinguish accepted from
+terminal outcome, and include a stable machine code with a safe user message.
+Initial error codes: `agent_unavailable`, `unsupported_operation`,
+`unsupported_protocol`, `invalid_parameters`, `resource_not_found`, `conflict`,
+`timeout`, `execution_unknown`, `permission_denied`, `operation_failed`.
+Do not include raw process environments, request secrets or full exception traces.
+
+Store `contracts/v1/` JSON Schemas (a declared dialect, e.g. 2020-12), operation
+catalog and fixtures. Reject extra envelope/parameter keys, invalid UUIDs, wrong
+types, oversized bytes/arrays and unsupported versions. PHP can initially enforce
+this with Laravel validation/explicit DTO parsing and an operation allowlist;
+keep schemas and fixtures consistent in contract tests. A validation library is a
+separate dependency decision, not permission to invent unvalidated payloads.
+
+#### Initial operation catalog
+
+| Operation | Target / key inputs | Read-only? / retry rule |
+|---|---|---|
+| `server.snapshot` | Current single server; no arbitrary host | Read; bounded retry |
+| `application.deploy` | App UUID, immutable configuration revision and release/source intent | Mutation; no blind replay after unknown outcome |
+| `application.restart` | Managed app UUID | Mutation; capability-declared retry only |
+| `application.rollback` | App UUID and known deployment/release UUID | Mutation; approved supported code rollback only |
+| `service.control` | Managed service ID and enum start/stop/restart | Mutation; no raw systemd unit name |
+| `package.install` | Approved catalog package ID | Mutation; not arbitrary APT flags/repository URLs |
+| `schedule.apply` | Schedule UUID/revision, app UUID | Mutation; logical owner is managed app |
+| `domain.apply` | Managed domain UUID/revision, app UUID | Mutation; not arbitrary Nginx text/path |
+| `certificate.issue` | Managed domain UUID, approved HTTP-01 provider | Mutation; no wildcard DNS-01 claim |
+| `certificate.install` | Domain UUID, protected certificate/key references | Mutation; secret references, not plaintext keys |
+| `database.provision` | Database-request UUID/revision, supported engine ID | Mutation; no arbitrary SQL/root DB password |
+| `backup.create` | Backup-policy UUID/revision and bounded resource selection | Mutation; no arbitrary filesystem path |
+
+Define each operation only as its web phase needs it. Mark capabilities not yet
+supported; a catalog entry is not a claim that the Rust handler exists. Linux
+paths/users/units are future registry-resolved resources, never caller-trusted roots.
+Lifecycle `submit/inspect/cancel` is separate from the domain operation name.
+
+#### Fake adapter requirements
+
+Fixtures are checked-in, deterministic and secret-free. Scenarios: accepted/running/
+success, validation error, operation failure, timeout, lost receipt/unknown execution,
+cancel accepted/unsupported and offline. No internet, package install, filesystem
+provisioning, `exec`, shell or real daemon calls. Use a controlled clock, not sleeps
+in tests. Fake capabilities list only scenarios that the adapter actually implements.
+
+For execution inspection across queue/browser processes, use a small persisted
+simulation record keyed by execution/request ID, or derive progress deterministically
+from persisted request/scenario/time. An in-memory PHP array alone is insufficient.
+Duplicate submissions with the same identity must refer to the same simulated
+execution. Every snapshot/receipt/task includes `mode=fake`; UI displays it.
+
+| Slice | Deliverable | Proof |
+|---|---|---|
+| P3.1 DTOs/catalog/schema | Versioned request, receipt, state/error and capability types | Valid fixtures pass; invalid/excess/unknown input fails |
+| P3.2 Unavailable adapter/binding | Safe default and explicit mode-selection guard | Default/offline rejects mutations; production fake selection denied |
+| P3.3 Read-only fake snapshots | Realistic stable fixtures with time/mode | No network/host calls; fake/stale/offline distinguishable |
+| P3.4 Durable fake execution | Submit/inspect/cancel, scenario/clock control | Same request reuses execution; later process can inspect progress |
+| P3.5 Contract regression | Shared valid/invalid fixture runner and compatibility notes | Unsupported version/capability fails clearly; schemas/DTOs aligned |
+
+Phase exit: tests can run the web panel with fake or unavailable adapters while
+production has no functioning privileged path. Actual socket/framing/Rust contract
+proof belongs to phase 11, not this phase's mocked checks.
+
+### 9.6 Phase 4 — Durable tasks, approvals, audit and queue reconciliation
+
+**Goal:** persist intent and history independently of the HTTP request. Use one
+task service/action path for all UI mutations and later AI requests. A component
+must not call `AgentClient::submit()` directly and bypass tasks/authorization.
+
+#### Proposed persistence
+
+| Record | Minimum fields / indexes |
+|---|---|
+| `tasks` | UUID PK; actor ID; operation; resource kind/UUID; config revision; mode; status; idempotency key; non-secret parameters/reference snapshot; payload fingerprint; requested/queued/started/finished times; deadline; execution ID; lease token/expiry; cancellation-requested time; safe error code/message |
+| `task_events` | ID or UUID; task UUID; monotonic sequence unique per task; type/level; bounded redacted message/metadata; recorded time; index task+sequence |
+| `audit_events` | Immutable event UUID; actor identity; action/resource/task IDs; allowlisted non-secret metadata; outcome/time; indexes time and resource |
+| Approval fields/record | Task UUID; approving actor; confirmation/MFA generation; approved payload fingerprint; approved/expiry times; optional denial reason code |
+
+Use FK/null/archive behavior that preserves history after resources/accounts change.
+Actor deletion or loss of admin role prevents queued privileged execution, but
+does not erase who originally requested it. Audit is append-only in application
+code; do not claim it is tamper-proof against an OS/DB administrator.
+
+Store only secret **references and versions** in task/job payloads. Encryption of
+an entire payload is not a substitute for redaction or limiting what belongs there.
+Queue jobs contain task UUIDs. Laravel `failed_jobs` otherwise serializes payloads,
+so never dispatch decrypted environments, tokens, TLS keys or passwords.
+
+#### Lifecycle and worker algorithm
+
+States: `pending`, `awaiting_approval`, `queued`, `running`, `succeeded`, `failed`,
+`cancelled`, `unknown`. Define allowed transitions centrally in a backed enum/helper.
+Terminal states cannot be overwritten by a late poll. `cancel_requested_at` is an
+intent, not a terminal state. Unknown completion is not the same as failure.
+
+Request action:
+
+1. Re-resolve actor/resource and enforce admin, MFA, resource policy, capability
+   and operation-specific input rules. Consequential requests require recent auth
+   and approval of the exact immutable payload/revision, not a previous version.
+2. Create task intent plus audit event in a short DB transaction. Deduplicate on
+   actor/idempotency key; the same key with a different fingerprint is a conflict,
+   never silently an unrelated existing task. Actor ID comes from session.
+3. Dispatch a job after commit. Account for a crash between commit and enqueue:
+   pending intent acts as an outbox, and a scheduled/CLI reconciler redispatches
+   undispatched work. Duplicate queue jobs must be harmless.
+
+Worker:
+
+The authorization/approval checks below apply before a **new mutation submission**
+or retry. Once an operation is accepted, continue system-owned read-only inspection
+and reconciliation even if the requesting actor loses access or approval expires.
+Do not abandon accepted work or move it back to `awaiting_approval` merely because
+a polling job ran later; stale authority must not permit a new mutation either.
+
+1. Claim task/lease with a conditional DB update; another job seeing a current
+   lease exits. Recheck actor role, resource existence/revision, mode/capability and
+   unexpired approval. Revoked role/changed MFA or edited config cannot inherit
+   stale authority. Expired approval goes back to `awaiting_approval`.
+2. Submit with stable request/idempotency identity, outside a DB transaction.
+   Persist execution receipt before subsequent polling. Agent acceptance alone
+   never becomes `succeeded`.
+3. Inspect execution, append deduplicated bounded/redacted events and update status
+   using valid transitions. Release/requeue for later polls rather than holding
+   a PHP worker or DB lock in a long sleep loop.
+4. Separate queue-delivery retries from operation retries. `release()` consumes
+   Laravel job attempts; set bounded `retryUntil`/tries/deadline deliberately so
+   a legitimate running operation is not failed after one poll. Keep worker timeout
+   below queue `retry_after` and lease expiry consistent with both.
+5. Lost receipt/timeout after submission -> query/reconcile with the same identity;
+   if unsupported, mark `unknown` and require investigation. Never resubmit a
+   destructive operation simply because an HTTP response was lost.
+6. Cancellation of pending work can be local; running cancellation requires adapter
+   acknowledgement. Already-finished/unsupported requests report their actual state.
+   Cancel is not undo. Retrying a failed operation creates a new linked task with
+   fresh authorization/approval unless its contract explicitly permits safe reuse.
+
+Add a small reconciliation command such as `hostnur:tasks:reconcile` and schedule
+it through Laravel scheduling during development. Explain `schedule:work` versus
+production cron/systemd later. It handles pending outbox entries and expired leases,
+not arbitrary task-state rewriting. Test the decision matrix with a controlled clock.
+
+Approval recommendation: 10-minute validity, single approved fingerprint and current
+MFA generation. Reauth/approval at request time does not justify delayed execution
+after identity or configuration changes. Enforce this in the action **and** worker.
+
+Redaction: do not generate logs containing secrets in the first place. Structured
+allowlists plus a central redactor handle known values/names before persistence;
+never render raw output as HTML. Limit total output and append a truncation event.
+Avoid storing the raw unredacted copy in another exception/audit/debug field.
+
+| Slice | Deliverable | Proof |
+|---|---|---|
+| P4.1 Schema/models/states | Tasks/events/audit and enum transitions | Relationships/history preserved; illegal/terminal transitions rejected |
+| P4.2 Authorized intent/approval | Request action, dedupe/fingerprint and audit | Tampered actor/resource/approval denied; double-click returns same intent |
+| P4.3 Worker/outbox/leases | Job containing UUID, conditional claim and dispatch reconciliation | Pending intent survives enqueue failure; duplicate jobs do not double-submit |
+| P4.4 Progress/log persistence | Inspect adapter, cursor/sequence, redaction and output limits | Refresh sees persisted history; duplicates/oversized/secrets handled |
+| P4.5 Failure/cancel/retry | Unknown/timeout, expired approval, lost lease, cancellation and linked retry | No blind destructive replay; role/config revocation stops execution |
+| P4.6 Audit UI and auth integration | Paginated read-only history, auth event subscriber | Guest/non-admin denied; login/MFA/credential actions attributed without secrets |
+
+Phase exit: meaningful queue/process-interruption behavior passes using the durable
+fake adapter. Real cross-process agent recovery remains a later VM gate.
+
+### 9.7 Phase 5 — Shared UI shell, dashboard and task visibility
+
+Reuse the current system-font/neutral-slate/indigo styling as the starting direction;
+build an operations workspace, not a marketing homepage. Use shared Blade components
+for buttons, form fields/errors, status badges, empty states, panels, tables, pagination
+and confirmation dialogs. Native semantic controls, clear labels, visible focus,
+keyboard operation, adequate contrast and mobile wrapping are required.
+
+Proposed pages/components: authenticated app layout with navigation; dashboard;
+task list/detail; audit list/detail; agent availability summary. Navigation groups:
+Overview, Applications, Tasks, Server, Security/Settings. Add links only when their
+routes exist; explicitly unsupported features show an explanatory state, not a
+button that silently does nothing. Local CLI bootstrap/login views remain separate.
+
+Dashboard data flow: server-side authorize -> short-cached adapter snapshot -> typed
+view data. Use a latest sample, not an unbounded time-series writer. Cards: CPU, RAM,
+disk, uptime/OS, managed services, active tasks and recent failures. Each has units,
+sample time and a readable unavailable/stale reason. Fake mode adds a persistent
+simulation banner and marks values; disconnected metrics use `—`, not zero.
+
+Task detail uses event-sequence cursor pagination, not full log reload on every poll.
+Escape output, preserve readable whitespace, handle truncation and long lines. Poll
+while active, stop on terminal states and avoid background-tab noise. A browser
+refresh/reopen reconstructs state from the DB. Confirmation dialogs show resource,
+operation and actual mode; they do not expose secrets or imply approval by opening.
+
+| Slice | Deliverable | Proof |
+|---|---|---|
+| P5.1 Protected shell/components | Authenticated layout/navigation and reusable controls | Access gates hold on routes/Livewire updates; no broken navigation |
+| P5.2 Task/audit screens | Filters, paging, detail/events and active polling | Only authorized records visible; reload/cursor/truncation work |
+| P5.3 Dashboard adapter states | Fake/offline/stale/healthy sample presentation | No fake/live ambiguity or unavailable-as-zero values |
+| P5.4 Responsive/accessibility pass | Small-screen tables/forms, focus, errors, keyboard dialogs | No horizontal page overflow; accessible names/status not color-only |
+
+Test view states/authorization through feature/Livewire tests. Use manual browser
+inspection at roughly 375 px and desktop width for real layout behavior. Record
+what was actually inspected; rendered HTML tests are not screenshot/accessibility
+certification. Add charts only when they provide value and their data is bounded.
+
+### 9.8 Phase 6 — Application inventory, source configuration and secret storage
+
+**Goal:** manage durable desired configuration safely, without source checkout,
+Linux user creation or privileged deployment. First provider is `php-laravel`.
+Version options come from a catalog/capability response; do not advertise arbitrary
+PHP releases because the local panel happens to run on 8.4. Initial Ubuntu-native
+runtime planning can use 8.3; broader managed runtimes remain later providers.
+
+#### Proposed resource schema
+
+| Record | Core fields / behavior |
+|---|---|
+| `applications` | UUID; display name; unique immutable slug; provider/runtime/version; desired config/revision; archive time; observed-state/mode/time separate |
+| Application source | App UUID; normalized repository URL; Git ref; nullable credential UUID; source status `not_checked`; no plaintext auth in URL |
+| `source_credentials` | UUID; label; type HTTPS token/SSH deploy key; encrypted material; optional public-key/host-key metadata; version/rotation time; secret fields hidden |
+| `application_secrets` | UUID; app UUID; unique variable name per app; encrypted TEXT value; version; rotation time; value never returned by list/edit serializers |
+| App domains | UUID; app UUID; normalized unique hostname; desired HTTPS policy; observed routing/certificate state and provenance |
+| Revision snapshot | Immutable UUID/number, app UUID, non-secret deploy settings plus secret/credential version references; task/deployment links |
+
+Use normal Eloquent relationships and policies. Archive rather than silently drop
+apps with task/history records. If an operation is active, refuse conflicting
+archive/config replacement or create a distinct future revision; never rewrite
+the configuration being executed. Resource names are display data; UUIDs define
+identity for the future managed-resource registry.
+
+Secret implementation: use Laravel encryption/encrypted casts with the existing
+app key, TEXT columns, hidden attributes and dedicated write actions. Do not put
+stored decrypted values in Livewire public properties, edit-form defaults, debug
+logs, model JSON, audit metadata or job payloads. Forms show presence/last rotation
+and empty replacement inputs, with explicit replace/delete semantics. Empty value
+and deletion are different operations. Clear replacement input after submission.
+
+Decrypt only in a narrow service where a real future transport requires it; fake
+execution needs presence/version, not secret material. App key loss prevents
+decryption and must produce a safe failure, not empty-secret fallback. Key rotation
+and encrypted off-host backup design remain later recovery work; record dependency
+on the current key and do not regenerate it during development.
+
+Validation rules:
+
+- Names bounded/nonempty; slugs lowercase `[a-z0-9-]`, unique and not later changed
+  into arbitrary host paths. Runtime/provider choices are allowlisted IDs.
+- Environment keys follow `[A-Za-z_][A-Za-z0-9_]*`, are unique per app, and values/
+  count/aggregate bytes are bounded. They affect the **hosted app**, never the panel's
+  `.env`, agent mode, filesystem roots or security configuration.
+- Git URLs allow planned HTTPS or verified-key SSH forms. Reject embedded HTTP
+  credentials, `file:`, `ext:`, local paths, unsupported schemes, control characters,
+  option-like/ambiguous syntax and query/fragment credential tricks. Normalize with
+  a parser, not shell execution. Branch/tag/commit selectors are bounded and are
+  later resolved/pinned by the agent. SSH host-key verification is a recorded
+  requirement; do not disable it to make private Git easier.
+- No network fetch/test occurs merely because an admin saves a URL. Show `not
+  checked`; a fake connectivity result is labeled simulated. DNS/SSRF/path/build
+  safety is independently revalidated by the later agent.
+- Domains are normalized ASCII/punycode hostnames, bounded by DNS label/name limits,
+  unique, and exclude scheme/path/port/control characters. Validate duplicates after
+  normalization. Initial HTTP-01 cannot issue wildcard certificates.
+- Persistent directories and health-check paths are logical relative settings in
+  an app namespace, not arbitrary absolute Linux paths or caller-selected hosts.
+- Composer/Artisan/build/start settings are application-user intent, never panel
+  shell execution. Prefer defined templates/structured arguments; custom commands,
+  if stored, remain untrusted app-level data and stay out of audit/error output.
+
+| Slice | Deliverable | Proof |
+|---|---|---|
+| P6.1 App schema/inventory/policy | App list/create/show/archive and default provider | Unique immutable identity; unauthorized/tampered IDs and active-work conflicts denied |
+| P6.2 Configuration/revisions | Runtime, build/worker/scheduler, health/persistent settings | Bounded validated config; revision used by active task cannot mutate |
+| P6.3 Git metadata/credentials | Public/private source forms, protected references/rotation | Unsafe URLs rejected; credentials encrypted/masked; no network-on-save |
+| P6.4 Environment secret forms | Write-only replacement/delete actions and presence metadata | No decrypted values in snapshots/JSON/audit/jobs; failure preserves old value |
+| P6.5 Domains and archive behavior | Domain relation, normalized conflicts, safe archive/history | Duplicate/malformed domains rejected; history retained; no host provisioning |
+
+Tests include punctuation/control/path tricks, cross-resource ID tampering, stored
+XSS values rendered escaped, concurrent uniqueness/conflicting edits, and decrypt
+failure. Inspect Livewire responses as well as initial HTML for secret exposure.
+Phase exit: real panel CRUD/configuration and encrypted storage work; host state
+remains unapplied and the UI communicates that accurately.
+
+### 9.9 Phase 7 — Deployment intent, application operations and logs
+
+Build a deployment wizard around shared actions/tasks, not a second queue/backend.
+Steps: choose app/source revision -> validate prerequisites -> show non-secret plan
+and mode -> recent-auth/operation confirmation -> persist approved intent -> task
+detail/progress. Source preparation/build/service/Nginx work occurs only through the
+adapter; the PHP panel must not run Composer/Git/Artisan against hosted source.
+
+Proposed `deployments` record: UUID, app UUID, immutable revision/task UUID, requested
+Git ref and later resolved commit, requested runtime, mode, state, release reference,
+health summary, previous supported release and timestamps. Secrets are references.
+States distinguish requested/simulated/real failure and success. A real active-release
+pointer cannot be replaced by a successful fake deployment.
+
+Preflight covers app not archived, supported provider/runtime/operation capability,
+complete Git/credential references, domain conflicts, health settings and any
+existing-database configuration. It checks panel configuration, not actual remote
+repository reachability or package availability. Show what remains agent-dependent.
+
+Migration policy: explicitly select whether to run migrations and confirm potential
+data impact. Code rollback is not database rollback. Rollback UI permits only a
+known compatible app-owned release and documents shared uploads/database limitations.
+No automatic reversing of migrations, deleting uploads, rebuilding a release in
+place or accepting arbitrary user-supplied release-directory paths.
+
+Restart/rollback/worker operations reauthorize in their actions, require relevant
+capability and stable managed IDs, create tasks and return their persisted status.
+An unavailable adapter blocks execution clearly. Fake success/failure/timeout/logs
+exercise UI and task state with a persistent simulation label. Preserve non-secret
+request/history even when a later capability disappears.
+
+| Slice | Deliverable | Proof |
+|---|---|---|
+| P7.1 Deployment schema/preflight | App-owned revision and deployment intent validation | Missing credential/capability/health settings fail before submission |
+| P7.2 Wizard/confirmation | Preview, recent-auth, fingerprint approval and single-submit | Edited intent invalidates approval; double-click creates one task |
+| P7.3 Durable progress/history | Phase progress, redacted logs, elapsed/error/cancel states | Refresh resumes; fake outcomes remain labeled; unknown is not success |
+| P7.4 Restart/rollback UI | Managed operation actions and known-release selection | Wrong-app/unsupported release and stale authorization denied |
+| P7.5 Laravel workers/scheduler policy | Desired worker definitions and migration/rollback wording | App-user intent only; no PHP panel process execution; persistent-data limits clear |
+
+Minimum end-to-end fake flow: authenticated/MFA admin creates config, confirms
+deployment, closes browser, reopens task, sees deterministic result/logs, requests
+restart and supported simulated rollback. Run failure/timeout/cancel variants too.
+No live public application, certificate or systemd service is claimed by this phase.
+
+### 9.10 Phase 8 — Server administration views and desired configuration
+
+Use the same capability catalog, policies, secret handling, approvals and task
+pipeline for every feature. Each small resource gets a focused model/form/action
+only when needed. Treat this phase as several independent slices, not one giant
+"server settings" component with hundreds of untyped public properties.
+
+| Slice | Data/UI approach | Required denial/failure behavior |
+|---|---|---|
+| P8.1 Managed services/packages/firewall | Read adapter-owned service IDs/status, approved package catalog, read-only firewall summary | Reject arbitrary unit/package/flags; offline/stale is explicit; no firewall mutations |
+| P8.2 Scheduled jobs | Schedule UUID, app UUID, desired expression/timezone/command reference, enabled flag/revision; execution history | Validate expression/timezone/limits; no root owner; saving does not install cron/systemd |
+| P8.3 Domains/TLS settings | Domain routing intent, HTTP-01 provider, certificate expiry/status; protected user-supplied cert/key references | No DNS-01/wildcard issuance claim; failures retain desired history; secrets never public |
+| P8.4 Database requests | Engine catalog, app-scoped DB/user intent, protected credentials, provisioning task references | No arbitrary SQL/admin DB passwords; unavailable/unsupported engines cannot provision |
+| P8.5 Backup policies/requests | Resource scope, schedule, retention and destination credential reference; task/history/restore prerequisites | No fake backup labeled recoverable; no export of app keys/plain secrets; no real restore claim |
+| P8.6 Unified request/error views | Shared confirmations, active task links, capability/version errors and history | State/permissions enforced server-side; no unsupported-button bypass or alternate executor |
+
+Service controls resolve IDs from a managed snapshot, not unit names typed by a
+caller. Package selection is a catalog ID; repository installation/upgrade policy
+belongs to the later agent/package phase. Fake catalog entries are labeled samples.
+The installed panel dependencies are not the OS package catalog.
+
+Schedules may use existing cron-expression support for parsing, but do not run the
+saved command in Laravel's own scheduler. Laravel scheduling runs only panel task
+maintenance; hosted schedules execute later under the application's Linux user.
+Bound execution duration/output/overlap policy. Cron validity is not command safety.
+
+Certificate ingestion can use existing OpenSSL inspection to validate public
+certificate/private-key matching, size, validity and domain metadata. Keep key/
+passphrase encrypted/write-only and upload storage private with bounded file size.
+Prevent unauthenticated Livewire upload access and never give a public key-file URL.
+Do not emit parser contents in errors or fetch remote issuer/AIA URLs from input.
+Issuance/activation/renewal are tasks, not inline shell/ACME calls from PHP.
+
+Database engine choice needs user confirmation before real provisioning. Web
+configuration can remain catalog-driven with unsupported options disabled. Never
+use the panel's SQLite credentials/data as a hosted application's database.
+
+Backups/restore: phase 8 configures policy and simulated requests only. A "backup"
+record carries mode and verification status. Real consistency, encryption-key
+custody, restore onto another VM and disk-full handling belong to phase 19. Do not
+add a shortcut that zips the panel `.env` into a publicly downloadable archive.
+
+Phase exit: authenticated admin can configure/request all agreed views through the
+same validated workflow in fake mode; unavailable/unsupported mode remains closed.
+Every screen states what is configured versus simulated versus actually observed.
+
+### 9.11 Phase 9 — Web milestone verification and Rust handoff
+
+**Goal:** finish the independently runnable web panel and leave an exact agent
+contract/acceptance map, not a collection of optimistic dashboard screenshots.
+Stop after this gate. Rust starts only when the user supplies/resumes its environment.
+
+| Slice | Deliverable | Acceptance |
+|---|---|---|
+| P9.1 Complete web regression | Auth/MFA, CRUD, task, secret, simulation/offline/capability and error tests | Happy and denied/error flows pass on PHP 8.3 and 8.4 |
+| P9.2 Interruption/queue checks | Worker/browser restart, outbox/lease recovery, unknown execution, cancel/race cases | No lost durable intent, duplicate privileged intent or false terminal success |
+| P9.3 Browser/accessibility review | Login/MFA, dashboard, forms, task logs at small/desktop widths | Keyboard/focus/errors work; escaped output; no secret leak or layout overflow |
+| P9.4 Contract/resource-map freeze | Schemas, operation list, fixtures, adapter call map and unsupported features | PHP contract fixtures reproducible; known gaps explicitly recorded |
+| P9.5 Operator/developer handoff | Setup, worker/scheduler, auth recovery, fake/offline modes, CI and next-agent work | Fresh environment can run web tests/UI without Rust or host mutation |
+
+#### Web acceptance matrix
+
+- Guest cannot access app/resource/task/audit or privileged Livewire actions.
+- Ordinary user and admin with absent/stale MFA/recent-auth proof cannot bypass gates.
+- Bootstrap remains one-time; password/MFA recovery does not create/promote accounts
+  or reopen setup. Recovery-code use/rotation and role change revoke stale authority.
+- App CRUD persists revisions and secret references; unsafe identifiers/URLs/domains
+  fail safely. Credential/key replacement never leaks prior values or corrupts them.
+- Direct HTTP/Livewire ID/status/actor/capability tampering cannot change authority.
+- Task double-submit/duplicate jobs/retries preserve one approved immutable intent.
+- Queued work rechecks actor/MFA/config/capability/approval expiry before mutation.
+- Browser disconnect and queue worker interruption leave durable inspectable history.
+- Lost receipt/unknown execution does not cause blind replay; cancellation is accurate.
+- Logs and audit are bounded/escaped/redacted, including Laravel failed-job payloads.
+- Fake mode is explicit, reproducible and rejected in production; it cannot mark real
+  applied state. Default unavailable mode never executes a privileged operation.
+- Livewire middleware persists for update requests; real CSRF rejection has evidence.
+- SQLite polling/write behavior is bounded. Measure basic contention using concurrent
+  panel requests/workers only in a disposable development test DB, not the user's data.
+- Both runtime CI jobs pass using committed lockfiles. No Rust tools/host installer
+  are needed. No feature is advertised as actually provisioning the Linux server.
+
+#### Files/documents to deliver at the gate
+
+Create these only when the underlying implementation is ready:
+
+- `docs/web-development.md`: exact local setup, port 9000, mode selection, queue and
+  scheduler commands, migration/key handling and focused/full test commands.
+- `docs/authentication.md`: bootstrap, login/MFA states, recovery procedures, session
+  revocation and known deployment prerequisites (HTTPS/cookies/time synchronization).
+- `docs/agent-integration.md`: each PHP method and operation -> request/response
+  schema -> fixtures -> resource ID source -> permission/approval -> recovery behavior.
+- `contracts/v1/README.md`: protocol/dialect version, errors, size/time limits,
+  capabilities, idempotency semantics, cancellation and unknown-state handling.
+- `docs/web-milestone.md`: passed gates, exact CI run/commit, manual checks actually
+  performed, remaining host/VM gates, pending user decisions and the first Rust slice.
+- `plan.md`: phase 1–9 status, unresolved blockers and concise final resume card.
+
+The future Rust implementer should be able to take one operation fixture and see
+its exact input validation, managed-resource lookup requirement, expected errors,
+idempotency boundary, privilege/user context, bounded output and rollback limitations.
+They must independently validate these; the PHP schema is not the root trust boundary.
+
+Phase 9 is complete only after the web acceptance matrix and actual CI/manual checks
+have evidence. Public beta still requires later genuine agent/installer/upgrade/TLS/
+restore and isolation validation on supported VMs. Preserve those gates in phases
+10 onward; do not relabel this web milestone as a functioning whole-VPS product.
+
+### 9.12 Decision checkpoints and economical order of execution
+
+Resolve material decisions just before they matter:
+
+| When | Decision to confirm | Independent progress allowed |
+|---|---|---|
+| P2.2 | First-party Fortify project-local dependency and compatible version | Route/view/access-gate design; never implement ad-hoc MFA crypto |
+| P3.1 | Final initial operation shape/limits if implementation reveals a conflict | DTO/fixture tests and unavailable adapter |
+| P6.3 | Required Git providers and HTTPS-token/SSH-key authentication modes | Public source metadata, secret-storage helper and reference model |
+| P8.3 | User-supplied certificate input/passphrase requirements | HTTP-01 domain configuration and offline/fake TLS views |
+| P8.4 / later phase 18 | MariaDB versus PostgreSQL first managed engine | Catalog-driven UI with no real provisioning claims |
+| P9 gate | Actual remaining browser/test environment access | Automated PHP/contract/task checks and precise blocked-check record |
+| Later phases | Product domain, signing/hosting, license, disposable VM/agent environment | Web-only work is not blocked by these earlier than necessary |
+
+Recommended sequence: P2.2–P2.6 -> P3.1–P3.5 -> P4.1–P4.6 -> P5.1–P5.3 ->
+P6.1–P6.5 -> P7.1–P7.5 -> P8.1–P8.6 -> P5.4/P9.1–P9.5 final review. Accessibility
+and authorization are built into each feature; the final pass verifies the assembled
+product rather than delaying them. Keep the fake end-to-end workflow coherent
+before adding another administration screen. Stop at phase 9.

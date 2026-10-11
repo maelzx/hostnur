@@ -27,6 +27,10 @@ Phase 1 is complete; one-time CLI administrator bootstrap is implemented. See
 [`panel/README.md`](panel/README.md) for setup instructions. Web login is next.
 Run outcomes and the session handoff are recorded in `plan.md`.
 
+For DeepSeek continuation, start with **`plan.md` section 9.1**, then the selected
+phase's detailed slice. Section 9 provides the complete web-only implementation
+handoff through phase 9, including file/data maps, tests and acceptance gates.
+
 Web development comes first; Rust development is deferred to a prepared environment
 after the web milestone. Current development uses the existing runtimes/tools.
 
