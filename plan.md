@@ -471,6 +471,10 @@ ask only when the choice materially changes scope, cost, access, or product beha
   recent auth to regenerate codes (P2.4/P2.5). Fortify's own `/user/two-factor-*`
   HTTP endpoints remain reachable by the single authenticated administrator; the
   UI uses the actions directly and no non-admin can authenticate.
+- Feature commit `a991456` pushed; remote CI **passed** for PHP 8.3/Node 24 and
+  PHP 8.4/Node 24 (locked installs, static gates, asset build, migration,
+  template/queue and tests): <https://github.com/maelzx/hostnur/actions/runs/38147195019>,
+  verified with `gh run watch 38147195019 --exit-status`.
 - Next slice: **P2.4** (MFA login challenge) from section 9.4.
 
 ### Session 008 — P2.2 login/logout foundation (2026-10-11)
