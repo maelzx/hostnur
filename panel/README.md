@@ -1,9 +1,9 @@
 # Hostnur web panel
 
-Laravel 13, Livewire 4, Blade and Tailwind 4. The current root page is a
-non-interactive development foundation. One-time CLI administrator setup is
-available; web login/MFA and real server operations follow in the
-[project plan](../plan.md).
+Laravel 13, Livewire 4, Blade and Tailwind 4. One-time CLI administrator setup,
+administrator login/logout and a restricted post-login panel placeholder are
+available. Multi-factor authentication, account recovery and real server
+operations follow in the [project plan](../plan.md).
 
 ## Local setup
 
@@ -59,8 +59,12 @@ be repeated or reopened by deleting the administrator. Missing setup state is
 not silently recreated and existing accounts are not promoted or overwritten.
 `--no-interaction` cannot create an account.
 
-There is no public registration/setup route. Web login, MFA and account recovery
-are upcoming slices; creating the account does not yet unlock a web dashboard.
+There is no public registration/setup route. Web login/logout is implemented
+using Laravel Fortify; only the existing administrator account can authenticate,
+and non-admin or unknown accounts receive the same generic failure. Successful
+sign-in lands on the restricted `/panel` placeholder, which confirms the
+administrator session but exposes no operations. MFA and account recovery are
+upcoming slices, so the placeholder is not yet MFA-gated.
 
 ## Run
 
@@ -79,8 +83,10 @@ npm run dev
 php artisan queue:work --no-interaction
 ```
 
-Stop processes with Ctrl+C. The root page reports the agent as not connected;
-it does not present simulated host metrics or offer privileged actions.
+Stop processes with Ctrl+C. Guests hitting `/` or `/panel` are sent to `/login`;
+the panel page reports the administrator session and that MFA, the agent and
+privileged operations are not available yet. It does not present simulated host
+metrics or offer privileged actions.
 
 ## Checks
 
@@ -97,12 +103,19 @@ npm run build
 ```
 
 Sessions 004–006 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
-24.12.0 and npm 11.6.2. The suite contains 20 administrator-bootstrap tests plus
-two scaffold baseline tests. Run bootstrap tests alone with:
+24.12.0 and npm 11.6.2. The suite contains 20 administrator-bootstrap tests, 14
+authentication tests and two scaffold baseline tests. Run the authentication
+tests alone with:
 
 ```bash
+php artisan test --compact tests/Feature/AuthenticationTest.php
 php artisan test --compact tests/Feature/BootstrapAdministratorTest.php
 ```
+
+Authentication tests use isolated in-memory SQLite and cover guest redirects,
+admin-only login, generic failures, immediate role removal, session ID rotation,
+logout/session invalidation, named rate limiting with expiry and a
+production-like CSRF rejection check. They never create your real administrator.
 
 Bootstrap tests use isolated in-memory SQLite, including interleaved setup writes,
 rollback and secret-output checks; they do not create your real administrator.

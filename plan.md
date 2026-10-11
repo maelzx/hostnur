@@ -193,8 +193,8 @@ session's numbering. All phases after 1 are pending unless explicitly noted.
   PHP 8.3/8.4 CI checks use documented versions. No Rust job gates web CI.
 
 ### Phase 2 — Administrator onboarding, authentication and MFA
-- Status: in progress; one-time CLI bootstrap complete and CI-verified in session
-  006. Web login/logout, MFA/recovery and reauthentication remain.
+- Status: in progress; one-time CLI bootstrap (session 006) and P2.2 web
+  login/logout (session 008) complete. MFA/recovery and reauthentication remain.
 - Depends on: 1.
 - Slices: local one-time administrator bootstrap, login, TOTP/recovery codes,
   sessions, rate limits, CSRF and reauthentication for consequential changes.
@@ -388,7 +388,7 @@ ask only when the choice materially changes scope, cost, access, or product beha
 | Decision | Proposed direction / outstanding question | Resolve by |
 |---|---|---|
 | Web framework/tool compatibility | Use installed tools without upgrades; verify actual dependency resolution/lockfiles; PHP 8.3 checks belong in CI | Phase 1 |
-| Authentication pipeline | Proposed first-party Fortify for session/TOTP/recovery; not installed; confirm project-local dependency before adding it | P2.2, section 9.4 |
+| Authentication pipeline | First-party Fortify **v1.41.0 installed/locked** (session 008, approved) for session/TOTP/recovery; features enabled per slice | Resolved; revisit at P2.3+ |
 | Rust environment | User supplies prepared environment; recheck stored pin/MSRV before implementation | Phase 10 |
 | Protocol framing and registry | Proposed length-prefixed JSON on UDS and agent-owned registry; finalize with Rust implementation | Schema in 3; transport in 11 |
 | Git credentials | Read-only deploy keys and/or scoped HTTPS tokens, verified host keys, no credential in repository URL; confirm providers/auth modes | Config in 6; execution in 13 |
@@ -421,6 +421,48 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 008 — P2.2 login/logout foundation (2026-10-11)
+
+- User approved adding the project-local `laravel/fortify` dependency (the P2.2
+  checkpoint from section 9.4). Installed **v1.41.0** with `^1.41` and committed
+  the lock; verified from Packagist metadata that it requires PHP `^8.2` and
+  `illuminate/support ^11.0|^12.0|^13.0` (the local `composer show -a` text showed
+  stale constraints, so the lockfile resolution and Packagist JSON were used).
+- Implemented the P2.2 slice: app-owned GET `/login` Livewire screen plus Fortify's
+  POST login/logout endpoints, a guest/administrator-gated `/panel` placeholder and
+  the root redirect. Only Fortify's base login/logout routes are active; its
+  optional features array is empty and `views => false` prevents unimplemented
+  Fortify login/two-factor/password-confirm view routes from being registered.
+- `Fortify::authenticateUsing` authenticates only an existing `is_admin` account;
+  unknown email, ordinary account and wrong password all fail with the same generic
+  `auth.failed` message. Email is trimmed and lowercased to match the bootstrap
+  command. No remember-me; Fortify regenerates the session ID after login and
+  invalidates the session plus regenerates the CSRF token on logout.
+- Named `login` limiter: 5 attempts/minute per normalized email + IP and 30/minute
+  per IP, configured in `App\Providers\FortifyServiceProvider`; `EnsureAdministrator`
+  re-reads the database user each request so role removal takes effect immediately.
+- Files: `config/fortify.php`; `app/Providers/FortifyServiceProvider.php` (registered
+  in `bootstrap/providers.php`); `app/Http/Middleware/EnsureAdministrator.php`
+  (alias in `bootstrap/app.php`); `app/Http/Controllers/HomeController.php`;
+  `app/Livewire/Auth/Login.php`, `app/Livewire/Panel/Dashboard.php` and their views;
+  rewrote `routes/web.php`; removed the obsolete public `App\Livewire\Foundation`
+  component/view; updated `README.md` and `AGENTS.md`.
+- Focused checks: `php artisan test --compact tests/Feature/AuthenticationTest.php`
+  — **14 tests / 60 assertions passed**. Full `php artisan test --compact` —
+  **36 tests / 216 assertions passed**. `vendor/bin/pint`, `composer check:syntax`,
+  `composer check:style`, `composer validate` (known license warning),
+  `composer check-platform-reqs`, `composer audit`, `npm audit` and `npm run build`
+  passed. `php artisan route:list` confirmed app `login`/`panel.dashboard` plus
+  Fortify `login.store`/`logout`; `view:cache` succeeded. Real HTTP smoke on an
+  isolated port: `/` and `/panel` returned 302 to `/login`, `/login` returned 200
+  with a CSRF token. The user's port 9000 server and database were not touched.
+- CSRF is verified the way the phase requires: the framework skips CSRF under the
+  testing environment, so a production-like test flips the app env and asserts a
+  419 for login/logout POSTs without a token. MFA is not implemented yet, so the
+  `/panel` placeholder is deliberately not MFA-gated and exposes no operations;
+  Livewire-update middleware persistence is deferred until a component mutates state.
+- Next slice: **P2.3** (MFA enrollment) from section 9.4. Phase 2 remains in progress.
 
 ### Session 007 — Detailed DeepSeek handoff (2026-10-11)
 
@@ -624,11 +666,11 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ### Next session's single slice
 
-Use the **DeepSeek starter prompt in section 9.1** and implement **P2.2** from
-section 9.4. Read the authentication-package checkpoint before changing dependencies.
-Finish one slice, record exact checks and the next slice ID, commit/push and stop.
-Phase 1 is complete with successful real PHP 8.3/8.4 CI. Port 9000 is the selected
-local panel port; Rust remains deferred.
+Use the **DeepSeek starter prompt in section 9.1** and implement **P2.3** from
+section 9.4 (MFA enrollment; the auth dependency decision is settled — Fortify is
+installed). Finish one slice, record exact checks and the next slice ID, commit/push
+and stop. Phase 1 is complete with successful real PHP 8.3/8.4 CI. Port 9000 is the
+selected local panel port; Rust remains deferred.
 
 ### Current blockers
 
@@ -653,23 +695,25 @@ local panel port; Rust remains deferred.
 | Item | Existing implementation / evidence |
 |---|---|
 | Web foundation | `panel/`; Laravel 13.35.0, Livewire 4.4.7, Tailwind 4.3.3, Vite 8.3.4 |
-| Current browser entry | `routes/web.php`: named `home` route `/` -> `App\Livewire\Foundation`; informational page only |
+| Current browser entry | `routes/web.php`: `/` redirects guests to `login` and admins to `/panel`; `App\Livewire\Auth\Login` and `App\Livewire\Panel\Dashboard` |
 | Layout/assets | `resources/views/layouts/app.blade.php`, `resources/css/app.css`, `vite.config.js`; Livewire supplies Alpine |
 | Database | SQLite; database sessions/cache/queue; baseline user/cache/job migrations |
 | Administrator bootstrap | `app/Console/Commands/BootstrapAdministrator.php`; `hostnur:admin:bootstrap` |
 | Bootstrap state | `2026_10_11_131611_add_administrator_bootstrap_state.php`; `users.is_admin` defaults false; `panel_setup` row 1 records completion |
+| Authentication | `laravel/fortify` v1.41.0; admin-only POST login/logout, `EnsureAdministrator` middleware, named login limiter; no MFA yet |
 | User model | `app/Models/User.php`; hashed password cast, boolean admin cast; admin flag excluded from mass assignment |
-| Tests | 20 bootstrap feature tests and 2 scaffold tests; 22 tests / 155 assertions at handoff |
+| Tests | 20 bootstrap, 14 authentication and 2 scaffold tests; 36 tests / 216 assertions at handoff |
 | CI | `.github/workflows/web-panel.yml`; PHP 8.3/8.4, Node 24, actual runtime/static/build/migration/test gates |
-| Last application CI | Passed: <https://github.com/maelzx/hostnur/actions/runs/38142904116>, code commit `3939afd` |
+| Last application CI | Session 007 code passed: <https://github.com/maelzx/hostnur/actions/runs/38142904116>, code commit `3939afd` |
 | Current local URL | `http://127.0.0.1:9000`; committed example uses port 9000 |
-| Remaining work | Web login/MFA, agent abstractions, tasks/audit, dashboard and all app/server-management flows |
+| Remaining work | MFA/recovery, agent abstractions, tasks/audit, dashboard and all app/server-management flows |
 
 Do not scaffold again, regenerate the app key, reset the database, create test
 users in the real DB, reinstall Boost, or install Rust. The last inspection found
 zero real users, but the user may have subsequently run bootstrap. Inspect state
-read-only when necessary; never assume the account needs recreating. There is no
-login route, dashboard, agent client or application-management schema yet.
+read-only when necessary; never assume the account needs recreating. Login/logout
+exist; MFA, dashboard operations, agent client and application-management schema
+do not.
 
 #### Low-cost session protocol
 
@@ -835,7 +879,7 @@ stay accurate. No production installer claim follows from this phase.
 
 ### 9.4 Phase 2 — Administrator authentication, MFA and recovery
 
-**Status: P2.1 done; next item P2.2.** Existing bootstrap is the only account-creation
+**Status: P2.2 done; next item P2.3.** Existing bootstrap is the only account-creation
 path. Preserve its command, password policy, `panel_setup` marker and atomic tests.
 Do not promote existing ordinary accounts, add web registration, seed credentials
 or reset that marker when building login/recovery.
@@ -846,7 +890,9 @@ Recommended approach: Laravel's session guard and first-party **Laravel Fortify*
 for the login/logout/password-confirmation/TOTP/recovery pipeline, with Hostnur
 Blade/Livewire screens and custom administrator/MFA gates. Reuse established
 authentication/TOTP logic rather than writing cryptography or creating a second
-competing login backend. Fortify is **not installed** at this handoff.
+competing login backend. Fortify **v1.41.0** is installed and locked as of session
+008 (dependency approved by the user); with `views => false` and an empty features
+array, only the base login/logout routes are active until later slices enable more.
 
 Before adding it, confirm this one project-local dependency with the user, following
 the repository dependency-approval rule. Inspect its actual Laravel 13 compatibility

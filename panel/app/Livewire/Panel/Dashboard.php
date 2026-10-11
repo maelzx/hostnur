@@ -1,16 +1,16 @@
 <?php
 
-namespace App\Livewire;
+namespace App\Livewire\Panel;
 
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
 #[Layout('layouts.app')]
-class Foundation extends Component
+class Dashboard extends Component
 {
     public function render(): View
     {
-        return view('livewire.foundation');
+        return view('livewire.panel.dashboard');
     }
 }

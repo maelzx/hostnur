@@ -23,9 +23,10 @@ LTS on amd64, with PHP/Laravel as the first hosted application workflow.
 SQLite and database-backed queues. Local setup/run instructions are in
 [`panel/README.md`](panel/README.md); the selected local port is **9000**.
 Web-only GitHub Actions and syntax/style gates pass on PHP 8.3/8.4 and Node 24.
-Phase 1 is complete; one-time CLI administrator bootstrap is implemented. See
-[`panel/README.md`](panel/README.md) for setup instructions. Web login is next.
-Run outcomes and the session handoff are recorded in `plan.md`.
+Phase 1 is complete; one-time CLI administrator bootstrap and administrator
+login/logout (Laravel Fortify) are implemented. See
+[`panel/README.md`](panel/README.md) for setup instructions. MFA and recovery are
+next. Run outcomes and the session handoff are recorded in `plan.md`.
 
 For DeepSeek continuation, start with **`plan.md` section 9.1**, then the selected
 phase's detailed slice. Section 9 provides the complete web-only implementation
@@ -34,7 +35,8 @@ handoff through phase 9, including file/data maps, tests and acceptance gates.
 Web development comes first; Rust development is deferred to a prepared environment
 after the web milestone. Current development uses the existing runtimes/tools.
 
-The root page is a non-interactive scaffold and reports the agent as disconnected.
-Later web workflows will use clearly labeled local/test fixtures. Real host
-operations require agent integration and VM validation. There is no released
+The root page redirects guests to login and administrators to a restricted
+`/panel` placeholder that shows the agent as disconnected and offers no
+operations. Later web workflows will use clearly labeled local/test fixtures. Real
+host operations require agent integration and VM validation. There is no released
 installer yet.
