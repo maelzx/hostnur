@@ -18,7 +18,14 @@
             </div>
             <div>
                 <dt class="text-sm text-slate-600">Multi-factor authentication</dt>
-                <dd class="mt-1 font-medium text-amber-800">Not enforced yet — upcoming slice</dd>
+                <dd class="mt-1 font-medium {{ auth()->user()?->hasEnabledTwoFactorAuthentication() ? 'text-emerald-800' : 'text-amber-800' }}">
+                    {{ auth()->user()?->hasEnabledTwoFactorAuthentication() ? 'Enabled and confirmed' : 'Not enabled' }}
+                </dd>
+                <dd class="mt-1 text-sm">
+                    <a href="{{ route('panel.security.mfa') }}" class="font-medium text-indigo-700 hover:underline">
+                        {{ auth()->user()?->hasEnabledTwoFactorAuthentication() ? 'Review settings' : 'Set up multi-factor authentication' }}
+                    </a>
+                </dd>
             </div>
             <div>
                 <dt class="text-sm text-slate-600">Agent connection</dt>
@@ -29,6 +36,11 @@
                 <dd class="mt-1 font-medium text-amber-800">None available yet</dd>
             </div>
         </dl>
+        <p class="mt-6 text-sm leading-6 text-slate-600">
+            Login enforcement of multi-factor authentication, operation history and
+            server management arrive in later slices. No privileged actions are
+            available yet.
+        </p>
     </section>
 
     <form method="POST" action="{{ route('logout') }}" class="mt-6">

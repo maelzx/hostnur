@@ -13,8 +13,9 @@
 - Use Blade/Livewire and Tailwind. Livewire bundles Alpine; do not load it twice.
   HTMX belongs only in a separately owned flow when a concrete need arises.
 - The root page redirects guests to login and administrators to `/panel`.
-  `hostnur:admin:bootstrap` and Laravel Fortify login/logout are implemented; the
-  `/panel` placeholder is not yet MFA-gated and MFA is the next slice.
+  `hostnur:admin:bootstrap`, Laravel Fortify login/logout and MFA enrollment
+  (`/panel/security/mfa`) are implemented. Login enforcement of MFA (the
+  challenge) is the next slice; `/panel` is not yet MFA-gated.
 - Bootstrap uses `panel_setup` as durable one-time state, claimed in the same DB
   transaction as user creation. Do not turn deletion or repeat bootstrap into a
   reset mechanism. `is_admin` defaults false and is not mass assignable.

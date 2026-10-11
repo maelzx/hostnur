@@ -1,5 +1,10 @@
 <?php
 
+use Laravel\Fortify\Actions\AttemptToAuthenticate;
+use Laravel\Fortify\Actions\CanonicalizeUsername;
+use Laravel\Fortify\Actions\PrepareAuthenticatedSession;
+use Laravel\Fortify\Features;
+
 return [
 
     /*
@@ -47,6 +52,27 @@ return [
     'domain' => null,
 
     'middleware' => ['web'],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Login Pipeline
+    |--------------------------------------------------------------------------
+    |
+    | Hostnur authenticates through an administrator-only callback and its own
+    | named rate limiter. Two-factor login enforcement is intentionally omitted
+    | from this pipeline until P2.4 adds the challenge screen; P2.4 will add
+    | RedirectsIfTwoFactorAuthenticatable here. Until then an enrolled
+    | administrator still signs in with a password only.
+    |
+    */
+
+    'pipelines' => [
+        'login' => [
+            CanonicalizeUsername::class,
+            AttemptToAuthenticate::class,
+            PrepareAuthenticatedSession::class,
+        ],
+    ],
 
     /*
     |--------------------------------------------------------------------------
@@ -101,14 +127,20 @@ return [
     |--------------------------------------------------------------------------
     |
     | Login and logout are part of Fortify's base routes and are always
-    | available. Optional features are added only when their slice implements
-    | them: registration, password reset, email verification, profile/password
-    | updates, two-factor authentication and passkeys remain disabled.
+    | available. Two-factor authentication enrollment is enabled with required
+    | confirmation and a single-step TOTP window; recent-password confirmation
+    | for sensitive changes arrives in P2.5, and login enforcement in P2.4.
+    | Registration, password reset, email verification, profile/password
+    | updates and passkeys remain disabled.
     |
     */
 
     'features' => [
-        //
+        Features::twoFactorAuthentication([
+            'confirm' => true,
+            'confirmPassword' => false,
+            'window' => 1,
+        ]),
     ],
 
 ];

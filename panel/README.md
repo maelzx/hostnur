@@ -1,9 +1,10 @@
 # Hostnur web panel
 
 Laravel 13, Livewire 4, Blade and Tailwind 4. One-time CLI administrator setup,
-administrator login/logout and a restricted post-login panel placeholder are
-available. Multi-factor authentication, account recovery and real server
-operations follow in the [project plan](../plan.md).
+administrator login/logout, a restricted post-login panel placeholder and
+multi-factor authentication enrollment (TOTP plus recovery codes) are available.
+Login enforcement of MFA, account recovery and real server operations follow in
+the [project plan](../plan.md).
 
 ## Local setup
 
@@ -63,8 +64,12 @@ There is no public registration/setup route. Web login/logout is implemented
 using Laravel Fortify; only the existing administrator account can authenticate,
 and non-admin or unknown accounts receive the same generic failure. Successful
 sign-in lands on the restricted `/panel` placeholder, which confirms the
-administrator session but exposes no operations. MFA and account recovery are
-upcoming slices, so the placeholder is not yet MFA-gated.
+administrator session but exposes no operations. Multi-factor authentication can
+be enrolled at `/panel/security/mfa`: the encrypted TOTP secret, locally rendered
+QR code and one-time recovery codes are shown only during setup, and a valid
+authenticator code must confirm the configuration. Secrets are never serialized
+by the user model. Login enforcement of MFA, account recovery and recent
+reauthentication are upcoming slices.
 
 ## Run
 
@@ -83,10 +88,11 @@ npm run dev
 php artisan queue:work --no-interaction
 ```
 
-Stop processes with Ctrl+C. Guests hitting `/` or `/panel` are sent to `/login`;
-the panel page reports the administrator session and that MFA, the agent and
-privileged operations are not available yet. It does not present simulated host
-metrics or offer privileged actions.
+Stop processes with Ctrl+C. Guests hitting `/`, `/panel` or `/panel/security/mfa`
+are sent to `/login`. The panel page reports the administrator session and MFA
+status and links to `/panel/security/mfa`; it notes that login enforcement, the
+agent and privileged operations are not available yet. It does not present
+simulated host metrics or offer privileged actions.
 
 ## Checks
 
@@ -102,13 +108,14 @@ npm audit
 npm run build
 ```
 
-Sessions 004–006 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
+Sessions 004–009 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
 24.12.0 and npm 11.6.2. The suite contains 20 administrator-bootstrap tests, 14
-authentication tests and two scaffold baseline tests. Run the authentication
-tests alone with:
+authentication tests, 12 MFA-enrollment tests and two scaffold baseline tests.
+Run individual suites with:
 
 ```bash
 php artisan test --compact tests/Feature/AuthenticationTest.php
+php artisan test --compact tests/Feature/MfaEnrollmentTest.php
 php artisan test --compact tests/Feature/BootstrapAdministratorTest.php
 ```
 
@@ -116,6 +123,12 @@ Authentication tests use isolated in-memory SQLite and cover guest redirects,
 admin-only login, generic failures, immediate role removal, session ID rotation,
 logout/session invalidation, named rate limiting with expiry and a
 production-like CSRF rejection check. They never create your real administrator.
+
+MFA-enrollment tests use isolated in-memory SQLite and cover the administrator
+gate, encrypted secret/recovery-code storage, hidden serialization, wrong and
+malformed codes, leading-zero preservation, confirmation state and the
+show-once behavior. They use Fortify's encrypted storage, so the application key
+(`APP_KEY`) must be present; they never touch your real administrator.
 
 Bootstrap tests use isolated in-memory SQLite, including interleaved setup writes,
 rollback and secret-output checks; they do not create your real administrator.
