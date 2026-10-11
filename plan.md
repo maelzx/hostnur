@@ -186,7 +186,8 @@ session's numbering. All phases after 1 are pending unless explicitly noted.
   PHP 8.3/8.4 CI checks use documented versions. No Rust job gates web CI.
 
 ### Phase 2 — Administrator onboarding, authentication and MFA
-- Status: in progress; session 006 is the one-time CLI bootstrap slice.
+- Status: in progress; one-time CLI bootstrap complete and CI-verified in session
+  006. Web login/logout, MFA/recovery and reauthentication remain.
 - Depends on: 1.
 - Slices: local one-time administrator bootstrap, login, TOTP/recovery codes,
   sessions, rate limits, CSRF and reauthentication for consequential changes.
@@ -438,8 +439,14 @@ ask only when the choice materially changes scope, cost, access, or product beha
   `php artisan migrate:status --no-interaction`, `php artisan db:show --counts
   --no-interaction` and command `--help`: migration ran, one setup-state row exists,
   zero users, and no password/force option. User must select credentials interactively.
-- Updated panel/root README and project guidance. Commit/push feature and inspect
-  PHP 8.3/8.4 CI, then save the final run result as a documentation checkpoint.
+- Updated panel/root README and project guidance. Feature commit `3939afd` pushed.
+- Remote CI **passed** for PHP 8.3/Node 24 and PHP 8.4/Node 24, including locked
+  installs, static gates, asset build, new migration, template/queue checks and tests:
+  <https://github.com/maelzx/hostnur/actions/runs/38142904116>.
+- Verified with `gh run watch 38142904116 --exit-status --interval 30`. Bootstrap
+  slice is complete; phase 2 remains in progress for login/MFA and recovery work.
+- Publication: save/push this documentation-only checkpoint. No application code
+  changes follow the successful CI run.
 
 ### Session 005 — Web-only CI and static checks (2026-10-11)
 
@@ -590,8 +597,8 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ### Next session's single slice
 
-Begin **phase 2, slice 2: administrator web login and logout** once session 006 CI
-passes. Add the login form, administrator-only authorization, rate limiting,
+Begin **phase 2, slice 2: administrator web login and logout**. Session 006 CI
+passed. Add the login form, administrator-only authorization, rate limiting,
 session rotation on login and invalidation on logout, CSRF and isolated tests.
 Use the bootstrapped account; do not add public registration or default credentials.
 Define the next MFA-enrollment gate so login alone will not grant production
