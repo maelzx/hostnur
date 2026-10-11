@@ -37,6 +37,12 @@ when this plan was created.
 | Session size | One small, verified slice per session, then handoff and commit/push | Clarification, 2026-10-11 |
 | Destructive validation | Disposable Ubuntu VM; VM will be supplied later | Clarification, 2026-10-11 |
 
+Engineering baseline selected in session 002: Laravel 13, Livewire 4, Tailwind 4,
+PHP minimum 8.3 (local 8.4 allowed), Composer 2.10.3+, Node 24 LTS, Rust/Cargo
+1.99.0 with initial MSRV 1.99 and edition 2024. See
+[`docs/development-toolchain.md`](docs/development-toolchain.md) for evidence,
+prerequisites, and the distinction between selected and actually validated versions.
+
 ### Beta boundary
 
 The first public beta must include installation, safe administrator onboarding,
@@ -127,16 +133,18 @@ do not assume the last attempted operation completed.
 ## 5. Phased roadmap
 
 Status values: **pending**, **in progress**, **blocked**, **complete**. A phase is
-complete only when its exit checks pass. All implementation phases are currently
-pending. Dependencies reference phase numbers; partial scaffolding can happen
+complete only when its exit checks pass. Phase 1 is in progress; later implementation
+phases are pending. Dependencies reference phase numbers; partial scaffolding can happen
 earlier, but dependencies must pass before declaring the dependent phase complete.
 
 ### Phase 0 — Requirements, decisions, and session protocol
 - Scope: review the source, clarify priorities, record this phased plan and handoff.
 - Exit: decisions and remaining questions documented; planning committed/pushed.
-- Status: planning content complete; session closes after verified commit/push.
+- Status: complete; planning commit `f654136` was pushed and remote-verified.
 
 ### Phase 1 — Monorepo and reproducible development foundation
+- Status: in progress; toolchain/compatibility baseline slice complete in session
+  002. Tool provisioning, runnable scaffolds, lockfiles and CI remain.
 - Depends on: 0.
 - Slices: inspect PHP/Composer/Node/Rust toolchains; choose mutually compatible,
   supported Laravel/Livewire/PHP versions and an MSRV; scaffold panel and agent;
@@ -320,7 +328,7 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 | Decision | Proposed direction / outstanding question | Resolve by |
 |---|---|---|
-| Framework/tool versions | Inspect tools and choose supported Laravel/Livewire/PHP/Node/Rust versions compatible with packaged Ubuntu dependencies; record exact versions | Phase 1 |
+| Framework/tool versions | Baseline selected in session 002; verify resolved dependencies, lockfiles, actual PHP 8.3/8.4 runtime checks and pinned Rust build | Remaining phase 1 slices |
 | Protocol framing and registry | Bounded length-prefixed JSON on UDS; agent-owned durable registry; compare implementation complexity and recovery needs | Phases 2–3 |
 | Git credentials | Prefer read-only per-repository deploy keys and/or scoped HTTPS tokens, verified host keys, no credential in repository URL; confirm required Git providers and auth modes | Phase 8 |
 | App database engine | MariaDB is a proposed first engine for Laravel users; confirm MariaDB versus PostgreSQL | Phase 14 |
@@ -353,6 +361,27 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ## 8. Current handoff
 
+### Session 002 — Toolchain and compatibility baseline (2026-10-11)
+
+- Completed slice: inspected installed tools, selected compatible framework/tool
+  versions, and documented prerequisites in `docs/development-toolchain.md`.
+- Inspection: PHP 8.4.26, Composer 2.9.2, Node 24.12.0, npm 11.6.2 and Git
+  2.43.0 are available. Rust/Cargo/rustup, Docker and QEMU are absent from PATH.
+- PHP extension probe passed for all required extensions; SQLite is 3.45.1.
+- Selected Laravel 13/Livewire 4/Tailwind 4, PHP 8.3+, Composer 2.10.3+, Node 24
+  LTS and Rust 1.99.0. Added `.nvmrc`, `rust-toolchain.toml`, and project README.
+- Validation executed: tool `--version` probes, `php -m`, PHP extension/SQLite/PDO
+  probe, `php --ini`, `uname -sm`, and `composer diagnose`. The Composer diagnostic
+  has failures/warnings: missing verification keys and advisories in the installed
+  Composer 2.9.2. Packagist/GitHub connectivity passed.
+- Checked upstream Laravel release policy and scaffold metadata, Livewire Composer
+  compatibility, Ubuntu PHP package metadata, and the Rust stable manifest.
+- Reviewed all new documentation/version files; `git diff --check` passed.
+- No applications scaffolded, tools installed, application tests run, or VM gates
+  executed. This session completes only the baseline slice, not phase 1.
+- Publication: commit/push at session close; verify this session's commit on
+  `origin/main`. The final response records the push outcome.
+
 ### Session 001 — Planning (2026-10-11)
 
 - Reviewed all 571 lines of `vps-control-panel-plan.md` and repository state.
@@ -370,16 +399,17 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ### Next session's single slice
 
-Begin **phase 1, slice 1: toolchain and compatibility baseline**. Inspect available
-PHP/Composer/Node/Rust tooling, select and document compatible version requirements,
-then scaffold only the minimal independently runnable Laravel panel and Rust agent
-if that fits the slice. If scaffolding requires substantial environment setup,
-finish the baseline and leave scaffolding as the next explicit slice. Record exact
+Begin **phase 1, slice 2: provision development tools**. Obtain a verified user-local
+Composer 2.10.3+ with verification keys, check/use patched Node 24, install pinned
+Rust 1.99.0 plus rustfmt/Clippy, and repeat the relevant diagnostics. Keep the setup
+user-local and record executable paths for the next session. Once tool checks pass,
+the following slice is minimal Laravel/Livewire and Rust scaffolding. Record exact
 commands/results, update this handoff, commit, push, and stop at the checkpoint.
 
 ### Current blockers
 
-- No blocker to local foundation work.
+- PHP and Node are present, but Composer tooling needs updating/key setup and Rust
+  is missing. Resolve these prerequisites before dependency installation/scaffolding.
 - Disposable VM access is unavailable; real install/systemd/TLS/upgrade/restore
   gates remain unverified until supplied.
 - Official domain, Git authentication details, database engine, release signing,
