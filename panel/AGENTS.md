@@ -13,7 +13,10 @@
 - Use Blade/Livewire and Tailwind. Livewire bundles Alpine; do not load it twice.
   HTMX belongs only in a separately owned flow when a concrete need arises.
 - The root page is a non-interactive development foundation, not an authenticated
-  dashboard. Build administrator bootstrap/login/MFA in its planned phase.
+  dashboard. `hostnur:admin:bootstrap` is implemented; login/MFA are next slices.
+- Bootstrap uses `panel_setup` as durable one-time state, claimed in the same DB
+  transaction as user creation. Do not turn deletion or repeat bootstrap into a
+  reset mechanism. `is_admin` defaults false and is not mass assignable.
 - Keep `.env`, keys, SQLite files, logs, vendor/node_modules and generated builds
   untracked. Use committed Composer/npm lockfiles for reproducible installation.
 - Real privileged operations require the later agent; do not implement root

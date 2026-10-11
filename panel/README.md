@@ -1,8 +1,9 @@
 # Hostnur web panel
 
 Laravel 13, Livewire 4, Blade and Tailwind 4. The current root page is a
-non-interactive development foundation. Administrator onboarding, authentication
-and real server operations are scheduled in the [project plan](../plan.md).
+non-interactive development foundation. One-time CLI administrator setup is
+available; web login/MFA and real server operations follow in the
+[project plan](../plan.md).
 
 ## Local setup
 
@@ -36,6 +37,30 @@ npm run build
 The default SQLite path is resolved by Laravel. Leave `DB_DATABASE` unset unless
 using a custom path. Sessions, cache and queues use database tables supplied by
 the baseline migrations; Redis is not required.
+
+## One-time administrator setup
+
+After applying migrations, run this from `panel/` in your local/SSH terminal:
+
+```bash
+php artisan migrate --no-interaction
+php artisan hostnur:admin:bootstrap
+```
+
+Enter the administrator name, email, password and password confirmation. Password
+input is hidden, with no visible-input fallback or command-line password option.
+Use at least 12 characters and at most 72 bytes (the configured bcrypt limit).
+The name/email are trimmed and email is stored lowercase; passwords are hashed.
+
+Setup succeeds only when no accounts exist and the persistent setup marker is
+open. Account creation and closing that marker commit together. Validation or
+creation failure leaves setup open for a corrected retry; completed setup cannot
+be repeated or reopened by deleting the administrator. Missing setup state is
+not silently recreated and existing accounts are not promoted or overwritten.
+`--no-interaction` cannot create an account.
+
+There is no public registration/setup route. Web login, MFA and account recovery
+are upcoming slices; creating the account does not yet unlock a web dashboard.
 
 ## Run
 
@@ -71,10 +96,18 @@ npm audit
 npm run build
 ```
 
-Sessions 004–005 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
-24.12.0 and npm 11.6.2. The scaffold includes two baseline tests; broader tests will
-accompany their respective features. Composer resolves against platform PHP 8.3.0;
-actual PHP 8.3/8.4 execution is covered by the workflow below once its jobs pass.
+Sessions 004–006 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
+24.12.0 and npm 11.6.2. The suite contains 20 administrator-bootstrap tests plus
+two scaffold baseline tests. Run bootstrap tests alone with:
+
+```bash
+php artisan test --compact tests/Feature/BootstrapAdministratorTest.php
+```
+
+Bootstrap tests use isolated in-memory SQLite, including interleaved setup writes,
+rollback and secret-output checks; they do not create your real administrator.
+Composer resolves against platform PHP 8.3.0. Actual PHP 8.3/8.4 workflow outcomes
+are recorded in `../plan.md`.
 
 `composer validate` currently reports a missing project-license warning because
 Hostnur's license is still an open product decision. Application Composer/npm

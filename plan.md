@@ -161,8 +161,9 @@ do not assume the last attempted operation completed.
 ## 5. Phased roadmap
 
 Status values: **pending**, **in progress**, **deferred**, **blocked**, **complete**. A phase is
-complete only when its exit checks pass. Phase 1 is complete; later implementation
-phases are pending. Dependencies reference phase numbers; partial scaffolding can happen
+complete only when its exit checks pass. Phase 1 is complete and phase 2 is in
+progress; subsequent phases are pending. Dependencies reference phase numbers;
+partial scaffolding can happen
 earlier, but dependencies must pass before declaring the dependent phase complete.
 
 ### Phase 0 — Requirements, decisions, and session protocol
@@ -185,6 +186,7 @@ session's numbering. All phases after 1 are pending unless explicitly noted.
   PHP 8.3/8.4 CI checks use documented versions. No Rust job gates web CI.
 
 ### Phase 2 — Administrator onboarding, authentication and MFA
+- Status: in progress; session 006 is the one-time CLI bootstrap slice.
 - Depends on: 1.
 - Slices: local one-time administrator bootstrap, login, TOTP/recovery codes,
   sessions, rate limits, CSRF and reauthentication for consequential changes.
@@ -408,6 +410,37 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ## 8. Current handoff
 
+### Session 006 — One-time administrator bootstrap (2026-10-11)
+
+- Implemented `hostnur:admin:bootstrap`, interactive name/email plus hidden
+  password/confirmation with visible fallback disabled; there is no password flag.
+- Added `is_admin` default false/non-mass-assignable and durable `panel_setup`
+  marker. Conditional marker claim and account save occur in one DB transaction;
+  rejection, exceptions or cancelled model saves roll back the claim/account.
+- Refuses existing accounts/completed or missing state/non-interactive creation.
+  Deleting an administrator does not reopen setup. No default credentials or
+  public web setup route; login/MFA remain upcoming and port stays 9000.
+- Validates trimmed name, normalized RFC email, confirmation, password minimum
+  12 characters, maximum 72 bytes and no null bytes; stores passwords hashed and
+  does not claim the email has been verified. Error output excludes raw exceptions
+  and entered secrets.
+- Local focused suite passed: `php artisan test --compact
+  tests/Feature/BootstrapAdministratorTest.php` — 20 tests / 153 assertions.
+  Full `php artisan test --compact` — 22 tests / 155 assertions.
+- Tested validation boundaries, refusal/repeat/deletion/missing state, hashed
+  storage, role mass-assignment prevention, creation exception/cancellation
+  rollback, hidden-input settings and interleaved competing setup/account writes
+  against isolated SQLite. No real administrator created by tests.
+- Passed `vendor/bin/pint --dirty --format agent`, `composer check:syntax`,
+  `composer check:style`, `composer validate` (known license warning), and Git
+  whitespace checks. No new tools or project dependencies were installed.
+- Applied `php artisan migrate --no-interaction` to local panel DB. Verified with
+  `php artisan migrate:status --no-interaction`, `php artisan db:show --counts
+  --no-interaction` and command `--help`: migration ran, one setup-state row exists,
+  zero users, and no password/force option. User must select credentials interactively.
+- Updated panel/root README and project guidance. Commit/push feature and inspect
+  PHP 8.3/8.4 CI, then save the final run result as a documentation checkpoint.
+
 ### Session 005 — Web-only CI and static checks (2026-10-11)
 
 - Added `.github/workflows/web-panel.yml`: Ubuntu 24.04 PHP 8.3/8.4 matrix,
@@ -557,10 +590,12 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ### Next session's single slice
 
-Begin **phase 2, slice 1: one-time local
-administrator bootstrap**. Implement deliberate CLI account creation without
-default credentials/public registration, meaningful first-run/repeat-run validation,
-and tests against isolated SQLite. Login/MFA follow in separate small slices.
+Begin **phase 2, slice 2: administrator web login and logout** once session 006 CI
+passes. Add the login form, administrator-only authorization, rate limiting,
+session rotation on login and invalidation on logout, CSRF and isolated tests.
+Use the bootstrapped account; do not add public registration or default credentials.
+Define the next MFA-enrollment gate so login alone will not grant production
+administrative operations before MFA is implemented in the following slice.
 Read panel guidance first, use existing tools, update handoff, commit/push and stop.
 Phase 1 is complete with successful real PHP 8.3/8.4 CI. Port 9000 is the selected
 local panel port; Rust remains deferred.

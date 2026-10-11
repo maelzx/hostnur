@@ -23,7 +23,8 @@ LTS on amd64, with PHP/Laravel as the first hosted application workflow.
 SQLite and database-backed queues. Local setup/run instructions are in
 [`panel/README.md`](panel/README.md); the selected local port is **9000**.
 Web-only GitHub Actions and syntax/style gates pass on PHP 8.3/8.4 and Node 24.
-Phase 1 is complete; the next slice is one-time CLI administrator bootstrap.
+Phase 1 is complete; one-time CLI administrator bootstrap is implemented. See
+[`panel/README.md`](panel/README.md) for setup instructions. Web login is next.
 Run outcomes and the session handoff are recorded in `plan.md`.
 
 Web development comes first; Rust development is deferred to a prepared environment
