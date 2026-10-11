@@ -33,6 +33,11 @@
         }
     },
     "scripts": {
+        "check:syntax": "git ls-files -z -- '*.php' | xargs -0 -r -n1 php -l",
+        "check:style": [
+            "@php vendor/bin/pint --format agent",
+            "git diff --exit-code -- '*.php'"
+        ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
             "@php artisan dev"

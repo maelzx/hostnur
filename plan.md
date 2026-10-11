@@ -38,6 +38,7 @@ when this plan was created.
 | Destructive validation | Disposable Ubuntu VM; VM will be supplied later | Clarification, 2026-10-11 |
 | Development order | Web panel first; Rust development later in another prepared environment | User steering, session 003 |
 | Current environment | Use installed tools; no additional runtimes/system tools or tool upgrades | User steering, session 003 |
+| Local web port | 9000 (`php artisan serve --port=9000`) | User report, session 005 |
 
 Framework baseline: Laravel 13, Livewire 4, Tailwind 4 and PHP minimum 8.3.
 Current web development uses installed PHP 8.4.26, Composer 2.9.2, Node 24.12.0
@@ -175,8 +176,8 @@ integrate and validate real host operations. Phase numbers below replace the pri
 session's numbering. All phases after 1 are pending unless explicitly noted.
 
 ### Phase 1 — Web-only foundation
-- Status: in progress; baseline and runnable panel scaffold complete. Web-only
-  CI/static checks and actual PHP 8.3 validation remain.
+- Status: in progress; baseline, runnable scaffold and web CI/static gates added.
+  Actual remote PHP 8.3/8.4 workflow outcomes await session 005 push verification.
 - Depends on: 0.
 - Slices: Laravel 13 in `panel/`, Livewire 4, Tailwind 4/Vite, SQLite and DB queue
   defaults, lockfiles, local run instructions, formatting and web-only CI.
@@ -407,6 +408,30 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ## 8. Current handoff
 
+### Session 005 — Web-only CI and static checks (2026-10-11)
+
+- Added `.github/workflows/web-panel.yml`: Ubuntu 24.04 PHP 8.3/8.4 matrix,
+  Node 24, Composer 2.10.3, locked installs, audits, syntax/style gates, asset build,
+  isolated SQLite initialization/migrations, view compilation, queue startup/tests.
+- Triggers: pushes to `main` and pull requests affecting `panel/**`, this workflow
+  or `.nvmrc`, plus manual dispatch. Read-only workflow token, pinned action commits,
+  timeout and per-ref concurrency are configured; there are no Rust jobs.
+- Added Composer `check:syntax` and `check:style` commands with existing tools.
+  Syntax checks tracked PHP; style runs Pint then rejects uncommitted PHP drift.
+- User reports running the local panel on port 9000. Updated run instructions and
+  committed `.env.example` to 9000; user's local `.env` and running server untouched.
+- Local validation passed: `composer validate` (known license warning),
+  `composer check:syntax`, `composer check:style`, `composer check-platform-reqs`,
+  `composer audit`, `php artisan test --compact` (2 tests / 2 assertions),
+  `npm ci --no-fund`, `npm audit`, `npm run build`, and `git diff --check`.
+- Parsed workflow YAML with already installed PyYAML and checked triggers, matrix
+  and permissions. GitHub Actions is enabled on the repository. No local tools
+  installed/upgraded and no project dependencies changed.
+- Remote PHP 8.3/8.4 jobs are pending the initial commit/push; record actual run
+  URL/conclusion below after inspection before marking phase 1 complete.
+- Publication: push the workflow commit, inspect CI, then save/push its handoff
+  result in a documentation-only checkpoint.
+
 ### Session 004 — Web panel scaffolding (2026-10-11)
 
 - Completed Laravel scaffold `panel/` (upstream skeleton v13.11.0), locked Laravel
@@ -516,14 +541,13 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ### Next session's single slice
 
-Begin **phase 1, slice 3: web-only CI and static checks**. Add GitHub Actions for
-locked Composer/npm installation, PHP 8.3/8.4, Node 24, migrations/tests, PHP
-format/style and asset build. Use maintained tools in CI without modifying local
-tooling. Confirm what runs on pull requests/pushes and inspect actual CI outcomes;
-do not claim PHP 8.3 validation until its job passes. Keep Rust out of web CI.
-Handle the known license-warning status honestly until the user selects a license.
-Then update this handoff, commit, push and stop. Administrator bootstrap/login/MFA
-is the following phase, split into small slices.
+After the session 005 workflow passes, begin **phase 2, slice 1: one-time local
+administrator bootstrap**. Implement deliberate CLI account creation without
+default credentials/public registration, meaningful first-run/repeat-run validation,
+and tests against isolated SQLite. Login/MFA follow in separate small slices.
+Read panel guidance first, use existing tools, update handoff, commit/push and stop.
+If CI is blocked/failing, resolve its documented blocker before declaring phase 1
+complete. Port 9000 is the selected local panel port; Rust remains deferred.
 
 ### Current blockers
 

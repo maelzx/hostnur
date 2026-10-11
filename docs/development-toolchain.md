@@ -3,7 +3,8 @@
 Selected on 2026-10-11 during phase 1, slice 1; revised in session 003 for web-first
 development. Use installed tools without runtime/global-tool installation or
 upgrades. Application dependency resolution and builds passed in session 004;
-web CI is the next slice.
+web CI/static gates were added in session 005, with remote results recorded in
+`plan.md`.
 Rust prerequisites apply only to the later prepared agent environment.
 
 ## Selected versions
@@ -90,9 +91,10 @@ If actual incompatibility blocks a check, record it and continue independent wor
 
 ## Next web-only checkpoint
 
-The scaffold steps below were completed in session 004. Reproduction commands
-are in [`panel/README.md`](../panel/README.md). The next active checkpoint is item 4,
-web-only CI/static checks, followed by the web features in item 5.
+Scaffold steps were completed in session 004 and CI/static gates added in session
+005. Reproduction commands (local port 9000) are in
+[`panel/README.md`](../panel/README.md). Remote results are in `plan.md`; the next
+feature checkpoint is item 5 after the CI jobs pass.
 
 1. Scaffold Laravel 13 in `panel/` with installed PHP/Composer, stable constraints,
    Livewire 4 and the compatible Tailwind 4/Vite scaffold. Use scaffold PHPUnit
@@ -126,7 +128,7 @@ operations. The current machine does not need Rust, Docker, QEMU or new packages
 - Application Composer/npm audits passed. `composer validate` passed with the
   missing-license warning; strict validation awaits the license decision.
 - Local HTTP checks passed for the foundation page, health endpoint, Livewire
-  JavaScript and built CSS. Actual PHP 8.3 validation awaits CI.
+  JavaScript and built CSS. Actual PHP 8.3 validation is tracked in session 005 CI.
 - No runtime/global tools were installed/upgraded; no real host-operation VM
   validation or browser visual automation has been performed.
 

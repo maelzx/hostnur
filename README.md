@@ -21,8 +21,9 @@ LTS on amd64, with PHP/Laravel as the first hosted application workflow.
 
 `panel/` now contains a runnable Laravel 13 / Livewire 4 foundation with Tailwind 4,
 SQLite and database-backed queues. Local setup/run instructions are in
-[`panel/README.md`](panel/README.md). The next slice adds web-only CI/static checks,
-followed by administrator onboarding and authentication.
+[`panel/README.md`](panel/README.md); the selected local port is **9000**.
+Web-only GitHub Actions and syntax/style gates are configured for PHP 8.3/8.4
+and Node 24. Run outcomes and the next slice are recorded in `plan.md`.
 
 Web development comes first; Rust development is deferred to a prepared environment
 after the web milestone. Current development uses the existing runtimes/tools.
