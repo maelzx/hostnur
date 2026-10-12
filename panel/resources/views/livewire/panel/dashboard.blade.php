@@ -3,8 +3,8 @@
         <p class="mb-3 text-sm font-semibold uppercase tracking-widest text-indigo-700">{{ config('app.name') }}</p>
         <h1 class="text-3xl font-semibold tracking-tight sm:text-4xl">Administrator panel</h1>
         <p class="mt-4 max-w-2xl text-base leading-7 text-slate-600">
-            Signed in as {{ auth()->user()?->name }}. This restricted area confirms an
-            administrator session; multi-factor authentication and administrative
+            Signed in as {{ auth()->user()?->name }}. This restricted area requires a
+            confirmed multi-factor authentication session; server management
             operations are not available yet.
         </p>
     </header>
@@ -14,17 +14,13 @@
         <dl class="mt-6 grid gap-6 sm:grid-cols-2">
             <div>
                 <dt class="text-sm text-slate-600">Administrator session</dt>
-                <dd class="mt-1 font-medium text-emerald-800">Active</dd>
+                <dd class="mt-1 font-medium text-emerald-800">Active, MFA verified</dd>
             </div>
             <div>
                 <dt class="text-sm text-slate-600">Multi-factor authentication</dt>
-                <dd class="mt-1 font-medium {{ auth()->user()?->hasEnabledTwoFactorAuthentication() ? 'text-emerald-800' : 'text-amber-800' }}">
-                    {{ auth()->user()?->hasEnabledTwoFactorAuthentication() ? 'Enabled and confirmed' : 'Not enabled' }}
-                </dd>
+                <dd class="mt-1 font-medium text-emerald-800">Enabled and confirmed</dd>
                 <dd class="mt-1 text-sm">
-                    <a href="{{ route('panel.security.mfa') }}" class="font-medium text-indigo-700 hover:underline">
-                        {{ auth()->user()?->hasEnabledTwoFactorAuthentication() ? 'Review settings' : 'Set up multi-factor authentication' }}
-                    </a>
+                    <a href="{{ route('panel.security') }}" class="font-medium text-indigo-700 hover:underline">Manage security settings</a>
                 </dd>
             </div>
             <div>
@@ -37,9 +33,8 @@
             </div>
         </dl>
         <p class="mt-6 text-sm leading-6 text-slate-600">
-            Login enforcement of multi-factor authentication, operation history and
-            server management arrive in later slices. No privileged actions are
-            available yet.
+            Operation history and server management arrive in later slices. No
+            privileged actions are available yet.
         </p>
     </section>
 

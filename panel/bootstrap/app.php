@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\EnsureAdministrator;
 use App\Http\Middleware\EnsureMfaVerified;
+use App\Http\Middleware\EnsureRecentAuthentication;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -17,6 +18,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'administrator' => EnsureAdministrator::class,
             'mfa' => EnsureMfaVerified::class,
+            'recent-auth' => EnsureRecentAuthentication::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -129,17 +129,18 @@ return [
     |
     | Login and logout are part of Fortify's base routes and are always
     | available. Two-factor authentication enrollment is enabled with required
-    | confirmation and a single-step TOTP window; recent-password confirmation
-    | for sensitive changes arrives in P2.5, and login enforcement in P2.4.
-    | Registration, password reset, email verification, profile/password
-    | updates and passkeys remain disabled.
+    | confirmation and a single-step TOTP window. confirmPassword adds Laravel's
+    | password.confirm middleware to Fortify's MFA endpoints so they cannot be
+    | used to rotate MFA without recent password confirmation. Registration,
+    | password reset, email verification, profile/password updates and passkeys
+    | remain disabled.
     |
     */
 
     'features' => [
         Features::twoFactorAuthentication([
             'confirm' => true,
-            'confirmPassword' => false,
+            'confirmPassword' => true,
             'window' => 1,
         ]),
     ],

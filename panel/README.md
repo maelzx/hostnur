@@ -1,10 +1,12 @@
 # Hostnur web panel
 
 Laravel 13, Livewire 4, Blade and Tailwind 4. One-time CLI administrator setup,
-administrator login/logout, MFA enrollment and the generation-bound MFA login
-challenge are available. The restricted `/panel` area requires a confirmed,
-currently valid MFA session. Account recovery, recent reauthentication and real
-server operations follow in the [project plan](../plan.md).
+administrator login/logout, MFA enrollment, the generation-bound MFA login
+challenge and recent-password-confirmed security settings are available. The
+restricted `/panel` area requires a confirmed, currently valid MFA session, and
+sensitive security changes require a recent password confirmation. Deliberate
+local account recovery and real server operations follow in the
+[project plan](../plan.md).
 
 ## Local setup
 
@@ -73,8 +75,14 @@ Secrets are never serialized by the user model. Once confirmed, password login i
 redirected to `/two-factor-challenge`, where a current TOTP code or a single-use
 recovery code is required before `/panel` becomes reachable. The verified session
 is bound to the account and its `mfa_version` generation, so a rotated secret or
-password event invalidates it. Account recovery and recent reauthentication for
-sensitive changes are upcoming slices.
+password event invalidates it.
+
+Sensitive changes live at `/panel/security`, which requires a password confirmed
+within `HOSTNUR_RECENT_AUTH_TIMEOUT` seconds (default 300). The screen changes the
+password, disables MFA and regenerates recovery codes; changing the password or
+disabling MFA increments `mfa_version` and signs out existing sessions, while new
+recovery codes are shown only once. A deliberate local recovery runbook is the
+next slice.
 
 ## Run
 
@@ -93,11 +101,12 @@ npm run dev
 php artisan queue:work --no-interaction
 ```
 
-Stop processes with Ctrl+C. Guests hitting `/`, `/panel`, `/panel/security/mfa`
-or `/two-factor-challenge` are sent to `/login`. The panel page reports the
-administrator session and MFA status and links to `/panel/security/mfa`. It notes
-that the agent and privileged operations are not available yet, and does not
-present simulated host metrics or offer privileged actions.
+Stop processes with Ctrl+C. Guests hitting `/`, `/panel`, `/panel/security`,
+`/panel/security/mfa`, `/user/confirm-password` or `/two-factor-challenge` are
+sent to `/login`. The panel page reports the MFA-verified administrator session
+and links to `/panel/security`. It notes that the agent and privileged operations
+are not available yet, and does not present simulated host metrics or offer
+privileged actions.
 
 ## Checks
 
@@ -113,15 +122,17 @@ npm audit
 npm run build
 ```
 
-Sessions 004–010 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
+Sessions 004–011 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
 24.12.0 and npm 11.6.2. The suite contains 20 administrator-bootstrap tests, 14
-authentication tests, 12 MFA-enrollment tests, 13 MFA-challenge tests and two
-scaffold baseline tests. Run individual suites with:
+authentication tests, 12 MFA-enrollment tests, 13 MFA-challenge tests, 17
+security-settings tests and two scaffold baseline tests. Run individual suites
+with:
 
 ```bash
 php artisan test --compact tests/Feature/AuthenticationTest.php
 php artisan test --compact tests/Feature/MfaEnrollmentTest.php
 php artisan test --compact tests/Feature/MfaChallengeTest.php
+php artisan test --compact tests/Feature/SecuritySettingsTest.php
 php artisan test --compact tests/Feature/BootstrapAdministratorTest.php
 ```
 
@@ -140,6 +151,11 @@ MFA-challenge tests cover password-only denial, the challenge screen, valid and
 invalid TOTP codes, single-use recovery codes, the generation-bound session
 proof, stale-proof rejection, unconfirmed enrollment redirects and Livewire
 persistent middleware. They also never create your real administrator.
+
+Security-settings tests cover the recent-auth window and MFA-generation binding,
+password confirmation success/failure, mutation blocking without recent auth,
+password change and MFA disable revocation, recovery-code regeneration and the
+once-only rendering, plus recent-auth protection of Fortify's own MFA endpoints.
 
 Bootstrap tests use isolated in-memory SQLite, including interleaved setup writes,
 rollback and secret-output checks; they do not create your real administrator.

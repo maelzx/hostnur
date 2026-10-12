@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Http\Middleware\EnsureAdministrator;
 use App\Http\Middleware\EnsureMfaVerified;
+use App\Http\Middleware\EnsureRecentAuthentication;
 use Illuminate\Support\ServiceProvider;
 use Livewire\Livewire;
 
@@ -28,6 +29,7 @@ class AppServiceProvider extends ServiceProvider
         Livewire::addPersistentMiddleware([
             EnsureAdministrator::class,
             EnsureMfaVerified::class,
+            EnsureRecentAuthentication::class,
         ]);
     }
 }

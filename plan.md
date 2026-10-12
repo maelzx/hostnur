@@ -194,9 +194,9 @@ session's numbering. All phases after 1 are pending unless explicitly noted.
 
 ### Phase 2 — Administrator onboarding, authentication and MFA
 - Status: in progress; one-time CLI bootstrap (session 006), P2.2 login/logout
-  (session 008), P2.3 MFA enrollment (session 009) and P2.4 MFA challenge/
-  enforcement (session 010) complete. Recent-auth, recovery and session
-  revocation remain.
+  (session 008), P2.3 MFA enrollment (session 009), P2.4 MFA challenge/enforcement
+  (session 010) and P2.5 recent-auth/security settings (session 011) complete.
+  Local recovery/runbook (P2.6) remains.
 - Depends on: 1.
 - Slices: local one-time administrator bootstrap, login, TOTP/recovery codes,
   sessions, rate limits, CSRF and reauthentication for consequential changes.
@@ -423,6 +423,52 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 011 — P2.5 recent-auth and security settings (2026-10-11)
+
+- Implemented **P2.5**: server-side recent-password confirmation and a security
+  settings screen. Added `config/hostnur.php` with `recent_auth_timeout` (300s)
+  and aligned `auth.password_timeout` to 300s so Laravel's `password.confirm`
+  middleware uses the same window. Added `App\Services\RecentAuthentication`
+  storing `auth.password_confirmed_at` plus an MFA-generation-bound
+  `auth.password_confirmed_mfa_version`, and `EnsureRecentAuthentication`
+  (alias `recent-auth`) that redirects to the confirmation screen.
+- New `/user/confirm-password` Livewire screen (`password.confirm`, name matches
+  Fortify/Laravel redirects) sets the recent-auth evidence. `config/fortify.php`
+  now enables `confirmPassword => true` so Fortify's own `/user/two-factor-*`
+  endpoints also require recent password, closing that bypass.
+- New `/panel/security` page (`auth + administrator + mfa + recent-auth`) with:
+  change password (bootstrap-equivalent policy), disable MFA, and regenerate
+  recovery codes. Changing the password or disabling MFA increments `mfa_version`,
+  clears the confirmation and signs out the session (invalidating other sessions
+  via the generation check); new recovery codes are flashed and rendered once.
+  Each mutation re-checks recent auth in-component in addition to the route and
+  persistent Livewire middleware. `EnsureRecentAuthentication` is registered as
+  persistent Livewire middleware alongside the existing gates.
+- Files: `config/hostnur.php`, `config/auth.php`, `config/fortify.php`,
+  `app/Services/RecentAuthentication.php`,
+  `app/Http/Middleware/EnsureRecentAuthentication.php`,
+  `app/Livewire/Panel/ConfirmPassword.php`,
+  `app/Livewire/Panel/SecuritySettings.php` and their views,
+  `app/Providers/AppServiceProvider.php`, `bootstrap/app.php`, `routes/web.php`,
+  `.env.example`, dashboard/login views, `tests/Feature/SecuritySettingsTest.php`;
+  updated both READMEs and `AGENTS.md`.
+- Focused checks: `php artisan test --compact tests/Feature/SecuritySettingsTest.php`
+  — **17 tests / 55 assertions passed**. Full `php artisan test --compact` —
+  **78 tests / 370 assertions passed**. `vendor/bin/pint`, `composer check:syntax`,
+  `composer check:style`, `composer validate` (known license warning),
+  `composer check-platform-reqs`, `composer audit`, `npm audit`, `npm run build`,
+  `route:list` and `view:cache` all passed. Real HTTP smoke on an isolated port
+  confirmed guests are redirected to `/login` for `/`, `/panel`,
+  `/panel/security`, `/user/confirm-password` and `/two-factor-challenge`. No new
+  migration and no local database change were required; the user's port 9000
+  server was not started.
+- Deferred and recorded: the deliberate local CLI password/MFA recovery runbook
+  (P2.6) and atomic recovery-code consumption under concurrency (not required
+  sequentially). Requiring recent password before initial MFA provisioning remains
+  a possible hardening follow-up; enrollment already requires the account password
+  at login.
+- Next slice: **P2.6** (local recovery and runbook) from section 9.4.
 
 ### Session 010 — P2.4 MFA login challenge (2026-10-11)
 
@@ -778,32 +824,29 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ### Next session's single slice
 
-Use the **DeepSeek starter prompt in section 9.1** and implement **P2.5** from
-section 9.4 (recent-auth/security settings; Fortify is installed and P2.2–P2.4
-delivered login/logout, MFA enrollment and the MFA challenge). Finish one slice,
-record exact checks and the next slice ID, commit/push and stop. Phase 1 is
-complete with successful real PHP 8.3/8.4 CI. Port 9000 is the selected local
-panel port; Rust remains deferred.
+Use the **DeepSeek starter prompt in section 9.1** and implement **P2.6** from
+section 9.4 (local recovery and runbook; Fortify is installed and P2.2–P2.5
+delivered login/logout, MFA enrollment, the MFA challenge and recent-auth security
+settings). Finish one slice, record exact checks and the next slice ID, commit/push
+and stop. Phase 1 is complete with successful real PHP 8.3/8.4 CI. Port 9000 is the
+selected local panel port; Rust remains deferred.
 
-Concrete P2.5 starting notes from session 010 (verify against the installed code
+Concrete P2.6 starting notes from session 011 (verify against the installed code
 before relying on them):
 
-- Implement recent-password confirmation (Fortify's `password.confirm` flow) and
-  use it to gate sensitive changes: MFA reset/recovery-code regeneration, future
-  credential replacement and destructive requests. `fortify.limiters.*` are named;
-  password.confirm routes already exist under `/user/...` but no view is
-  registered (`views => false`) and they are not yet linked in the UI.
-- On a confirmed sensitive change, bump `users.mfa_version` (and/or clear
-  `two_factor_confirmed_at`) so the `EnsureMfaVerified` gate rejects old sessions;
-  this completes the "rotation invalidates old sessions/proof" requirement.
-- MFA disable + recovery-code regeneration should require recent auth and, per the
-  plan, archive/regenerate recovery codes only after strong reauthentication.
-  Fortify's `/user/two-factor-*` endpoints are reachable; prefer driving them from
-  Hostnur Livewire screens and consider gating them.
-- Recovery-code consumption is sequential-reuse safe but not proven atomic; if
-  P2.5/P2.6 needs concurrency safety, add a transactional consumption action.
-- Keep enrollment/provisioning exempt from the full MFA gate; recent-auth tokens
-  must be server-generated evidence, never a Livewire public boolean.
+- Add a local Artisan command (no web route, no registration) that resets an
+  existing administrator's password only after an explicit interactive
+  confirmation and a new hidden password with the bootstrap policy. It must target
+  an existing `is_admin` account, preserve `panel_setup` and, unless a separately
+  designed explicit MFA-reset option is chosen, preserve MFA.
+- If the recovery changes the password, increment `mfa_version` so existing
+  sessions/proofs are invalidated; never silently clear MFA. Document MFA
+  lost-code handling (recovery codes, then the CLI runbook) in `panel/README.md`.
+- Tests: wrong target, non-interactive refusal, cancellation, mismatched/short
+  password, hashed write, unchanged MFA/setup marker, bumped generation and
+  hidden input; use isolated in-memory SQLite and never touch the real account.
+- `mfa_version` and `RecentAuthentication` already exist (session 011); reuse
+  them. Fortify's MFA endpoints now require recent password confirmation.
 
 ### Current blockers
 
@@ -833,21 +876,21 @@ before relying on them):
 | Database | SQLite; database sessions/cache/queue; baseline user/cache/job migrations |
 | Administrator bootstrap | `app/Console/Commands/BootstrapAdministrator.php`; `hostnur:admin:bootstrap` |
 | Bootstrap state | `2026_10_11_131611_add_administrator_bootstrap_state.php`; `users.is_admin` defaults false; `panel_setup` row 1 records completion |
-| Authentication | `laravel/fortify` v1.41.0; admin-only login/logout, `EnsureAdministrator`, MFA enrollment (`/panel/security/mfa`), generation-bound challenge (`/two-factor-challenge`) and `EnsureMfaVerified` gate on `/panel` |
-| User model | `app/Models/User.php`; hashed password cast, boolean admin cast, Fortify two-factor trait, hidden secret/recovery; admin flag excluded from mass assignment |
-| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment, 13 MFA-challenge and 2 scaffold tests; 61 tests / 315 assertions at handoff |
+| Authentication | `laravel/fortify` v1.41.0; admin-only login/logout, `EnsureAdministrator`, MFA enrollment (`/panel/security/mfa`), generation-bound challenge (`/two-factor-challenge`), `EnsureMfaVerified` gate on `/panel` and recent-auth (`/panel/security`, `EnsureRecentAuthentication`) |
+| User model | `app/Models/User.php`; hashed password cast, boolean admin cast, Fortify two-factor trait, hidden secret/recovery, integer `mfa_version`; admin flag excluded from mass assignment |
+| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment, 13 MFA-challenge, 17 security-settings and 2 scaffold tests; 78 tests / 370 assertions at handoff |
 | CI | `.github/workflows/web-panel.yml`; PHP 8.3/8.4, Node 24, actual runtime/static/build/migration/test gates |
-| Last application CI | Session 009 code passed: <https://github.com/maelzx/hostnur/actions/runs/38147195019>, code commit `a991456` |
+| Last application CI | Session 010 code passed: <https://github.com/maelzx/hostnur/actions/runs/38270389076>, code commit `c2144d6` |
 | Current local URL | `http://127.0.0.1:9000`; committed example uses port 9000 |
-| Remaining work | Recent-auth/session revocation, recovery, agent abstractions, tasks/audit, dashboard and app/server-management flows |
+| Remaining work | Local recovery/runbook, agent abstractions, tasks/audit, dashboard and app/server-management flows |
 
 Do not scaffold again, regenerate the app key, reset the database, create test
 users in the real DB, reinstall Boost, or install Rust. The last inspection found
 zero real users, but the user may have subsequently run bootstrap. Inspect state
 read-only when necessary; never assume the account needs recreating. Login/logout,
-MFA enrollment and the MFA challenge/enforcement exist; recent-auth/session
-revocation, dashboard operations, agent client and application-management schema
-do not.
+MFA enrollment/challenge, security settings and recent-auth exist; local
+recovery/runbook, dashboard operations, agent client and application-management
+schema do not.
 
 #### Low-cost session protocol
 
@@ -1013,7 +1056,7 @@ stay accurate. No production installer claim follows from this phase.
 
 ### 9.4 Phase 2 — Administrator authentication, MFA and recovery
 
-**Status: P2.4 done; next item P2.5.** Existing bootstrap is the only account-creation
+**Status: P2.5 done; next item P2.6.** Existing bootstrap is the only account-creation
 path. Preserve its command, password policy, `panel_setup` marker and atomic tests.
 Do not promote existing ordinary accounts, add web registration, seed credentials
 or reset that marker when building login/recovery.

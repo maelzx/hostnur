@@ -14,9 +14,9 @@
   HTMX belongs only in a separately owned flow when a concrete need arises.
 - The root page redirects guests to login and administrators to `/panel`.
   `hostnur:admin:bootstrap`, Laravel Fortify login/logout, MFA enrollment
-  (`/panel/security/mfa`) and the generation-bound MFA challenge
-  (`/two-factor-challenge`) are implemented. `/panel` requires a confirmed,
-  currently valid MFA session; recent-auth for sensitive changes is next.
+  (`/panel/security/mfa`), the generation-bound MFA challenge
+  (`/two-factor-challenge`) and recent-password-confirmed security settings
+  (`/panel/security`) are implemented. Deliberate local account recovery is next.
 - Bootstrap uses `panel_setup` as durable one-time state, claimed in the same DB
   transaction as user creation. Do not turn deletion or repeat bootstrap into a
   reset mechanism. `is_admin` defaults false and is not mass assignable.
