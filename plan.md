@@ -452,6 +452,10 @@ ask only when the choice materially changes scope, cost, access, or product beha
   `composer check-platform-reqs`, `composer audit`, `npm audit`, `npm run build`,
   `artisan list`/`help` all passed. No new migration, dependency or web route; the
   user's local database and port 9000 server were not touched.
+- Feature commit `88c2dcd` pushed; remote CI **passed** for PHP 8.3/Node 24 and
+  PHP 8.4/Node 24 (locked installs, static gates, asset build, migration,
+  template/queue and tests): <https://github.com/maelzx/hostnur/actions/runs/38272127148>,
+  verified with `gh run watch 38272127148 --exit-status`.
 - Next slice: **P3.1** (agent DTOs/catalog/schema) from section 9.5, the first
   phase-3 item. Phase 2 exit criteria (setup/login/recovery, no public
   registration or default password, unauthenticated users cannot invoke
