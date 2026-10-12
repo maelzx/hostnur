@@ -5,6 +5,7 @@ namespace Tests\Unit;
 use App\Agent\Dto\OperationRequest;
 use App\Agent\Exceptions\AgentConfigurationException;
 use App\Agent\Exceptions\AgentUnavailableException;
+use App\Agent\FakeAgentClient;
 use App\Agent\UnavailableAgentClient;
 use App\Contracts\AgentClient;
 use App\Enums\AgentMode;
@@ -101,16 +102,11 @@ class AgentAvailabilityTest extends TestCase
         }
     }
 
-    public function test_fake_mode_is_not_silently_fallen_back_to_unavailable(): void
+    public function test_fake_mode_resolves_to_the_fake_client_in_testing(): void
     {
         config(['hostnur.agent_mode' => 'fake']);
 
-        try {
-            $this->client();
-            $this->fail('Expected fake mode to be reported as not implemented.');
-        } catch (AgentConfigurationException $exception) {
-            $this->assertStringContainsString('not implemented', $exception->getMessage());
-        }
+        $this->assertInstanceOf(FakeAgentClient::class, $this->client());
     }
 
     public function test_an_unknown_mode_is_rejected(): void

@@ -4,6 +4,7 @@ namespace App\Agent\Dto;
 
 use App\Agent\AgentContractException;
 use App\Enums\AgentMode;
+use Illuminate\Support\Carbon;
 
 final readonly class ServerSnapshot
 {
@@ -87,6 +88,16 @@ final readonly class ServerSnapshot
             'services' => $this->services,
             'reason' => $this->reason,
         ];
+    }
+
+    /**
+     * Distinguish a stale observation from a fresh one. Combined with
+     * `mode`/`available`, callers can tell fresh fake data, stale data and
+     * offline data apart.
+     */
+    public function isStale(int $maxAgeSeconds): bool
+    {
+        return Carbon::parse($this->sampledAt)->lt(now()->subSeconds($maxAgeSeconds));
     }
 
     /**

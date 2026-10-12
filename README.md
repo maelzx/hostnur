@@ -26,12 +26,12 @@ Web-only GitHub Actions and syntax/style gates pass on PHP 8.3/8.4 and Node 24.
 Phase 1 and the phase 2 authentication milestone (administrator bootstrap,
 deliberate CLI recovery, login/logout, MFA enrollment and challenge,
 recent-password security settings) are complete. Phase 3 has started the typed
-agent contract: DTOs, strict request validation and the default
-`UnavailableAgentClient` with a production-safe mode guard in `panel/app/Agent/`,
-backed by the versioned JSON Schemas, operation catalog and fixtures in
-[`contracts/v1/`](contracts/v1/). See [`panel/README.md`](panel/README.md) for
-setup instructions. Run outcomes and the session handoff are recorded in
-`plan.md`.
+agent contract: DTOs, strict request validation, the default
+`UnavailableAgentClient` with a production-safe mode guard, and a fixture-driven
+read-only `FakeAgentClient` for local/testing, backed by the versioned JSON
+Schemas, operation catalog and fixtures in [`contracts/v1/`](contracts/v1/). See
+[`panel/README.md`](panel/README.md) for setup instructions. Run outcomes and the
+session handoff are recorded in `plan.md`.
 
 For DeepSeek continuation, start with **`plan.md` section 9.1**, then the selected
 phase's detailed slice. Section 9 provides the complete web-only implementation

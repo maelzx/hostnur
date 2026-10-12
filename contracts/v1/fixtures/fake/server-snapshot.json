@@ -1,0 +1,18 @@
+{
+    "protocol_version": 1,
+    "mode": "fake",
+    "available": true,
+    "sampled_at": "1970-01-01T00:00:00Z",
+    "metrics": [
+        { "name": "cpu_percent", "value": 12.4, "unit": "percent" },
+        { "name": "memory_used_bytes", "value": 536870912, "unit": "bytes" },
+        { "name": "disk_used_percent", "value": 41.2, "unit": "percent" },
+        { "name": "load_1m", "value": 0.42, "unit": null }
+    ],
+    "services": [
+        { "name": "nginx", "status": "running" },
+        { "name": "php-fpm", "status": "running" },
+        { "name": "mariadb", "status": "running" }
+    ],
+    "reason": "Simulated data; no real host was contacted."
+}

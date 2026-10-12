@@ -18,11 +18,12 @@
   (`/panel/security/mfa`), the generation-bound MFA challenge, recent-password
   security settings (`/panel/security`) exist. Phase 2 (auth/MFA/recovery) is
   complete; phase 3 is in progress with typed agent DTOs/catalog/validation,
-  `App\Contracts\AgentClient`, the default `UnavailableAgentClient` and the mode
-  guard in `app/Agent/`. The versioned contract (JSON Schemas, catalog, fixtures)
-  lives in `../contracts/v1/`; extend contracts there, never scatter payload
-  shapes in UI. Fake mode stays local/testing-only and must fail closed in
-  production.
+  `App\Contracts\AgentClient`, the default `UnavailableAgentClient`, the mode guard
+  and a fixture-driven read-only `FakeAgentClient` in `app/Agent/`. The versioned
+  contract (JSON Schemas, catalog, fixtures) lives in `../contracts/v1/`; extend
+  contracts there, never scatter payload shapes in UI. Fake mode stays
+  local/testing-only, is labelled `mode=fake`, and must fail closed in production;
+  durable fake execution is P3.4.
 - Bootstrap uses `panel_setup` as durable one-time state, claimed in the same DB
   transaction as user creation. Do not turn deletion or repeat bootstrap into a
   reset mechanism. `is_admin` defaults false and is not mass assignable.
