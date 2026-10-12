@@ -193,9 +193,10 @@ session's numbering. All phases after 1 are pending unless explicitly noted.
   PHP 8.3/8.4 CI checks use documented versions. No Rust job gates web CI.
 
 ### Phase 2 — Administrator onboarding, authentication and MFA
-- Status: in progress; one-time CLI bootstrap (session 006), P2.2 web
-  login/logout (session 008) and P2.3 MFA enrollment (session 009) complete.
-  MFA challenge/enforcement, recovery and reauthentication remain.
+- Status: in progress; one-time CLI bootstrap (session 006), P2.2 login/logout
+  (session 008), P2.3 MFA enrollment (session 009) and P2.4 MFA challenge/
+  enforcement (session 010) complete. Recent-auth, recovery and session
+  revocation remain.
 - Depends on: 1.
 - Slices: local one-time administrator bootstrap, login, TOTP/recovery codes,
   sessions, rate limits, CSRF and reauthentication for consequential changes.
@@ -422,6 +423,54 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 010 — P2.4 MFA login challenge (2026-10-11)
+
+- Implemented **P2.4**: the generation-bound TOTP/recovery challenge and the
+  `/panel` MFA gate. Added migration `2026_10_11_160000_...` for `mfa_version`
+  (unsigned integer, default 0), applied locally as batch 4, and cast it as
+  integer. Re-added Fortify's `RedirectsIfTwoFactorAuthenticatable` to
+  `config/fortify.php` `pipelines.login` so a confirmed administrator is sent to
+  the challenge instead of completing the session.
+- Registered the app-owned GET `two-factor-challenge` route
+  (`App\Livewire\Auth\MfaChallenge`, `guest:web`, name `two-factor.login`) because
+  `views => false` means Fortify does not register it. The screen rejects a request
+  without a started challenge and renders a TOTP field plus an optional recovery
+  code; Fortify still owns POST `two-factor.login.store`. Added a named
+  `two-factor` limiter (5/min per challenged user + IP).
+- Added `App\Http\Middleware\EnsureMfaVerified` (alias `mfa`) and split the panel
+  routes: `/panel/security/mfa` stays `auth + administrator` (exempt to avoid
+  loops) while `/panel` now also requires `mfa`. The gate sends an unconfirmed
+  administrator to enrollment and logs out a confirmed administrator whose
+  generation-bound proof is missing or stale.
+- Session proof is set only after a valid factor: an event listener on
+  `ValidTwoFactorAuthenticationCodeProvided` stores `mfa_verified` (user id +
+  `mfa_version`) before the session regenerates, and successful enrollment
+  confirmation stores the same proof. The gate requires the proof to match the
+  current user id and `mfa_version`, so rotating `mfa_version` (password/MFA
+  change, later slices) invalidates old sessions. Registered `EnsureAdministrator`
+  and `EnsureMfaVerified` via `Livewire::addPersistentMiddleware` so Livewire
+  update requests re-run the same route gates.
+- Files: new migration, `app/Livewire/Auth/MfaChallenge.php` + view,
+  `app/Http/Middleware/EnsureMfaVerified.php`,
+  `app/Providers/FortifyServiceProvider.php`, `app/Providers/AppServiceProvider.php`,
+  `app/Livewire/Auth/MfaEnrollment.php`, `config/fortify.php`, `bootstrap/app.php`,
+  `routes/web.php`, `tests/Feature/MfaChallengeTest.php`; updated the P2.2
+  authentication tests for the new MFA-gated behavior, both READMEs, `AGENTS.md`.
+- Focused checks: `php artisan test --compact tests/Feature/MfaChallengeTest.php`
+  — **13 tests / 54 assertions passed**. Full `php artisan test --compact` —
+  **61 tests / 315 assertions passed**. `vendor/bin/pint`, `composer check:syntax`,
+  `composer check:style`, `composer validate` (known license warning),
+  `composer check-platform-reqs`, `composer audit`, `npm audit`, `npm run build`,
+  `php artisan migrate`, `route:list` and `view:cache` all passed. Real HTTP smoke
+  on an isolated port confirmed `/`, `/panel` and `/two-factor-challenge` redirect
+  guests to `/login` and `/login` returns 200. The user's port 9000 server and
+  database rows were not modified beyond the additive `mfa_version` column.
+- Deferred and recorded: recent-password confirmation for sensitive changes and
+  MFA recovery/session revocation (P2.5), and a deliberate local CLI
+  password/MFA recovery runbook (P2.6). Recovery-code consumption is single-use
+  sequentially; concurrent reuse is not yet proven atomic.
+- Next slice: **P2.5** (recent-auth/security settings) from section 9.4.
 
 ### Session 009 — P2.3 MFA enrollment (2026-10-11)
 
@@ -725,34 +774,32 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ### Next session's single slice
 
-Use the **DeepSeek starter prompt in section 9.1** and implement **P2.4** from
-section 9.4 (MFA login challenge and enforcement; the auth dependency decision is
-settled and P2.3 enrollment exists). Finish one slice, record exact checks and the
-next slice ID, commit/push and stop. Phase 1 is complete with successful real PHP
-8.3/8.4 CI. Port 9000 is the selected local panel port; Rust remains deferred.
+Use the **DeepSeek starter prompt in section 9.1** and implement **P2.5** from
+section 9.4 (recent-auth/security settings; Fortify is installed and P2.2–P2.4
+delivered login/logout, MFA enrollment and the MFA challenge). Finish one slice,
+record exact checks and the next slice ID, commit/push and stop. Phase 1 is
+complete with successful real PHP 8.3/8.4 CI. Port 9000 is the selected local
+panel port; Rust remains deferred.
 
-Concrete P2.4 starting notes from session 009 (verify against the installed code
+Concrete P2.5 starting notes from session 010 (verify against the installed code
 before relying on them):
 
-- Fortify's two-factor feature is already enabled, but `config/fortify.php`
-  defines `pipelines.login` **without** `RedirectsIfTwoFactorAuthenticatable` so
-  enrolled admins are not locked out yet. P2.4 must add that pipe back (and can
-  then drop the override caveat) so a confirmed admin is sent to the challenge.
-- `views => false`, so Fortify does not register the GET challenge route. P2.4
-  must register a GET route named `two-factor.login` (Fortify's redirect uses that
-  name) rendering a challenge screen; Fortify already owns POST
-  `two-factor.login.store`. The challenge POST expects `code` and optionally
-  `recovery_code` (see `TwoFactorLoginRequest`).
-- Add the `mfa_version` generation column and a `EnsureMfaVerified`-style gate on
-  the `/panel` group: unconfirmed admin -> enrollment, confirmed admin without a
-  matching generation-bound session proof -> challenge. Keep enrollment/settings
-  exempt from the full gate to avoid redirect loops.
-- Replay protection for TOTP is provided by Fortify's
-  `TwoFactorAuthenticationProvider` cache (`verifyKeyNewer`); recovery-code
-  consumption is sequential-reuse safe but not yet proven atomic, and recent-auth
-  gating of provisioning/regeneration remains P2.5.
-- Fortify's own `/user/two-factor-*` HTTP endpoints are registered and reachable by
-  the single authenticated administrator; the P2.3 UI calls the actions directly.
+- Implement recent-password confirmation (Fortify's `password.confirm` flow) and
+  use it to gate sensitive changes: MFA reset/recovery-code regeneration, future
+  credential replacement and destructive requests. `fortify.limiters.*` are named;
+  password.confirm routes already exist under `/user/...` but no view is
+  registered (`views => false`) and they are not yet linked in the UI.
+- On a confirmed sensitive change, bump `users.mfa_version` (and/or clear
+  `two_factor_confirmed_at`) so the `EnsureMfaVerified` gate rejects old sessions;
+  this completes the "rotation invalidates old sessions/proof" requirement.
+- MFA disable + recovery-code regeneration should require recent auth and, per the
+  plan, archive/regenerate recovery codes only after strong reauthentication.
+  Fortify's `/user/two-factor-*` endpoints are reachable; prefer driving them from
+  Hostnur Livewire screens and consider gating them.
+- Recovery-code consumption is sequential-reuse safe but not proven atomic; if
+  P2.5/P2.6 needs concurrency safety, add a transactional consumption action.
+- Keep enrollment/provisioning exempt from the full MFA gate; recent-auth tokens
+  must be server-generated evidence, never a Livewire public boolean.
 
 ### Current blockers
 
@@ -782,20 +829,21 @@ before relying on them):
 | Database | SQLite; database sessions/cache/queue; baseline user/cache/job migrations |
 | Administrator bootstrap | `app/Console/Commands/BootstrapAdministrator.php`; `hostnur:admin:bootstrap` |
 | Bootstrap state | `2026_10_11_131611_add_administrator_bootstrap_state.php`; `users.is_admin` defaults false; `panel_setup` row 1 records completion |
-| Authentication | `laravel/fortify` v1.41.0; admin-only POST login/logout, `EnsureAdministrator` middleware, named login limiter; MFA enrollment at `/panel/security/mfa` (login enforcement deferred to P2.4) |
-| User model | `app/Models/User.php`; hashed password cast, boolean admin cast; admin flag excluded from mass assignment |
-| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment and 2 scaffold tests; 48 tests / 259 assertions at handoff |
+| Authentication | `laravel/fortify` v1.41.0; admin-only login/logout, `EnsureAdministrator`, MFA enrollment (`/panel/security/mfa`), generation-bound challenge (`/two-factor-challenge`) and `EnsureMfaVerified` gate on `/panel` |
+| User model | `app/Models/User.php`; hashed password cast, boolean admin cast, Fortify two-factor trait, hidden secret/recovery; admin flag excluded from mass assignment |
+| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment, 13 MFA-challenge and 2 scaffold tests; 61 tests / 315 assertions at handoff |
 | CI | `.github/workflows/web-panel.yml`; PHP 8.3/8.4, Node 24, actual runtime/static/build/migration/test gates |
-| Last application CI | Session 008 code passed: <https://github.com/maelzx/hostnur/actions/runs/38146321207>, code commit `f8352d8` |
+| Last application CI | Session 009 code passed: <https://github.com/maelzx/hostnur/actions/runs/38147195019>, code commit `a991456` |
 | Current local URL | `http://127.0.0.1:9000`; committed example uses port 9000 |
-| Remaining work | MFA challenge/enforcement, recovery, agent abstractions, tasks/audit, dashboard and app/server-management flows |
+| Remaining work | Recent-auth/session revocation, recovery, agent abstractions, tasks/audit, dashboard and app/server-management flows |
 
 Do not scaffold again, regenerate the app key, reset the database, create test
 users in the real DB, reinstall Boost, or install Rust. The last inspection found
 zero real users, but the user may have subsequently run bootstrap. Inspect state
-read-only when necessary; never assume the account needs recreating. Login/logout
-and MFA enrollment exist; the MFA challenge/enforcement, dashboard operations,
-agent client and application-management schema do not.
+read-only when necessary; never assume the account needs recreating. Login/logout,
+MFA enrollment and the MFA challenge/enforcement exist; recent-auth/session
+revocation, dashboard operations, agent client and application-management schema
+do not.
 
 #### Low-cost session protocol
 
@@ -961,7 +1009,7 @@ stay accurate. No production installer claim follows from this phase.
 
 ### 9.4 Phase 2 — Administrator authentication, MFA and recovery
 
-**Status: P2.3 done; next item P2.4.** Existing bootstrap is the only account-creation
+**Status: P2.4 done; next item P2.5.** Existing bootstrap is the only account-creation
 path. Preserve its command, password policy, `panel_setup` marker and atomic tests.
 Do not promote existing ordinary accounts, add web registration, seed credentials
 or reset that marker when building login/recovery.

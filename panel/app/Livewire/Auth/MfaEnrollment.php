@@ -45,6 +45,12 @@ class MfaEnrollment extends Component
             return;
         }
 
+        // Confirming the code proves possession, so treat this session as verified.
+        session()->put('mfa_verified', [
+            'id' => $user->getKey(),
+            'version' => $user->mfa_version,
+        ]);
+
         $this->code = '';
         $user->refresh();
     }

@@ -1,10 +1,10 @@
 # Hostnur web panel
 
 Laravel 13, Livewire 4, Blade and Tailwind 4. One-time CLI administrator setup,
-administrator login/logout, a restricted post-login panel placeholder and
-multi-factor authentication enrollment (TOTP plus recovery codes) are available.
-Login enforcement of MFA, account recovery and real server operations follow in
-the [project plan](../plan.md).
+administrator login/logout, MFA enrollment and the generation-bound MFA login
+challenge are available. The restricted `/panel` area requires a confirmed,
+currently valid MFA session. Account recovery, recent reauthentication and real
+server operations follow in the [project plan](../plan.md).
 
 ## Local setup
 
@@ -64,12 +64,17 @@ There is no public registration/setup route. Web login/logout is implemented
 using Laravel Fortify; only the existing administrator account can authenticate,
 and non-admin or unknown accounts receive the same generic failure. Successful
 sign-in lands on the restricted `/panel` placeholder, which confirms the
-administrator session but exposes no operations. Multi-factor authentication can
-be enrolled at `/panel/security/mfa`: the encrypted TOTP secret, locally rendered
-QR code and one-time recovery codes are shown only during setup, and a valid
-authenticator code must confirm the configuration. Secrets are never serialized
-by the user model. Login enforcement of MFA, account recovery and recent
-reauthentication are upcoming slices.
+administrator session but exposes no operations.
+
+Multi-factor authentication is enrolled at `/panel/security/mfa`: the encrypted
+TOTP secret, locally rendered QR code and one-time recovery codes are shown only
+during setup, and a valid authenticator code must confirm the configuration.
+Secrets are never serialized by the user model. Once confirmed, password login is
+redirected to `/two-factor-challenge`, where a current TOTP code or a single-use
+recovery code is required before `/panel` becomes reachable. The verified session
+is bound to the account and its `mfa_version` generation, so a rotated secret or
+password event invalidates it. Account recovery and recent reauthentication for
+sensitive changes are upcoming slices.
 
 ## Run
 
@@ -88,11 +93,11 @@ npm run dev
 php artisan queue:work --no-interaction
 ```
 
-Stop processes with Ctrl+C. Guests hitting `/`, `/panel` or `/panel/security/mfa`
-are sent to `/login`. The panel page reports the administrator session and MFA
-status and links to `/panel/security/mfa`; it notes that login enforcement, the
-agent and privileged operations are not available yet. It does not present
-simulated host metrics or offer privileged actions.
+Stop processes with Ctrl+C. Guests hitting `/`, `/panel`, `/panel/security/mfa`
+or `/two-factor-challenge` are sent to `/login`. The panel page reports the
+administrator session and MFA status and links to `/panel/security/mfa`. It notes
+that the agent and privileged operations are not available yet, and does not
+present simulated host metrics or offer privileged actions.
 
 ## Checks
 
@@ -108,14 +113,15 @@ npm audit
 npm run build
 ```
 
-Sessions 004–009 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
+Sessions 004–010 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
 24.12.0 and npm 11.6.2. The suite contains 20 administrator-bootstrap tests, 14
-authentication tests, 12 MFA-enrollment tests and two scaffold baseline tests.
-Run individual suites with:
+authentication tests, 12 MFA-enrollment tests, 13 MFA-challenge tests and two
+scaffold baseline tests. Run individual suites with:
 
 ```bash
 php artisan test --compact tests/Feature/AuthenticationTest.php
 php artisan test --compact tests/Feature/MfaEnrollmentTest.php
+php artisan test --compact tests/Feature/MfaChallengeTest.php
 php artisan test --compact tests/Feature/BootstrapAdministratorTest.php
 ```
 
@@ -129,6 +135,11 @@ gate, encrypted secret/recovery-code storage, hidden serialization, wrong and
 malformed codes, leading-zero preservation, confirmation state and the
 show-once behavior. They use Fortify's encrypted storage, so the application key
 (`APP_KEY`) must be present; they never touch your real administrator.
+
+MFA-challenge tests cover password-only denial, the challenge screen, valid and
+invalid TOTP codes, single-use recovery codes, the generation-bound session
+proof, stale-proof rejection, unconfirmed enrollment redirects and Livewire
+persistent middleware. They also never create your real administrator.
 
 Bootstrap tests use isolated in-memory SQLite, including interleaved setup writes,
 rollback and secret-output checks; they do not create your real administrator.

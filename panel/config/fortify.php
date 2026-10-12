@@ -3,6 +3,7 @@
 use Laravel\Fortify\Actions\AttemptToAuthenticate;
 use Laravel\Fortify\Actions\CanonicalizeUsername;
 use Laravel\Fortify\Actions\PrepareAuthenticatedSession;
+use Laravel\Fortify\Contracts\RedirectsIfTwoFactorAuthenticatable;
 use Laravel\Fortify\Features;
 
 return [
@@ -59,16 +60,16 @@ return [
     |--------------------------------------------------------------------------
     |
     | Hostnur authenticates through an administrator-only callback and its own
-    | named rate limiter. Two-factor login enforcement is intentionally omitted
-    | from this pipeline until P2.4 adds the challenge screen; P2.4 will add
-    | RedirectsIfTwoFactorAuthenticatable here. Until then an enrolled
-    | administrator still signs in with a password only.
+    | named rate limiter. The two-factor redirect sends a confirmed administrator
+    | to the challenge screen instead of completing the session, so app screens
+    | can require a generation-bound MFA proof.
     |
     */
 
     'pipelines' => [
         'login' => [
             CanonicalizeUsername::class,
+            RedirectsIfTwoFactorAuthenticatable::class,
             AttemptToAuthenticate::class,
             PrepareAuthenticatedSession::class,
         ],
@@ -81,14 +82,14 @@ return [
     |
     | The "login" limiter is defined in App\Providers\FortifyServiceProvider and
     | enforces five attempts per minute per normalized email + IP plus thirty
-    | attempts per minute per IP. Two-factor and passkey limiters are unset
-    | because those features are not enabled yet.
+    | attempts per minute per IP. The "two-factor" limiter throttles challenge
+    | attempts by challenged user and IP. The passkey limiter is unset.
     |
     */
 
     'limiters' => [
         'login' => 'login',
-        'two-factor' => null,
+        'two-factor' => 'two-factor',
         'passkeys' => null,
     ],
 

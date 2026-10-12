@@ -45,7 +45,7 @@ class AuthenticationTest extends TestCase
         $this->get('/panel')->assertRedirect(route('login'));
     }
 
-    public function test_an_administrator_can_authenticate_and_reach_the_panel(): void
+    public function test_an_administrator_authenticates_and_reaches_the_restricted_enrollment_area(): void
     {
         $administrator = $this->administrator();
 
@@ -56,9 +56,11 @@ class AuthenticationTest extends TestCase
 
         $this->assertAuthenticatedAs($administrator);
 
-        $this->get('/panel')
+        $this->get('/panel')->assertRedirect(route('panel.security.mfa'));
+
+        $this->get('/panel/security/mfa')
             ->assertOk()
-            ->assertSee($administrator->name);
+            ->assertSee('Setup required');
     }
 
     public function test_email_is_trimmed_and_lowercased_during_authentication(): void
@@ -113,7 +115,7 @@ class AuthenticationTest extends TestCase
     {
         $administrator = $this->administrator();
 
-        $this->actingAs($administrator)->get('/panel')->assertOk();
+        $this->actingAs($administrator)->get('/panel/security/mfa')->assertOk();
 
         $administrator->is_admin = false;
         $administrator->save();
@@ -125,7 +127,7 @@ class AuthenticationTest extends TestCase
     {
         $administrator = $this->administrator();
 
-        $this->actingAs($administrator)->get('/panel')->assertOk();
+        $this->actingAs($administrator)->get('/panel/security/mfa')->assertOk();
 
         $this->post('/logout')->assertRedirect(route('login'));
 

@@ -6,10 +6,12 @@ use App\Models\User;
 use Illuminate\Auth\Middleware\RedirectIfAuthenticated;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
+use Laravel\Fortify\Events\ValidTwoFactorAuthenticationCodeProvided;
 use Laravel\Fortify\Fortify;
 
 class FortifyServiceProvider extends ServiceProvider
@@ -42,6 +44,18 @@ class FortifyServiceProvider extends ServiceProvider
             return $user;
         });
 
+        // Record the generation-bound MFA proof only after a valid TOTP or
+        // recovery code. It is bound to the user id and current mfa_version so
+        // password/MFA rotation invalidates older sessions.
+        Event::listen(ValidTwoFactorAuthenticationCodeProvided::class, function (ValidTwoFactorAuthenticationCodeProvided $event): void {
+            if (request()->hasSession()) {
+                request()->session()->put('mfa_verified', [
+                    'id' => $event->user->getKey(),
+                    'version' => $event->user->mfa_version,
+                ]);
+            }
+        });
+
         RateLimiter::for('login', function (Request $request): array {
             $email = Str::lower(trim((string) $request->input(Fortify::username())));
 
@@ -49,6 +63,12 @@ class FortifyServiceProvider extends ServiceProvider
                 Limit::perMinute(5)->by(Str::transliterate($email.'|'.$request->ip())),
                 Limit::perMinute(30)->by($request->ip()),
             ];
+        });
+
+        RateLimiter::for('two-factor', function (Request $request): Limit {
+            $challengedUser = (string) $request->session()->get('login.id');
+
+            return Limit::perMinute(5)->by($challengedUser.'|'.$request->ip());
         });
 
         RedirectIfAuthenticated::redirectUsing(
