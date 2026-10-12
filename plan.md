@@ -470,6 +470,10 @@ ask only when the choice materially changes scope, cost, access, or product beha
   MFA recovery/session revocation (P2.5), and a deliberate local CLI
   password/MFA recovery runbook (P2.6). Recovery-code consumption is single-use
   sequentially; concurrent reuse is not yet proven atomic.
+- Feature commit `c2144d6` pushed; remote CI **passed** for PHP 8.3/Node 24 and
+  PHP 8.4/Node 24 (locked installs, static gates, asset build, migration,
+  template/queue and tests): <https://github.com/maelzx/hostnur/actions/runs/38270389076>,
+  verified with `gh run watch 38270389076 --exit-status`.
 - Next slice: **P2.5** (recent-auth/security settings) from section 9.4.
 
 ### Session 009 — P2.3 MFA enrollment (2026-10-11)
