@@ -16,4 +16,38 @@ return [
 
     'recent_auth_timeout' => (int) env('HOSTNUR_RECENT_AUTH_TIMEOUT', 300),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Agent Mode
+    |--------------------------------------------------------------------------
+    |
+    | "unavailable" is the safe default and is the only mode allowed in
+    | production until a real transport exists (phase 11). "fake" may be selected
+    | only in local/testing environments. "real" reports unavailable for now.
+    |
+    */
+
+    'agent_mode' => env('HOSTNUR_AGENT_MODE', 'unavailable'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Agent Contract
+    |--------------------------------------------------------------------------
+    |
+    | Supported protocol version, the versioned contract directory and the
+    | initial bounded sizes. Limits are enforced by request validation and DTO
+    | parsing, not scattered through UI components.
+    |
+    */
+
+    'protocol_version' => 1,
+
+    'contracts_path' => env('HOSTNUR_CONTRACTS_PATH', dirname(base_path()).'/contracts/v1'),
+
+    'limits' => [
+        'max_message_bytes' => 1_048_576,
+        'max_parameters' => 64,
+        'max_events' => 100,
+    ],
+
 ];

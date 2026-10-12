@@ -1,0 +1,95 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "protocol_versions": [1],
+    "operations": {
+        "server.snapshot": {
+            "resource": null,
+            "parameters": {},
+            "read_only": true,
+            "retry": "bounded"
+        },
+        "application.deploy": {
+            "resource": "application",
+            "parameters": {
+                "revision": { "type": "uuid", "required": true },
+                "ref": { "type": "string", "required": false, "max": 255 }
+            },
+            "read_only": false,
+            "retry": "no_blind_replay"
+        },
+        "application.restart": {
+            "resource": "application",
+            "parameters": {},
+            "read_only": false,
+            "retry": "capability_declared"
+        },
+        "application.rollback": {
+            "resource": "application",
+            "parameters": {
+                "release": { "type": "uuid", "required": true }
+            },
+            "read_only": false,
+            "retry": "no_blind_replay"
+        },
+        "service.control": {
+            "resource": "service",
+            "parameters": {
+                "action": { "type": "enum", "required": true, "values": ["start", "stop", "restart"] }
+            },
+            "read_only": false,
+            "retry": "capability_declared"
+        },
+        "package.install": {
+            "resource": null,
+            "parameters": {
+                "package": { "type": "string", "required": true, "max": 255 }
+            },
+            "read_only": false,
+            "retry": "no_blind_replay"
+        },
+        "schedule.apply": {
+            "resource": "schedule",
+            "parameters": {
+                "revision": { "type": "uuid", "required": true }
+            },
+            "read_only": false,
+            "retry": "no_blind_replay"
+        },
+        "domain.apply": {
+            "resource": "domain",
+            "parameters": {
+                "revision": { "type": "uuid", "required": true }
+            },
+            "read_only": false,
+            "retry": "no_blind_replay"
+        },
+        "certificate.issue": {
+            "resource": "domain",
+            "parameters": {},
+            "read_only": false,
+            "retry": "no_blind_replay"
+        },
+        "certificate.install": {
+            "resource": "domain",
+            "parameters": {
+                "certificate": { "type": "string", "required": true, "max": 255 }
+            },
+            "read_only": false,
+            "retry": "no_blind_replay"
+        },
+        "database.provision": {
+            "resource": null,
+            "parameters": {
+                "revision": { "type": "uuid", "required": true }
+            },
+            "read_only": false,
+            "retry": "no_blind_replay"
+        },
+        "backup.create": {
+            "resource": "backup",
+            "parameters": {},
+            "read_only": false,
+            "retry": "capability_declared"
+        }
+    }
+}

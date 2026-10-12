@@ -1,0 +1,23 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://hostnur.dev/contracts/v1/operation-receipt.schema.json",
+    "title": "OperationReceipt",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "protocol_version",
+        "request_id",
+        "execution_id",
+        "operation",
+        "status",
+        "accepted_at"
+    ],
+    "properties": {
+        "protocol_version": { "const": 1 },
+        "request_id": { "type": "string", "format": "uuid" },
+        "execution_id": { "type": "string", "format": "uuid" },
+        "operation": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["accepted", "running", "succeeded", "failed", "cancelled", "timed_out"] },
+        "accepted_at": { "type": "string", "minLength": 1 }
+    }
+}

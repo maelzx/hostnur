@@ -1,0 +1,12 @@
+{
+    "protocol_version": 1,
+    "request_id": "0f6c5f2a-4c4b-4f1e-9c9b-2f1c8a7d6e55",
+    "idempotency_key": "9a1b2c3d-4e5f-4a6b-8c7d-1e2f3a4b5c6d",
+    "operation": "application.restart",
+    "resource": {
+        "kind": "application",
+        "id": "224065ac-4bc7-4ba4-a06d-8c8bca950c32"
+    },
+    "parameters": {},
+    "timeout_seconds": 60
+}

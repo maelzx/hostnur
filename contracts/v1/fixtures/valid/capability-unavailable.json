@@ -1,0 +1,8 @@
+{
+    "protocol_version": 1,
+    "mode": "unavailable",
+    "available": false,
+    "operations": [],
+    "sampled_at": "2026-10-12T12:00:00Z",
+    "reason": "No agent transport is configured."
+}

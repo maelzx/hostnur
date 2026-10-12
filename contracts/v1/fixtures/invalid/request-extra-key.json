@@ -1,0 +1,8 @@
+{
+    "protocol_version": 1,
+    "request_id": "6c9dc595-fc9c-4c13-8c72-ed9a489ab9e7",
+    "idempotency_key": "cf36a770-2abf-42e6-83cf-a0f042bcfc3c",
+    "operation": "server.snapshot",
+    "parameters": {},
+    "unexpected": "not allowed"
+}

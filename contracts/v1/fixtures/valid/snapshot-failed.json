@@ -1,0 +1,22 @@
+{
+    "protocol_version": 1,
+    "execution_id": "e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a5b",
+    "request_id": "f1a2b3c4-d5e6-4f7a-8b9c-0d1e2f3a4b5c",
+    "operation": "application.deploy",
+    "status": "failed",
+    "progress": 100,
+    "events": [
+        {
+            "sequence": 1,
+            "at": "2026-10-12T12:05:00Z",
+            "message": "Deployment failed."
+        }
+    ],
+    "result": null,
+    "error": {
+        "code": "operation_failed",
+        "message": "The deployment did not complete successfully.",
+        "retryable": false
+    },
+    "updated_at": "2026-10-12T12:05:10Z"
+}

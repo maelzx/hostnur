@@ -1,0 +1,70 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://hostnur.dev/contracts/v1/operation-snapshot.schema.json",
+    "title": "OperationSnapshot",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "protocol_version",
+        "execution_id",
+        "request_id",
+        "operation",
+        "status",
+        "events",
+        "result",
+        "error",
+        "updated_at"
+    ],
+    "properties": {
+        "protocol_version": { "const": 1 },
+        "execution_id": { "type": "string", "format": "uuid" },
+        "request_id": { "type": "string", "format": "uuid" },
+        "operation": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["accepted", "running", "succeeded", "failed", "cancelled", "timed_out"] },
+        "progress": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
+        "events": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["sequence", "at", "message"],
+                "properties": {
+                    "sequence": { "type": "integer", "minimum": 0 },
+                    "at": { "type": "string", "minLength": 1 },
+                    "message": { "type": "string" }
+                }
+            }
+        },
+        "result": { "type": ["object", "null"] },
+        "error": {
+            "oneOf": [
+                { "type": "null" },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["code", "message"],
+                    "properties": {
+                        "code": {
+                            "enum": [
+                                "agent_unavailable",
+                                "unsupported_operation",
+                                "unsupported_protocol",
+                                "invalid_parameters",
+                                "resource_not_found",
+                                "conflict",
+                                "timeout",
+                                "execution_unknown",
+                                "permission_denied",
+                                "operation_failed"
+                            ]
+                        },
+                        "message": { "type": "string", "minLength": 1 },
+                        "retryable": { "type": "boolean" }
+                    }
+                }
+            ]
+        },
+        "updated_at": { "type": "string", "minLength": 1 }
+    }
+}

@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - 'panel/**'
+      - 'contracts/**'
       - '.github/workflows/web-panel.yml'
       - '.nvmrc'
   pull_request:
     paths:
       - 'panel/**'
+      - 'contracts/**'
       - '.github/workflows/web-panel.yml'
       - '.nvmrc'
   workflow_dispatch:

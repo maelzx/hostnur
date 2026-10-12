@@ -1,0 +1,9 @@
+{
+    "protocol_version": 1,
+    "request_id": "0f6c5f2a-4c4b-4f1e-9c9b-2f1c8a7d6e55",
+    "execution_id": "d1e2f3a4-b5c6-4d7e-8f9a-0b1c2d3e4f5a",
+    "operation": "application.restart",
+    "status": "accepted",
+    "accepted_at": "2026-10-12T12:00:00Z",
+    "unexpected": true
+}

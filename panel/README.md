@@ -153,11 +153,11 @@ npm audit
 npm run build
 ```
 
-Sessions 004–012 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
+Sessions 004–013 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
 24.12.0 and npm 11.6.2. The suite contains 20 administrator-bootstrap tests, 14
 authentication tests, 12 MFA-enrollment tests, 13 MFA-challenge tests, 17
-security-settings tests, 8 administrator-recovery tests and two scaffold baseline
-tests. Run individual suites with:
+security-settings tests, 8 administrator-recovery tests, 16 agent-contract tests
+and two scaffold baseline tests. Run individual suites with:
 
 ```bash
 php artisan test --compact tests/Feature/AuthenticationTest.php
@@ -166,6 +166,7 @@ php artisan test --compact tests/Feature/MfaChallengeTest.php
 php artisan test --compact tests/Feature/SecuritySettingsTest.php
 php artisan test --compact tests/Feature/BootstrapAdministratorTest.php
 php artisan test --compact tests/Feature/RecoverAdministratorTest.php
+php artisan test --compact tests/Unit/AgentContractTest.php
 ```
 
 Authentication tests use isolated in-memory SQLite and cover guest redirects,
@@ -193,6 +194,16 @@ Administrator-recovery tests cover success with preserved MFA/setup state and
 invalidated sessions, unknown/non-admin targets, non-interactive refusal,
 cancellation, short/mismatched passwords, write-failure rollback and hidden,
 fallback-free password prompts. They never touch your real administrator.
+
+Agent-contract tests cover the operation catalog, valid request fixtures parsing
+into typed DTOs, request envelope round-tripping, invalid/excess/unknown/oversized
+input rejection with the expected error codes, and typed receipt/snapshot/
+capability parsing. They are pure contract tests with no network or host calls.
+
+The versioned agent contract lives outside the app at `../contracts/v1/`
+(JSON Schemas, operation catalog and valid/invalid fixtures); `HOSTNUR_CONTRACTS_PATH`
+overrides its location and `HOSTNUR_AGENT_MODE` selects the agent mode (default
+`unavailable`). Phase 3 binds adapters and fakes against these types.
 
 Bootstrap tests use isolated in-memory SQLite, including interleaved setup writes,
 rollback and secret-output checks; they do not create your real administrator.

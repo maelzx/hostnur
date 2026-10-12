@@ -204,7 +204,7 @@ session's numbering. All phases after 1 are pending unless explicitly noted.
   password; unauthenticated users cannot invoke administrative actions.
 
 ### Phase 3 — PHP agent abstraction and initial operation schemas
-- Status: pending; next. Begins at P3.1 in section 9.5.
+- Status: in progress; P3.1 (DTOs/catalog/schemas/validation) complete. P3.2–P3.5 remain.
 - Depends on: 1.
 - Slices: agent-client interface, versioned request/response schemas, request IDs,
   errors/capabilities, operation catalog, deterministic fixtures, fake and
@@ -424,6 +424,36 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 013 — P3.1 agent DTOs/catalog/schema (2026-10-12)
+
+- Implemented **P3.1**: the typed agent contract with no adapter yet. Added backed
+  enums `AgentMode`, `OperationStatus`, `ResourceKind` and `ErrorCode`; DTOs
+  `ResourceRef`, `OperationRequest`, `OperationReceipt`, `OperationSnapshot`,
+  `CapabilitySnapshot` and `AgentError`; `OperationCatalog` loading
+  `contracts/v1/catalog.json`; `OperationRequestValidator` (strict envelope keys,
+  UUID/type checks, protocol allowlist, operation allowlist, resource/parameter
+  schemas, message/parameter bounds) and `AgentContractException` carrying the
+  machine error code.
+- Added versioned contract files under `contracts/v1/`: JSON Schemas
+  (`operation-request`, `operation-receipt`, `operation-snapshot`,
+  `capability-snapshot`), `catalog.json` for the 12 initial operations and
+  valid/invalid fixtures. Extended `config/hostnur.php` with `agent_mode`
+  (default `unavailable`), `protocol_version`, `contracts_path` and `limits`, bound
+  `OperationCatalog` as a singleton, and added `contracts/**` to the CI path filter.
+- Files: `app/Enums/*`, `app/Agent/**`, `config/hostnur.php`,
+  `app/Providers/AppServiceProvider.php`, `contracts/v1/**`,
+  `tests/Unit/AgentContractTest.php`, `.github/workflows/web-panel.yml`; updated
+  both READMEs and `AGENTS.md`. No migration, no auth change and no adapter/fake
+  (those are P3.2–P3.4); no Rust.
+- Focused checks: `php artisan test --compact tests/Unit/AgentContractTest.php` —
+  **16 tests / 66 assertions passed**. Full `php artisan test --compact` —
+  **102 tests / 501 assertions passed**. `vendor/bin/pint`, `composer check:syntax`,
+  `composer check:style`, `composer validate` (known license warning),
+  `composer check-platform-reqs`, `composer audit`, `npm audit` and `npm run build`
+  all passed. The user's port 9000 server and database were not touched.
+- Next slice: **P3.2** (unavailable adapter and mode-selection guard) from section
+  9.5.
 
 ### Session 012 — P2.6 local recovery (2026-10-11)
 
@@ -865,31 +895,29 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ### Next session's single slice
 
-Use the **DeepSeek starter prompt in section 9.1** and implement **P3.1** from
-section 9.5 (agent DTOs/catalog/schema; phase 2 authentication is complete and no
-further auth work is needed). Finish one slice, record exact checks and the next
-slice ID, commit/push and stop. Phase 1 and phase 2 are complete with successful
-real PHP 8.3/8.4 CI. Port 9000 is the selected local panel port; Rust remains
-deferred to phase 10.
+Use the **DeepSeek starter prompt in section 9.1** and implement **P3.2** from
+section 9.5 (unavailable adapter and explicit mode-selection guard; P3.1 typed
+DTOs/catalog/validation already exist, phase 2 is complete). Finish one slice,
+record exact checks and the next slice ID, commit/push and stop. Phases 1–2 are
+complete with successful real PHP 8.3/8.4 CI. Port 9000 is the selected local panel
+port; Rust remains deferred to phase 10.
 
-Concrete P3.1 starting notes from session 012 (verify against the installed code
+Concrete P3.2 starting notes from session 013 (verify against the installed code
 before relying on them):
 
-- Add versioned DTOs for the request envelope, operation receipt, operation state
-  snapshot, error/capability types (plain PHP classes or readonly DTOs under
-  `app/Agent/`), an `App\Contracts\AgentClient` interface, backed enums for
-  modes/statuses, and `contracts/v1/` JSON Schemas + the operation catalog.
-  `config/hostnur.php` already exists; add `agent_mode` defaulting to `unavailable`.
-- Enforce an allowlist and reject extra/unknown keys, invalid UUIDs, wrong types,
-  unsupported versions and oversized payloads; define the initial error codes from
-  section 9.5. Do not add a validation library without a fresh dependency
-  decision; Laravel validation + explicit DTO parsing is enough for P3.1.
-- Keep mutation parameters operation-specific and secrets out of payloads. P3.1 is
-  types/schemas/fixtures only; P3.2 adds the unavailable adapter and production fake
-  guard, P3.3 read-only fake snapshots, P3.4 durable fake execution, P3.5 contract
-  regression. Do not implement an adapter or the Rust agent here.
-- P3.1 requires no migration and no auth changes; test valid fixtures plus
-  invalid/excess/unknown inputs without network or host calls.
+- Add the `App\Contracts\AgentClient` interface described in section 9.5
+  (`capabilities`, `snapshot`, `submit`, `inspect`, `cancel`) over the existing
+  `app/Agent/Dto` types, plus an `UnavailableAgentClient` that reports
+  `AgentMode::Unavailable` and fails mutations closed with
+  `ErrorCode::AgentUnavailable` (no host/network calls).
+- Decide the binding in `AppServiceProvider` (or an `AgentServiceProvider`) from
+  `config('hostnur.agent_mode')`: `fake` allowed only when
+  `app()->environment('local', 'testing')`; `real` reports unavailable until phase
+  11; `unavailable` is the default. Reject `fake` in production at binding time and
+  again before executing a mutation; never silently fall back.
+- Keep P3.2 to the interface + unavailable adapter + mode guard and tests (safe
+  default rejects mutations, production fake selection denied). Fake snapshots are
+  P3.3, durable fake execution is P3.4, contract regression is P3.5. No Rust.
 
 ### Current blockers
 
@@ -921,18 +949,20 @@ before relying on them):
 | Bootstrap state | `2026_10_11_131611_add_administrator_bootstrap_state.php`; `users.is_admin` defaults false; `panel_setup` row 1 records completion |
 | Authentication | `laravel/fortify` v1.41.0; admin-only login/logout, `EnsureAdministrator`, MFA enrollment (`/panel/security/mfa`), generation-bound challenge (`/two-factor-challenge`), `EnsureMfaVerified` gate on `/panel`, recent-auth (`/panel/security`, `EnsureRecentAuthentication`) and CLI recovery (`hostnur:admin:recover`) |
 | User model | `app/Models/User.php`; hashed password cast, boolean admin cast, Fortify two-factor trait, hidden secret/recovery, integer `mfa_version`; admin flag excluded from mass assignment |
-| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment, 13 MFA-challenge, 17 security-settings, 8 recovery and 2 scaffold tests; 86 tests / 435 assertions at handoff |
-| CI | `.github/workflows/web-panel.yml`; PHP 8.3/8.4, Node 24, actual runtime/static/build/migration/test gates |
-| Last application CI | Session 011 code passed: <https://github.com/maelzx/hostnur/actions/runs/38271393744>, code commit `1ede09d` |
+| Agent contract | `app/Agent/` DTOs, `OperationCatalog` and `OperationRequestValidator`; `../contracts/v1/` schemas, catalog and fixtures; no adapter bound yet (P3.2) |
+| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment, 13 MFA-challenge, 17 security-settings, 8 recovery, 16 agent-contract and 2 scaffold tests; 102 tests / 501 assertions at handoff |
+| CI | `.github/workflows/web-panel.yml`; PHP 8.3/8.4, Node 24, actual runtime/static/build/migration/test gates; watches `panel/**` and `contracts/**` |
+| Last application CI | Session 012 code passed: <https://github.com/maelzx/hostnur/actions/runs/38272127148>, code commit `88c2dcd` |
 | Current local URL | `http://127.0.0.1:9000`; committed example uses port 9000 |
-| Remaining work | Agent contract/fakes, tasks/audit, dashboard and app/server-management flows |
+| Remaining work | Agent adapters/fakes (P3.2–P3.5), tasks/audit, dashboard and app/server-management flows |
 
 Do not scaffold again, regenerate the app key, reset the database, create test
 users in the real DB, reinstall Boost, or install Rust. The last inspection found
 zero real users, but the user may have subsequently run bootstrap. Inspect state
 read-only when necessary; never assume the account needs recreating. Phase 2
-authentication (login/logout, MFA, security settings, CLI recovery) is complete;
-the agent client, tasks/audit and application-management schema do not exist yet.
+authentication (login/logout, MFA, security settings, CLI recovery) is complete
+and the phase 3 agent contract types/schemas exist; the agent adapter/fakes,
+tasks/audit and application-management schema do not exist yet.
 
 #### Low-cost session protocol
 
@@ -1220,6 +1250,10 @@ Phase exit: correct bootstrap/login/MFA/recovery flows and server-side access ga
 pass, including denied paths. No root/agent capability is introduced here.
 
 ### 9.5 Phase 3 — Agent contract, unavailable mode and deterministic simulation
+
+**Status: P3.1 done; next item P3.2.** Typed DTOs, the operation catalog, strict
+request validation and `contracts/v1/` schemas/fixtures exist; no adapter or fake
+is bound yet.
 
 **Goal:** make every later web flow depend on a small typed interface, not Rust,
 shell commands, HTTP calls to arbitrary hosts or ad-hoc fake values in components.

@@ -1,0 +1,25 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://hostnur.dev/contracts/v1/capability-snapshot.schema.json",
+    "title": "CapabilitySnapshot",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "protocol_version",
+        "mode",
+        "available",
+        "operations",
+        "sampled_at"
+    ],
+    "properties": {
+        "protocol_version": { "const": 1 },
+        "mode": { "enum": ["unavailable", "fake", "real"] },
+        "available": { "type": "boolean" },
+        "operations": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+        },
+        "sampled_at": { "type": "string", "minLength": 1 },
+        "reason": { "type": ["string", "null"] }
+    }
+}

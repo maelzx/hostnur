@@ -23,12 +23,14 @@ LTS on amd64, with PHP/Laravel as the first hosted application workflow.
 SQLite and database-backed queues. Local setup/run instructions are in
 [`panel/README.md`](panel/README.md); the selected local port is **9000**.
 Web-only GitHub Actions and syntax/style gates pass on PHP 8.3/8.4 and Node 24.
-Phase 1 is complete; one-time CLI administrator bootstrap, deliberate local
-administrator recovery, administrator login/logout (Laravel Fortify), MFA
-enrollment and the generation-bound MFA login challenge, plus
-recent-password-confirmed security settings, are implemented. This completes the
-authentication phase. See [`panel/README.md`](panel/README.md) for setup
-instructions. Run outcomes and the session handoff are recorded in `plan.md`.
+Phase 1 and the phase 2 authentication milestone (administrator bootstrap,
+deliberate CLI recovery, login/logout, MFA enrollment and challenge,
+recent-password security settings) are complete. Phase 3 has started the typed
+agent contract: DTOs and strict request validation in `panel/app/Agent/` with the
+versioned JSON Schemas, operation catalog and fixtures in
+[`contracts/v1/`](contracts/v1/). See [`panel/README.md`](panel/README.md) for
+setup instructions. Run outcomes and the session handoff are recorded in
+`plan.md`.
 
 For DeepSeek continuation, start with **`plan.md` section 9.1**, then the selected
 phase's detailed slice. Section 9 provides the complete web-only implementation

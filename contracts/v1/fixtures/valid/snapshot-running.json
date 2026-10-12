@@ -1,0 +1,23 @@
+{
+    "protocol_version": 1,
+    "execution_id": "d1e2f3a4-b5c6-4d7e-8f9a-0b1c2d3e4f5a",
+    "request_id": "0f6c5f2a-4c4b-4f1e-9c9b-2f1c8a7d6e55",
+    "operation": "application.restart",
+    "status": "running",
+    "progress": 40,
+    "events": [
+        {
+            "sequence": 1,
+            "at": "2026-10-12T12:00:01Z",
+            "message": "Restart accepted."
+        },
+        {
+            "sequence": 2,
+            "at": "2026-10-12T12:00:03Z",
+            "message": "Service stopping."
+        }
+    ],
+    "result": null,
+    "error": null,
+    "updated_at": "2026-10-12T12:00:03Z"
+}
