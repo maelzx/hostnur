@@ -3,13 +3,16 @@
 namespace Tests\Unit;
 
 use App\Agent\AgentContractException;
+use App\Agent\Dto\CancellationReceipt;
 use App\Agent\Dto\CapabilitySnapshot;
 use App\Agent\Dto\OperationReceipt;
 use App\Agent\Dto\OperationRequest;
 use App\Agent\Dto\OperationSnapshot;
+use App\Agent\Dto\ServerSnapshot;
 use App\Agent\OperationCatalog;
 use App\Agent\OperationRequestValidator;
 use App\Enums\AgentMode;
+use App\Enums\CancellationStatus;
 use App\Enums\ErrorCode;
 use App\Enums\OperationStatus;
 use App\Enums\ResourceKind;
@@ -157,6 +160,16 @@ class AgentContractTest extends TestCase
         $this->assertFalse($capability->available);
         $this->assertSame([], $capability->operations);
         $this->assertSame('No agent transport is configured.', $capability->reason);
+
+        $server = ServerSnapshot::fromArray($this->fixture('fixtures/valid/server-snapshot-unavailable.json'));
+        $this->assertSame(AgentMode::Unavailable, $server->mode);
+        $this->assertFalse($server->available);
+        $this->assertSame([], $server->metrics);
+        $this->assertSame([], $server->services);
+
+        $cancellation = CancellationReceipt::fromArray($this->fixture('fixtures/valid/cancellation-receipt.json'));
+        $this->assertSame(CancellationStatus::Requested, $cancellation->status);
+        $this->assertSame('d1e2f3a4-b5c6-4d7e-8f9a-0b1c2d3e4f5a', $cancellation->executionId);
     }
 
     public function test_an_invalid_response_fixture_is_rejected(): void

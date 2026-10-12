@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\Agent\AgentClientFactory;
 use App\Agent\OperationCatalog;
+use App\Contracts\AgentClient;
 use App\Http\Middleware\EnsureAdministrator;
 use App\Http\Middleware\EnsureMfaVerified;
 use App\Http\Middleware\EnsureRecentAuthentication;
@@ -17,6 +19,10 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(OperationCatalog::class);
+
+        $this->app->bind(AgentClient::class, function ($app): AgentClient {
+            return $app->make(AgentClientFactory::class)->make();
+        });
     }
 
     /**

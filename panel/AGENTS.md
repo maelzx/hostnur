@@ -17,9 +17,12 @@
   CLI recovery), Laravel Fortify login/logout, MFA enrollment
   (`/panel/security/mfa`), the generation-bound MFA challenge, recent-password
   security settings (`/panel/security`) exist. Phase 2 (auth/MFA/recovery) is
-  complete; phase 3 is in progress with typed agent DTOs/catalog/validation in
-  `app/Agent/` and the versioned contract (JSON Schemas, catalog, fixtures) in
-  `../contracts/v1/`. Extend contracts there; do not scatter payload shapes in UI.
+  complete; phase 3 is in progress with typed agent DTOs/catalog/validation,
+  `App\Contracts\AgentClient`, the default `UnavailableAgentClient` and the mode
+  guard in `app/Agent/`. The versioned contract (JSON Schemas, catalog, fixtures)
+  lives in `../contracts/v1/`; extend contracts there, never scatter payload
+  shapes in UI. Fake mode stays local/testing-only and must fail closed in
+  production.
 - Bootstrap uses `panel_setup` as durable one-time state, claimed in the same DB
   transaction as user creation. Do not turn deletion or repeat bootstrap into a
   reset mechanism. `is_admin` defaults false and is not mass assignable.

@@ -1,0 +1,49 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://hostnur.dev/contracts/v1/server-snapshot.schema.json",
+    "title": "ServerSnapshot",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "protocol_version",
+        "mode",
+        "available",
+        "sampled_at",
+        "metrics",
+        "services"
+    ],
+    "properties": {
+        "protocol_version": { "const": 1 },
+        "mode": { "enum": ["unavailable", "fake", "real"] },
+        "available": { "type": "boolean" },
+        "sampled_at": { "type": "string", "minLength": 1 },
+        "metrics": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "value"],
+                "properties": {
+                    "name": { "type": "string", "minLength": 1 },
+                    "value": { "type": "number" },
+                    "unit": { "type": ["string", "null"] }
+                }
+            }
+        },
+        "services": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "status"],
+                "properties": {
+                    "name": { "type": "string", "minLength": 1 },
+                    "status": { "type": "string", "minLength": 1 }
+                }
+            }
+        },
+        "reason": { "type": ["string", "null"] }
+    }
+}

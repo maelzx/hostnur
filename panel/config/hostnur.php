@@ -48,6 +48,7 @@ return [
         'max_message_bytes' => 1_048_576,
         'max_parameters' => 64,
         'max_events' => 100,
+        'max_observations' => 100,
     ],
 
 ];

@@ -1,0 +1,19 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://hostnur.dev/contracts/v1/cancellation-receipt.schema.json",
+    "title": "CancellationReceipt",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "protocol_version",
+        "execution_id",
+        "status",
+        "requested_at"
+    ],
+    "properties": {
+        "protocol_version": { "const": 1 },
+        "execution_id": { "type": "string", "format": "uuid" },
+        "status": { "enum": ["requested", "unsupported", "already_finished"] },
+        "requested_at": { "type": "string", "minLength": 1 }
+    }
+}

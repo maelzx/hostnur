@@ -204,7 +204,8 @@ session's numbering. All phases after 1 are pending unless explicitly noted.
   password; unauthenticated users cannot invoke administrative actions.
 
 ### Phase 3 — PHP agent abstraction and initial operation schemas
-- Status: in progress; P3.1 (DTOs/catalog/schemas/validation) complete. P3.2–P3.5 remain.
+- Status: in progress; P3.1 (DTOs/catalog/schemas/validation) and P3.2 (AgentClient
+  interface, unavailable adapter and mode guard) complete. P3.3–P3.5 remain.
 - Depends on: 1.
 - Slices: agent-client interface, versioned request/response schemas, request IDs,
   errors/capabilities, operation catalog, deterministic fixtures, fake and
@@ -424,6 +425,38 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 014 — P3.2 unavailable adapter and mode guard (2026-10-12)
+
+- Implemented **P3.2**: added `App\Contracts\AgentClient` (capabilities/snapshot/
+  submit/inspect/cancel), the `UnavailableAgentClient` (reports
+  `AgentMode::Unavailable`, no capabilities/observations, throws
+  `AgentUnavailableException` for submit/inspect/cancel), and `AgentClientFactory`
+  selecting the adapter from `config('hostnur.agent_mode')`. `real` resolves to the
+  unavailable adapter with a phase-11 reason; `fake` is guarded by
+  `assertFakeModeAllowed()` (local/testing only) and currently reports "not
+  implemented yet" rather than silently falling back; unknown modes are rejected.
+  Added `AgentConfigurationException`, the `CancellationStatus` enum, and the
+  `ServerSnapshot`/`CancellationReceipt` DTOs needed by the interface.
+- Bound `AgentClient` through the factory in `AppServiceProvider`, added
+  `contracts/v1` schemas/fixtures for server snapshot and cancellation receipt, and
+  a `max_observations` limit. No migration, no auth change, no persistent fake
+  state (P3.3/P3.4), no Rust.
+- Files: `app/Contracts/AgentClient.php`, `app/Agent/UnavailableAgentClient.php`,
+  `app/Agent/AgentClientFactory.php`, `app/Agent/Exceptions/*`,
+  `app/Agent/Dto/{ServerSnapshot,CancellationReceipt}.php`,
+  `app/Enums/CancellationStatus.php`, `app/Providers/AppServiceProvider.php`,
+  `config/hostnur.php`, `contracts/v1/schemas/*`, `contracts/v1/fixtures/valid/*`,
+  `tests/Unit/AgentAvailabilityTest.php`, updated `tests/Unit/AgentContractTest.php`;
+  updated both READMEs and `AGENTS.md`.
+- Focused checks: `php artisan test --compact tests/Unit/AgentAvailabilityTest.php
+  tests/Unit/AgentContractTest.php` — **24 tests / 94 assertions passed**. Full
+  `php artisan test --compact` — **110 tests / 529 assertions passed**.
+  `vendor/bin/pint`, `composer check:syntax`, `composer check:style`,
+  `composer validate` (known license warning), `composer check-platform-reqs`,
+  `composer audit`, `npm audit` and `npm run build` all passed. The user's port 9000
+  server and database were not touched.
+- Next slice: **P3.3** (read-only fake snapshots) from section 9.5.
 
 ### Session 013 — P3.1 agent DTOs/catalog/schema (2026-10-12)
 
@@ -899,29 +932,30 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ### Next session's single slice
 
-Use the **DeepSeek starter prompt in section 9.1** and implement **P3.2** from
-section 9.5 (unavailable adapter and explicit mode-selection guard; P3.1 typed
-DTOs/catalog/validation already exist, phase 2 is complete). Finish one slice,
-record exact checks and the next slice ID, commit/push and stop. Phases 1–2 are
-complete with successful real PHP 8.3/8.4 CI. Port 9000 is the selected local panel
-port; Rust remains deferred to phase 10.
+Use the **DeepSeek starter prompt in section 9.1** and implement **P3.3** from
+section 9.5 (read-only fake snapshots; P3.1 DTOs/catalog/validation and P3.2
+interface/unavailable adapter/mode guard already exist). Finish one slice, record
+exact checks and the next slice ID, commit/push and stop. Phases 1–2 are complete
+and phase 3 is in progress with successful real PHP 8.3/8.4 CI. Port 9000 is the
+selected local panel port; Rust remains deferred to phase 10.
 
-Concrete P3.2 starting notes from session 013 (verify against the installed code
+Concrete P3.3 starting notes from session 014 (verify against the installed code
 before relying on them):
 
-- Add the `App\Contracts\AgentClient` interface described in section 9.5
-  (`capabilities`, `snapshot`, `submit`, `inspect`, `cancel`) over the existing
-  `app/Agent/Dto` types, plus an `UnavailableAgentClient` that reports
-  `AgentMode::Unavailable` and fails mutations closed with
-  `ErrorCode::AgentUnavailable` (no host/network calls).
-- Decide the binding in `AppServiceProvider` (or an `AgentServiceProvider`) from
-  `config('hostnur.agent_mode')`: `fake` allowed only when
-  `app()->environment('local', 'testing')`; `real` reports unavailable until phase
-  11; `unavailable` is the default. Reject `fake` in production at binding time and
-  again before executing a mutation; never silently fall back.
-- Keep P3.2 to the interface + unavailable adapter + mode guard and tests (safe
-  default rejects mutations, production fake selection denied). Fake snapshots are
-  P3.3, durable fake execution is P3.4, contract regression is P3.5. No Rust.
+- Implement a deterministic `FakeAgentClient` (bind it in `AgentClientFactory` for
+  `AgentMode::Fake`, replacing the current "not implemented" throw) that returns
+  checked-in, secret-free snapshots/capabilities from fixtures. It must set
+  `mode=fake` on every snapshot/receipt and make no network/host/exec calls; use a
+  controlled clock, not sleeps.
+- Keep `assertFakeModeAllowed()` on the execution path (the factory already checks
+  it at bind time; the fake adapter must check again before any mutation and reject
+  in production). `FakeAgentClient` may implement submit/inspect/cancel with
+  in-memory or fixture-derived results for now; durable persisted execution with
+  scenario/clock control is P3.4.
+- Distinguish fake/stale/offline explicitly; do not turn unavailable data into zero
+  metrics or healthy services. Extend `contracts/v1/fixtures` and tests, and update
+  `AgentAvailabilityTest`/add a fake test suite. Phase 3 exit is not yet claimed:
+  P3.4 (durable fake execution) and P3.5 (contract regression) remain.
 
 ### Current blockers
 
@@ -953,20 +987,21 @@ before relying on them):
 | Bootstrap state | `2026_10_11_131611_add_administrator_bootstrap_state.php`; `users.is_admin` defaults false; `panel_setup` row 1 records completion |
 | Authentication | `laravel/fortify` v1.41.0; admin-only login/logout, `EnsureAdministrator`, MFA enrollment (`/panel/security/mfa`), generation-bound challenge (`/two-factor-challenge`), `EnsureMfaVerified` gate on `/panel`, recent-auth (`/panel/security`, `EnsureRecentAuthentication`) and CLI recovery (`hostnur:admin:recover`) |
 | User model | `app/Models/User.php`; hashed password cast, boolean admin cast, Fortify two-factor trait, hidden secret/recovery, integer `mfa_version`; admin flag excluded from mass assignment |
-| Agent contract | `app/Agent/` DTOs, `OperationCatalog` and `OperationRequestValidator`; `../contracts/v1/` schemas, catalog and fixtures; no adapter bound yet (P3.2) |
-| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment, 13 MFA-challenge, 17 security-settings, 8 recovery, 16 agent-contract and 2 scaffold tests; 102 tests / 501 assertions at handoff |
+| Agent contract | `app/Agent/` DTOs, `OperationCatalog`, `OperationRequestValidator`, `AgentClient` interface, `UnavailableAgentClient` + mode guard; `../contracts/v1/` schemas/catalog/fixtures; fake adapter pending P3.3 |
+| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment, 13 MFA-challenge, 17 security-settings, 8 recovery, 16 agent-contract, 8 agent-availability and 2 scaffold tests; 110 tests / 529 assertions at handoff |
 | CI | `.github/workflows/web-panel.yml`; PHP 8.3/8.4, Node 24, actual runtime/static/build/migration/test gates; watches `panel/**` and `contracts/**` |
-| Last application CI | Session 012 code passed: <https://github.com/maelzx/hostnur/actions/runs/38272127148>, code commit `88c2dcd` |
+| Last application CI | Session 013 code passed: <https://github.com/maelzx/hostnur/actions/runs/38273266956>, code commit `07f9d09` |
 | Current local URL | `http://127.0.0.1:9000`; committed example uses port 9000 |
-| Remaining work | Agent adapters/fakes (P3.2–P3.5), tasks/audit, dashboard and app/server-management flows |
+| Remaining work | Fake snapshots/execution (P3.3–P3.4), contract regression, tasks/audit, dashboard and app/server-management flows |
 
 Do not scaffold again, regenerate the app key, reset the database, create test
 users in the real DB, reinstall Boost, or install Rust. The last inspection found
 zero real users, but the user may have subsequently run bootstrap. Inspect state
 read-only when necessary; never assume the account needs recreating. Phase 2
 authentication (login/logout, MFA, security settings, CLI recovery) is complete
-and the phase 3 agent contract types/schemas exist; the agent adapter/fakes,
-tasks/audit and application-management schema do not exist yet.
+and the phase 3 agent contract types plus the unavailable adapter/mode guard
+exist; the fake adapter, tasks/audit and application-management schema do not
+exist yet.
 
 #### Low-cost session protocol
 
@@ -1255,9 +1290,10 @@ pass, including denied paths. No root/agent capability is introduced here.
 
 ### 9.5 Phase 3 — Agent contract, unavailable mode and deterministic simulation
 
-**Status: P3.1 done; next item P3.2.** Typed DTOs, the operation catalog, strict
-request validation and `contracts/v1/` schemas/fixtures exist; no adapter or fake
-is bound yet.
+**Status: P3.2 done; next item P3.3.** Typed DTOs, the operation catalog, strict
+request validation, `contracts/v1/` schemas/fixtures, the `AgentClient` interface,
+the default unavailable adapter and the mode guard exist; the fake adapter is not
+implemented yet (P3.3–P3.4).
 
 **Goal:** make every later web flow depend on a small typed interface, not Rust,
 shell commands, HTTP calls to arbitrary hosts or ad-hoc fake values in components.
