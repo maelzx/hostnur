@@ -452,6 +452,10 @@ ask only when the choice materially changes scope, cost, access, or product beha
   `composer check:style`, `composer validate` (known license warning),
   `composer check-platform-reqs`, `composer audit`, `npm audit` and `npm run build`
   all passed. The user's port 9000 server and database were not touched.
+- Feature commit `07f9d09` pushed; remote CI **passed** for PHP 8.3/Node 24 and
+  PHP 8.4/Node 24 (locked installs, static gates, asset build, migration,
+  template/queue and tests): <https://github.com/maelzx/hostnur/actions/runs/38273266956>,
+  verified with `gh run watch 38273266956 --exit-status`.
 - Next slice: **P3.2** (unavailable adapter and mode-selection guard) from section
   9.5.
 
