@@ -23,12 +23,12 @@ LTS on amd64, with PHP/Laravel as the first hosted application workflow.
 SQLite and database-backed queues. Local setup/run instructions are in
 [`panel/README.md`](panel/README.md); the selected local port is **9000**.
 Web-only GitHub Actions and syntax/style gates pass on PHP 8.3/8.4 and Node 24.
-Phase 1 is complete; one-time CLI administrator bootstrap, administrator
-login/logout (Laravel Fortify), MFA enrollment and the generation-bound MFA
-login challenge, plus recent-password-confirmed security settings, are
-implemented. See [`panel/README.md`](panel/README.md) for setup instructions.
-Deliberate local account recovery is next. Run outcomes and the session handoff
-are recorded in `plan.md`.
+Phase 1 is complete; one-time CLI administrator bootstrap, deliberate local
+administrator recovery, administrator login/logout (Laravel Fortify), MFA
+enrollment and the generation-bound MFA login challenge, plus
+recent-password-confirmed security settings, are implemented. This completes the
+authentication phase. See [`panel/README.md`](panel/README.md) for setup
+instructions. Run outcomes and the session handoff are recorded in `plan.md`.
 
 For DeepSeek continuation, start with **`plan.md` section 9.1**, then the selected
 phase's detailed slice. Section 9 provides the complete web-only implementation

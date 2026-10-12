@@ -81,8 +81,39 @@ Sensitive changes live at `/panel/security`, which requires a password confirmed
 within `HOSTNUR_RECENT_AUTH_TIMEOUT` seconds (default 300). The screen changes the
 password, disables MFA and regenerates recovery codes; changing the password or
 disabling MFA increments `mfa_version` and signs out existing sessions, while new
-recovery codes are shown only once. A deliberate local recovery runbook is the
-next slice.
+recovery codes are shown only once.
+
+## Local administrator recovery
+
+If the administrator password is lost, run this deliberate, interactive command
+from `panel/` on the host (never over the web):
+
+```bash
+php artisan hostnur:admin:recover
+```
+
+Enter the existing administrator email, confirm the reset, then the new password
+and confirmation (hidden input, at least 12 characters, at most 72 bytes). The
+command refuses unknown or non-administrator emails, so it cannot create or
+promote an account, and it never touches the one-time setup marker. Changing the
+password increments `mfa_version`, so existing sessions and MFA proofs are
+invalidated; the command also deletes the account's stored sessions. Multi-factor
+authentication (secret, confirmed state and recovery codes) is preserved — it is
+never silently cleared.
+
+MFA lost-code handling, in order:
+
+1. Sign in with a remaining one-time recovery code, then open `/panel/security`
+   and use "Regenerate recovery codes" (requires recent password confirmation).
+2. If no recovery codes remain, restore access with the CLI password recovery
+   above; MFA stays enabled. Because the secret is preserved, the existing
+   authenticator entry still works. Only if the authenticator device and all
+   recovery codes are lost should the administrator sign in with the recovered
+   password and re-enroll MFA from `/panel/security/mfa` (which replaces the
+   secret); a dedicated CLI MFA-reset is intentionally not provided.
+
+`--no-interaction` cannot perform recovery. Passwords, codes and secrets are
+never printed or logged.
 
 ## Run
 
@@ -122,11 +153,11 @@ npm audit
 npm run build
 ```
 
-Sessions 004–011 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
+Sessions 004–012 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
 24.12.0 and npm 11.6.2. The suite contains 20 administrator-bootstrap tests, 14
 authentication tests, 12 MFA-enrollment tests, 13 MFA-challenge tests, 17
-security-settings tests and two scaffold baseline tests. Run individual suites
-with:
+security-settings tests, 8 administrator-recovery tests and two scaffold baseline
+tests. Run individual suites with:
 
 ```bash
 php artisan test --compact tests/Feature/AuthenticationTest.php
@@ -134,6 +165,7 @@ php artisan test --compact tests/Feature/MfaEnrollmentTest.php
 php artisan test --compact tests/Feature/MfaChallengeTest.php
 php artisan test --compact tests/Feature/SecuritySettingsTest.php
 php artisan test --compact tests/Feature/BootstrapAdministratorTest.php
+php artisan test --compact tests/Feature/RecoverAdministratorTest.php
 ```
 
 Authentication tests use isolated in-memory SQLite and cover guest redirects,
@@ -156,6 +188,11 @@ Security-settings tests cover the recent-auth window and MFA-generation binding,
 password confirmation success/failure, mutation blocking without recent auth,
 password change and MFA disable revocation, recovery-code regeneration and the
 once-only rendering, plus recent-auth protection of Fortify's own MFA endpoints.
+
+Administrator-recovery tests cover success with preserved MFA/setup state and
+invalidated sessions, unknown/non-admin targets, non-interactive refusal,
+cancellation, short/mismatched passwords, write-failure rollback and hidden,
+fallback-free password prompts. They never touch your real administrator.
 
 Bootstrap tests use isolated in-memory SQLite, including interleaved setup writes,
 rollback and secret-output checks; they do not create your real administrator.

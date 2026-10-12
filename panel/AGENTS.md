@@ -13,10 +13,11 @@
 - Use Blade/Livewire and Tailwind. Livewire bundles Alpine; do not load it twice.
   HTMX belongs only in a separately owned flow when a concrete need arises.
 - The root page redirects guests to login and administrators to `/panel`.
-  `hostnur:admin:bootstrap`, Laravel Fortify login/logout, MFA enrollment
-  (`/panel/security/mfa`), the generation-bound MFA challenge
-  (`/two-factor-challenge`) and recent-password-confirmed security settings
-  (`/panel/security`) are implemented. Deliberate local account recovery is next.
+  `hostnur:admin:bootstrap` and `hostnur:admin:recover` (deliberate interactive
+  CLI recovery), Laravel Fortify login/logout, MFA enrollment
+  (`/panel/security/mfa`), the generation-bound MFA challenge, recent-password
+  security settings (`/panel/security`) exist. Phase 2 (auth/MFA/recovery) is
+  complete; phase 3 begins the agent contract and fake adapter.
 - Bootstrap uses `panel_setup` as durable one-time state, claimed in the same DB
   transaction as user creation. Do not turn deletion or repeat bootstrap into a
   reset mechanism. `is_admin` defaults false and is not mass assignable.

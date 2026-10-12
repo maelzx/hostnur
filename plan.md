@@ -193,17 +193,18 @@ session's numbering. All phases after 1 are pending unless explicitly noted.
   PHP 8.3/8.4 CI checks use documented versions. No Rust job gates web CI.
 
 ### Phase 2 — Administrator onboarding, authentication and MFA
-- Status: in progress; one-time CLI bootstrap (session 006), P2.2 login/logout
+- Status: complete. One-time CLI bootstrap (session 006), P2.2 login/logout
   (session 008), P2.3 MFA enrollment (session 009), P2.4 MFA challenge/enforcement
-  (session 010) and P2.5 recent-auth/security settings (session 011) complete.
-  Local recovery/runbook (P2.6) remains.
+  (session 010), P2.5 recent-auth/security settings (session 011) and P2.6 local
+  recovery/runbook (session 012) all passed local checks and real PHP 8.3/8.4 CI.
 - Depends on: 1.
 - Slices: local one-time administrator bootstrap, login, TOTP/recovery codes,
   sessions, rate limits, CSRF and reauthentication for consequential changes.
-- Exit: setup/login/recovery work; no public registration or default password;
-  unauthenticated users cannot invoke administrative actions.
+- Exit: met — setup/login/recovery work; no public registration or default
+  password; unauthenticated users cannot invoke administrative actions.
 
 ### Phase 3 — PHP agent abstraction and initial operation schemas
+- Status: pending; next. Begins at P3.1 in section 9.5.
 - Depends on: 1.
 - Slices: agent-client interface, versioned request/response schemas, request IDs,
   errors/capabilities, operation catalog, deterministic fixtures, fake and
@@ -423,6 +424,38 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 012 — P2.6 local recovery (2026-10-11)
+
+- Implemented **P2.6**: `hostnur:admin:recover`, a deliberate interactive Artisan
+  command (no web route) that resets an existing administrator password. It refuses
+  non-interactive input, unknown emails and ordinary accounts (no creation or
+  promotion), requires an explicit confirmation, validates the new password with
+  the bootstrap policy (min 12, max 72 bytes, no null bytes, confirmed) via hidden
+  input, and never prints secrets.
+- In one transaction the command re-checks the `is_admin` target, stores the new
+  hashed password, increments `mfa_version` and deletes the account's stored
+  sessions (guarded by a `sessions.user_id` check). MFA columns and the
+  `panel_setup` marker are untouched, so MFA is never silently cleared and setup
+  cannot be reopened.
+- Documented the recovery runbook and ordered MFA lost-code handling in
+  `panel/README.md` (recovery code -> CLI password recovery with MFA preserved ->
+  re-enroll only if the device and all codes are lost). Updated `AGENTS.md` and the
+  root README; phase 2 is now complete.
+- Files: `app/Console/Commands/RecoverAdministrator.php`,
+  `tests/Feature/RecoverAdministratorTest.php`, `panel/README.md`,
+  `panel/AGENTS.md`, root `README.md`.
+- Focused checks: `php artisan test --compact tests/Feature/RecoverAdministratorTest.php`
+  — **8 tests / 65 assertions passed**. Full `php artisan test --compact` —
+  **86 tests / 435 assertions passed**. `vendor/bin/pint`, `composer check:syntax`,
+  `composer check:style`, `composer validate` (known license warning),
+  `composer check-platform-reqs`, `composer audit`, `npm audit`, `npm run build`,
+  `artisan list`/`help` all passed. No new migration, dependency or web route; the
+  user's local database and port 9000 server were not touched.
+- Next slice: **P3.1** (agent DTOs/catalog/schema) from section 9.5, the first
+  phase-3 item. Phase 2 exit criteria (setup/login/recovery, no public
+  registration or default password, unauthenticated users cannot invoke
+  administrative actions) are met.
 
 ### Session 011 — P2.5 recent-auth and security settings (2026-10-11)
 
@@ -828,29 +861,31 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ### Next session's single slice
 
-Use the **DeepSeek starter prompt in section 9.1** and implement **P2.6** from
-section 9.4 (local recovery and runbook; Fortify is installed and P2.2–P2.5
-delivered login/logout, MFA enrollment, the MFA challenge and recent-auth security
-settings). Finish one slice, record exact checks and the next slice ID, commit/push
-and stop. Phase 1 is complete with successful real PHP 8.3/8.4 CI. Port 9000 is the
-selected local panel port; Rust remains deferred.
+Use the **DeepSeek starter prompt in section 9.1** and implement **P3.1** from
+section 9.5 (agent DTOs/catalog/schema; phase 2 authentication is complete and no
+further auth work is needed). Finish one slice, record exact checks and the next
+slice ID, commit/push and stop. Phase 1 and phase 2 are complete with successful
+real PHP 8.3/8.4 CI. Port 9000 is the selected local panel port; Rust remains
+deferred to phase 10.
 
-Concrete P2.6 starting notes from session 011 (verify against the installed code
+Concrete P3.1 starting notes from session 012 (verify against the installed code
 before relying on them):
 
-- Add a local Artisan command (no web route, no registration) that resets an
-  existing administrator's password only after an explicit interactive
-  confirmation and a new hidden password with the bootstrap policy. It must target
-  an existing `is_admin` account, preserve `panel_setup` and, unless a separately
-  designed explicit MFA-reset option is chosen, preserve MFA.
-- If the recovery changes the password, increment `mfa_version` so existing
-  sessions/proofs are invalidated; never silently clear MFA. Document MFA
-  lost-code handling (recovery codes, then the CLI runbook) in `panel/README.md`.
-- Tests: wrong target, non-interactive refusal, cancellation, mismatched/short
-  password, hashed write, unchanged MFA/setup marker, bumped generation and
-  hidden input; use isolated in-memory SQLite and never touch the real account.
-- `mfa_version` and `RecentAuthentication` already exist (session 011); reuse
-  them. Fortify's MFA endpoints now require recent password confirmation.
+- Add versioned DTOs for the request envelope, operation receipt, operation state
+  snapshot, error/capability types (plain PHP classes or readonly DTOs under
+  `app/Agent/`), an `App\Contracts\AgentClient` interface, backed enums for
+  modes/statuses, and `contracts/v1/` JSON Schemas + the operation catalog.
+  `config/hostnur.php` already exists; add `agent_mode` defaulting to `unavailable`.
+- Enforce an allowlist and reject extra/unknown keys, invalid UUIDs, wrong types,
+  unsupported versions and oversized payloads; define the initial error codes from
+  section 9.5. Do not add a validation library without a fresh dependency
+  decision; Laravel validation + explicit DTO parsing is enough for P3.1.
+- Keep mutation parameters operation-specific and secrets out of payloads. P3.1 is
+  types/schemas/fixtures only; P3.2 adds the unavailable adapter and production fake
+  guard, P3.3 read-only fake snapshots, P3.4 durable fake execution, P3.5 contract
+  regression. Do not implement an adapter or the Rust agent here.
+- P3.1 requires no migration and no auth changes; test valid fixtures plus
+  invalid/excess/unknown inputs without network or host calls.
 
 ### Current blockers
 
@@ -875,26 +910,25 @@ before relying on them):
 | Item | Existing implementation / evidence |
 |---|---|
 | Web foundation | `panel/`; Laravel 13.35.0, Livewire 4.4.7, Tailwind 4.3.3, Vite 8.3.4 |
-| Current browser entry | `routes/web.php`: `/` redirects guests to `login` and admins to `/panel`; `App\Livewire\Auth\Login` and `App\Livewire\Panel\Dashboard` |
+| Current browser entry | `routes/web.php`: `/` redirects guests to `login` and admins to `/panel`; Livewire pages under `App\Livewire\Auth` (Login, MfaChallenge, MfaEnrollment) and `App\Livewire\Panel` (Dashboard, ConfirmPassword, SecuritySettings) |
 | Layout/assets | `resources/views/layouts/app.blade.php`, `resources/css/app.css`, `vite.config.js`; Livewire supplies Alpine |
 | Database | SQLite; database sessions/cache/queue; baseline user/cache/job migrations |
 | Administrator bootstrap | `app/Console/Commands/BootstrapAdministrator.php`; `hostnur:admin:bootstrap` |
 | Bootstrap state | `2026_10_11_131611_add_administrator_bootstrap_state.php`; `users.is_admin` defaults false; `panel_setup` row 1 records completion |
-| Authentication | `laravel/fortify` v1.41.0; admin-only login/logout, `EnsureAdministrator`, MFA enrollment (`/panel/security/mfa`), generation-bound challenge (`/two-factor-challenge`), `EnsureMfaVerified` gate on `/panel` and recent-auth (`/panel/security`, `EnsureRecentAuthentication`) |
+| Authentication | `laravel/fortify` v1.41.0; admin-only login/logout, `EnsureAdministrator`, MFA enrollment (`/panel/security/mfa`), generation-bound challenge (`/two-factor-challenge`), `EnsureMfaVerified` gate on `/panel`, recent-auth (`/panel/security`, `EnsureRecentAuthentication`) and CLI recovery (`hostnur:admin:recover`) |
 | User model | `app/Models/User.php`; hashed password cast, boolean admin cast, Fortify two-factor trait, hidden secret/recovery, integer `mfa_version`; admin flag excluded from mass assignment |
-| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment, 13 MFA-challenge, 17 security-settings and 2 scaffold tests; 78 tests / 370 assertions at handoff |
+| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment, 13 MFA-challenge, 17 security-settings, 8 recovery and 2 scaffold tests; 86 tests / 435 assertions at handoff |
 | CI | `.github/workflows/web-panel.yml`; PHP 8.3/8.4, Node 24, actual runtime/static/build/migration/test gates |
-| Last application CI | Session 010 code passed: <https://github.com/maelzx/hostnur/actions/runs/38270389076>, code commit `c2144d6` |
+| Last application CI | Session 011 code passed: <https://github.com/maelzx/hostnur/actions/runs/38271393744>, code commit `1ede09d` |
 | Current local URL | `http://127.0.0.1:9000`; committed example uses port 9000 |
-| Remaining work | Local recovery/runbook, agent abstractions, tasks/audit, dashboard and app/server-management flows |
+| Remaining work | Agent contract/fakes, tasks/audit, dashboard and app/server-management flows |
 
 Do not scaffold again, regenerate the app key, reset the database, create test
 users in the real DB, reinstall Boost, or install Rust. The last inspection found
 zero real users, but the user may have subsequently run bootstrap. Inspect state
-read-only when necessary; never assume the account needs recreating. Login/logout,
-MFA enrollment/challenge, security settings and recent-auth exist; local
-recovery/runbook, dashboard operations, agent client and application-management
-schema do not.
+read-only when necessary; never assume the account needs recreating. Phase 2
+authentication (login/logout, MFA, security settings, CLI recovery) is complete;
+the agent client, tasks/audit and application-management schema do not exist yet.
 
 #### Low-cost session protocol
 
@@ -1060,7 +1094,7 @@ stay accurate. No production installer claim follows from this phase.
 
 ### 9.4 Phase 2 — Administrator authentication, MFA and recovery
 
-**Status: P2.5 done; next item P2.6.** Existing bootstrap is the only account-creation
+**Status: P2.6 done; phase 2 complete.** Existing bootstrap is the only account-creation
 path. Preserve its command, password policy, `panel_setup` marker and atomic tests.
 Do not promote existing ordinary accounts, add web registration, seed credentials
 or reset that marker when building login/recovery.
