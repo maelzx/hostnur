@@ -468,6 +468,10 @@ ask only when the choice materially changes scope, cost, access, or product beha
   sequentially). Requiring recent password before initial MFA provisioning remains
   a possible hardening follow-up; enrollment already requires the account password
   at login.
+- Feature commit `1ede09d` pushed; remote CI **passed** for PHP 8.3/Node 24 and
+  PHP 8.4/Node 24 (locked installs, static gates, asset build, migration,
+  template/queue and tests): <https://github.com/maelzx/hostnur/actions/runs/38271393744>,
+  verified with `gh run watch 38271393744 --exit-status`.
 - Next slice: **P2.6** (local recovery and runbook) from section 9.4.
 
 ### Session 010 — P2.4 MFA login challenge (2026-10-11)
