@@ -456,6 +456,10 @@ ask only when the choice materially changes scope, cost, access, or product beha
   `composer validate` (known license warning), `composer check-platform-reqs`,
   `composer audit`, `npm audit` and `npm run build` all passed. The user's port 9000
   server and database were not touched.
+- Feature commit `fdf2beb` pushed; remote CI **passed** for PHP 8.3/Node 24 and
+  PHP 8.4/Node 24 (locked installs, static gates, asset build, migration,
+  template/queue and tests): <https://github.com/maelzx/hostnur/actions/runs/38273972491>,
+  verified with `gh run watch 38273972491 --exit-status`.
 - Next slice: **P3.3** (read-only fake snapshots) from section 9.5.
 
 ### Session 013 — P3.1 agent DTOs/catalog/schema (2026-10-12)
