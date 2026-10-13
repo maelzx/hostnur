@@ -467,6 +467,10 @@ ask only when the choice materially changes scope, cost, access, or product beha
   `php artisan migrate`, `route:list`, `view:cache` and a guest HTTP smoke all
   passed. No host provisioning, no PHP process execution against hosted source, no
   Rust. The user's port 9000 server was not restarted.
+- Feature commit `5fcb986` pushed; remote CI **passed** for PHP 8.3/Node 24 and
+  PHP 8.4/Node 24 (locked installs, static gates, asset build, migration,
+  template/queue and tests): <https://github.com/maelzx/hostnur/actions/runs/38370400996>,
+  verified with `gh run watch 38370400996 --exit-status`.
 - Next slice: **P8.1** (managed services/packages/firewall views) from section 9.10.
 
 ### Session 020 — Phase 6 application inventory/source/secrets (P6.1–P6.5) (2026-10-13)
