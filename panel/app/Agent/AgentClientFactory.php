@@ -5,10 +5,12 @@ namespace App\Agent;
 use App\Agent\Exceptions\AgentConfigurationException;
 use App\Contracts\AgentClient;
 use App\Enums\AgentMode;
+use Illuminate\Contracts\Foundation\Application;
 
 final class AgentClientFactory
 {
     public function __construct(
+        private readonly Application $app,
         private readonly AgentModeGuard $guard,
     ) {}
 
@@ -34,6 +36,6 @@ final class AgentClientFactory
     {
         $this->guard->assertFakeModeAllowed();
 
-        return new FakeAgentClient($this->guard);
+        return $this->app->make(FakeAgentClient::class);
     }
 }

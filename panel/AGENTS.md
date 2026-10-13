@@ -22,8 +22,9 @@
   and a fixture-driven read-only `FakeAgentClient` in `app/Agent/`. The versioned
   contract (JSON Schemas, catalog, fixtures) lives in `../contracts/v1/`; extend
   contracts there, never scatter payload shapes in UI. Fake mode stays
-  local/testing-only, is labelled `mode=fake`, and must fail closed in production;
-  durable fake execution is P3.4.
+  local/testing-only, is labelled `mode=fake`, and must fail closed in production.
+  Durable fake execution is persisted in `fake_agent_executions` and derived from
+  the record plus a controlled clock; P3.5 contract regression remains.
 - Bootstrap uses `panel_setup` as durable one-time state, claimed in the same DB
   transaction as user creation. Do not turn deletion or repeat bootstrap into a
   reset mechanism. `is_admin` defaults false and is not mass assignable.

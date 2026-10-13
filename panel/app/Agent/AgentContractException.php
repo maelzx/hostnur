@@ -28,4 +28,14 @@ class AgentContractException extends RuntimeException
     {
         return new self(ErrorCode::InvalidParameters, $message);
     }
+
+    public static function conflict(string $message): self
+    {
+        return new self(ErrorCode::Conflict, $message);
+    }
+
+    public static function executionUnknown(string $message): self
+    {
+        return new self(ErrorCode::ExecutionUnknown, $message);
+    }
 }

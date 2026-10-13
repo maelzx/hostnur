@@ -51,4 +51,21 @@ return [
         'max_observations' => 100,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Fake Agent Simulation
+    |--------------------------------------------------------------------------
+    |
+    | The deterministic fake adapter derives progress from the record's creation
+    | time with a controlled clock (no sleeps or workers). `scenario` selects the
+    | outcome for new executions: success, failure or timeout.
+    |
+    */
+
+    'fake' => [
+        'scenario' => env('HOSTNUR_FAKE_SCENARIO', 'success'),
+        'duration_seconds' => 2,
+        'timeout_seconds' => 3,
+    ],
+
 ];

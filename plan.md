@@ -205,8 +205,8 @@ session's numbering. All phases after 1 are pending unless explicitly noted.
 
 ### Phase 3 — PHP agent abstraction and initial operation schemas
 - Status: in progress; P3.1 (DTOs/catalog/schemas/validation), P3.2 (AgentClient
-  interface, unavailable adapter and mode guard) and P3.3 (read-only fake
-  snapshots) complete. P3.4–P3.5 remain.
+  interface, unavailable adapter and mode guard), P3.3 (read-only fake snapshots)
+  and P3.4 (durable fake execution) complete. P3.5 remains.
 - Depends on: 1.
 - Slices: agent-client interface, versioned request/response schemas, request IDs,
   errors/capabilities, operation catalog, deterministic fixtures, fake and
@@ -426,6 +426,38 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 016 — P3.4 durable fake execution (2026-10-12)
+
+- Implemented **P3.4**: replaced the fake adapter's `unsupported_operation` stubs
+  with durable simulation. Added migration `2026_10_12_170000_...`
+  (`fake_agent_executions`, applied locally as batch 5), the
+  `FakeAgentExecution` model, the `FakeScenario` enum and
+  `FakeExecutionSimulator`, which derives status/progress/events/result/error from
+  the persisted record + scenario + controlled clock (no worker, no sleeps).
+  `FakeAgentClient::submit` is idempotent on the idempotency key (unique index plus
+  conflict detection), `inspect` returns the derived snapshot or
+  `execution_unknown`, and `cancel` returns requested/unsupported (read-only)/
+  already_finished and flips to `cancelled` on inspection. Capabilities list the
+  catalog operations with `mode=fake`; the production mode guard is still enforced.
+  Added `AgentContractException::{conflict,executionUnknown}` and
+  `config('hostnur.fake.{scenario,duration_seconds,timeout_seconds}')`.
+- Files: the new migration, `app/Models/FakeAgentExecution.php`,
+  `app/Enums/FakeScenario.php`, `app/Agent/FakeExecutionSimulator.php`,
+  `app/Agent/FakeAgentClient.php`, `app/Agent/AgentClientFactory.php`,
+  `app/Agent/AgentContractException.php`, `config/hostnur.php`,
+  `tests/Unit/FakeAgentTest.php` (removed the unused fake capability fixture);
+  updated both READMEs and `AGENTS.md`.
+- Focused checks: `php artisan test --compact tests/Unit/FakeAgentTest.php` —
+  **12 tests / 35 assertions passed**. Full `php artisan test --compact` —
+  **122 tests / 564 assertions passed**. `vendor/bin/pint`, `composer check:syntax`,
+  `composer check:style`, `composer validate` (known license warning),
+  `composer check-platform-reqs`, `composer audit`, `npm audit`, `npm run build`
+  and `php artisan migrate`/`migrate:status` all passed. The user's port 9000
+  server was not started; the local DB gained only the additive fake-execution
+  table. No Rust.
+- Next slice: **P3.5** (contract regression runner and compatibility notes), the
+  final phase-3 item.
 
 ### Session 015 — P3.3 read-only fake snapshots (2026-10-12)
 
@@ -969,32 +1001,30 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ### Next session's single slice
 
-Use the **DeepSeek starter prompt in section 9.1** and implement **P3.4** from
-section 9.5 (durable fake execution; P3.1–P3.3 contract types, unavailable adapter
-and read-only fake snapshots already exist). Finish one slice, record exact checks
-and the next slice ID, commit/push and stop. Phases 1–2 are complete and phase 3 is
-in progress with successful real PHP 8.3/8.4 CI. Port 9000 is the selected local
-panel port; Rust remains deferred to phase 10.
+Use the **DeepSeek starter prompt in section 9.1** and implement **P3.5** from
+section 9.5 (contract regression runner and compatibility notes; P3.1–P3.4 typed
+contract, unavailable adapter, read-only fake snapshots and durable fake execution
+already exist). Finish this final phase-3 slice, run the phase-3 exit checks,
+record exact checks and the next slice ID, commit/push and stop. Phases 1–2 are
+complete and phase 3 nears completion with successful real PHP 8.3/8.4 CI. Port
+9000 is the selected local panel port; Rust remains deferred to phase 10.
 
-Concrete P3.4 starting notes from session 015 (verify against the installed code
+Concrete P3.5 starting notes from session 016 (verify against the installed code
 before relying on them):
 
-- Replace `FakeAgentClient::submit/inspect/cancel` (currently
-  `unsupported_operation`) with durable simulation. Use a small persisted
-  simulation record keyed by execution/request ID (migration + Eloquent model or a
-  table), not an in-memory array, so a later process can inspect progress.
-  Duplicate submissions with the same idempotency key/request must reuse the same
-  execution.
-- Implement the scenarios from section 9.5 (accepted/running/success, validation
-  error, operation failure, timeout, lost receipt/unknown execution, cancel
-  accepted/unsupported) with a controlled clock and no sleeps; derive progress
-  deterministically from persisted request/scenario/time. Capabilities must list
-  only scenarios the adapter implements; keep `mode=fake` on every receipt/
-  snapshot.
-- Keep `AgentModeGuard::assertFakeModeAllowed()` on the execution path and keep
-  `max_events`/`max_parameters`/`max_observations` bounds. No network/host/exec,
-  no Rust. P3.5 (shared valid/invalid fixture runner and compatibility notes)
-  remains after this; do not claim phase 3 exit until P3.5 passes.
+- Add a shared contract-regression runner that drives the checked-in
+  `contracts/v1/fixtures` through the actual PHP types: valid request fixtures
+  parse, invalid fixtures fail with the expected `ErrorCode`, and response fixtures
+  parse into DTOs. Where practical, validate fixtures against the JSON Schemas too
+  (a verification library would be a new dependency decision; a small hand-written
+  runner or the existing DTO parsing is fine otherwise). Keep schemas and DTOs
+  aligned.
+- Add compatibility notes (e.g. `contracts/v1/README.md`) describing protocol
+  version 1, the operation catalog, error codes, the fake scenarios and how
+  unsupported version/capability fails clearly. No network/host calls, no Rust.
+- Then verify the phase-3 exit: unavailable fails closed, fake is local/testing
+  and visibly simulated, and later web flows can depend on the interface. Record
+  the phase-3 completion and set the next slice to P4.1 (tasks/queue/audit).
 
 ### Current blockers
 
@@ -1026,20 +1056,20 @@ before relying on them):
 | Bootstrap state | `2026_10_11_131611_add_administrator_bootstrap_state.php`; `users.is_admin` defaults false; `panel_setup` row 1 records completion |
 | Authentication | `laravel/fortify` v1.41.0; admin-only login/logout, `EnsureAdministrator`, MFA enrollment (`/panel/security/mfa`), generation-bound challenge (`/two-factor-challenge`), `EnsureMfaVerified` gate on `/panel`, recent-auth (`/panel/security`, `EnsureRecentAuthentication`) and CLI recovery (`hostnur:admin:recover`) |
 | User model | `app/Models/User.php`; hashed password cast, boolean admin cast, Fortify two-factor trait, hidden secret/recovery, integer `mfa_version`; admin flag excluded from mass assignment |
-| Agent contract | `app/Agent/` DTOs, `OperationCatalog`, `OperationRequestValidator`, `AgentClient` interface, `UnavailableAgentClient`, `AgentModeGuard` and fixture-driven `FakeAgentClient`; `../contracts/v1/` schemas/catalog/fixtures; durable fake execution pending P3.4 |
-| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment, 13 MFA-challenge, 17 security-settings, 8 recovery, 16 agent-contract, 8 agent-availability, 6 fake-agent and 2 scaffold tests; 116 tests / 551 assertions at handoff |
+| Agent contract | `app/Agent/` DTOs, `OperationCatalog`, `OperationRequestValidator`, `AgentClient` interface, `UnavailableAgentClient`, `AgentModeGuard`, fixture-driven `FakeAgentClient` and durable `FakeExecutionSimulator` over `fake_agent_executions`; `../contracts/v1/` schemas/catalog/fixtures; contract regression runner pending P3.5 |
+| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment, 13 MFA-challenge, 17 security-settings, 8 recovery, 16 agent-contract, 8 agent-availability, 12 fake-agent and 2 scaffold tests; 122 tests / 564 assertions at handoff |
 | CI | `.github/workflows/web-panel.yml`; PHP 8.3/8.4, Node 24, actual runtime/static/build/migration/test gates; watches `panel/**` and `contracts/**` |
-| Last application CI | Session 014 code passed: <https://github.com/maelzx/hostnur/actions/runs/38273972491>, code commit `fdf2beb` |
+| Last application CI | Session 015 code passed: <https://github.com/maelzx/hostnur/actions/runs/38274611714>, code commit `c54d991` |
 | Current local URL | `http://127.0.0.1:9000`; committed example uses port 9000 |
-| Remaining work | Durable fake execution (P3.4), contract regression (P3.5), tasks/audit, dashboard and app/server-management flows |
+| Remaining work | Contract regression (P3.5), tasks/audit, dashboard and app/server-management flows |
 
 Do not scaffold again, regenerate the app key, reset the database, create test
 users in the real DB, reinstall Boost, or install Rust. The last inspection found
 zero real users, but the user may have subsequently run bootstrap. Inspect state
 read-only when necessary; never assume the account needs recreating. Phase 2
 authentication (login/logout, MFA, security settings, CLI recovery) is complete
-and the phase 3 agent contract, unavailable adapter, mode guard and read-only fake
-snapshots exist; durable fake execution, tasks/audit and the
+and the phase 3 agent contract, unavailable adapter, mode guard and deterministic
+durable fake adapter exist; the contract-regression runner, tasks/audit and the
 application-management schema do not exist yet.
 
 #### Low-cost session protocol
@@ -1329,10 +1359,11 @@ pass, including denied paths. No root/agent capability is introduced here.
 
 ### 9.5 Phase 3 — Agent contract, unavailable mode and deterministic simulation
 
-**Status: P3.3 done; next item P3.4.** Typed DTOs, the operation catalog, strict
+**Status: P3.4 done; next item P3.5.** Typed DTOs, the operation catalog, strict
 request validation, `contracts/v1/` schemas/fixtures, the `AgentClient` interface,
-the default unavailable adapter, the mode guard and a fixture-driven read-only
-`FakeAgentClient` exist; durable fake execution and contract regression remain.
+the default unavailable adapter, the mode guard and a deterministic fake adapter
+with durable submit/inspect/cancel exist; the shared contract-regression runner
+(P3.5) remains.
 
 **Goal:** make every later web flow depend on a small typed interface, not Rust,
 shell commands, HTTP calls to arbitrary hosts or ad-hoc fake values in components.

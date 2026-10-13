@@ -153,11 +153,11 @@ npm audit
 npm run build
 ```
 
-Sessions 004–015 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
+Sessions 004–016 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
 24.12.0 and npm 11.6.2. The suite contains 20 administrator-bootstrap tests, 14
 authentication tests, 12 MFA-enrollment tests, 13 MFA-challenge tests, 17
 security-settings tests, 8 administrator-recovery tests, 16 agent-contract tests,
-8 agent-availability tests, 6 fake-agent tests and two scaffold baseline tests.
+8 agent-availability tests, 12 fake-agent tests and two scaffold baseline tests.
 Run individual suites with:
 
 ```bash
@@ -210,13 +210,18 @@ overrides its location and `HOSTNUR_AGENT_MODE` selects the agent mode. The defa
 and no observations and fails every mutation closed. `real` also reports
 unavailable until phase 11. In local/testing, `fake` binds `FakeAgentClient`, which
 returns fixture-driven capabilities and server snapshots labelled `mode=fake` with
-a controlled timestamp (no network, host or shell calls); it is rejected in
-production and does not implement durable execution yet (next slices).
+a controlled timestamp and records submit/inspect/cancel durably in
+`fake_agent_executions`. Progress and outcome are derived from the record plus the
+clock (scenarios `success`/`failure`/`timeout`, default 2s/3s), so a later process
+sees the same deterministic state and duplicate submissions with the same
+idempotency key reuse one execution. It makes no network, host or shell calls and
+is rejected in production.
 
 Agent-availability and fake-agent tests cover the default/`real` unavailable
-binding, fail-closed mutations, the production fake guard, unknown modes, and the
-fake capabilities/snapshot fixture shape, determinism, timestamp and
-fresh/stale/offline distinction. They make no network or host calls.
+binding, fail-closed mutations, the production fake guard, unknown modes, the fake
+capabilities/snapshot fixture shape and freshness, idempotent submission, the
+success/failure/timeout scenarios, cancellation states, unknown executions and
+conflicting idempotency keys. They make no network or host calls.
 
 Bootstrap tests use isolated in-memory SQLite, including interleaved setup writes,
 rollback and secret-output checks; they do not create your real administrator.
