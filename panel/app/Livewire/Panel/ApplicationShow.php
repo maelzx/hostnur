@@ -83,6 +83,28 @@ class ApplicationShow extends Component
         $this->source_credential_id = (string) $application->source_credential_id;
     }
 
+    public function applyLaravelDefaults(): void
+    {
+        $this->authorize('update', $this->application());
+
+        $this->runtime = 'php';
+        if (trim($this->runtime_version) === '') {
+            $this->runtime_version = '8.3';
+        }
+        if (trim($this->health_path) === '') {
+            $this->health_path = 'up';
+        }
+        if ((int) $this->workers < 1) {
+            $this->workers = 1;
+        }
+        $this->scheduler = true;
+        if (trim($this->persistent_paths_text) === '') {
+            $this->persistent_paths_text = 'storage/app';
+        }
+
+        session()->flash('status', 'Recommended Laravel settings filled in — review, then "Save as new revision".');
+    }
+
     public function saveConfiguration(ApplicationService $service): void
     {
         $application = $this->application();

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Actions\Deployments\DeploymentPreflight;
 use App\Agent\Dto\OperationRequest;
 use App\Agent\Dto\ResourceRef;
+use App\Contracts\AgentClient;
 use App\Enums\AuditAction;
 use App\Enums\AuditOutcome;
 use App\Enums\DeploymentState;
@@ -24,6 +25,7 @@ final class DeploymentService
         private readonly DeploymentPreflight $preflight,
         private readonly TaskService $tasks,
         private readonly AuditRecorder $audit,
+        private readonly AgentClient $agent,
     ) {}
 
     public function deploy(User $actor, Application $application, string $idempotencyKey, bool $runMigrations): Deployment
@@ -192,6 +194,10 @@ final class DeploymentService
     {
         $parameters = array_filter($parameters, fn (mixed $value): bool => $value !== null);
 
+        if ($deployment->operation === 'application.deploy') {
+            $this->registerSource($application);
+        }
+
         $request = new OperationRequest(
             protocolVersion: (int) config('hostnur.protocol_version', 1),
             requestId: (string) Str::uuid(),
@@ -211,6 +217,50 @@ final class DeploymentService
         }
 
         $deployment->forceFill(['task_id' => $task->getKey()])->save();
+    }
+
+    /**
+     * Register the application's source/domain with the agent before submitting a
+     * real deployment, so the agent can resolve them from its own registry.
+     */
+    private function registerSource(Application $application): void
+    {
+        if (config('hostnur.agent_mode') !== 'real') {
+            return;
+        }
+
+        $domain = $application->domains()->first();
+
+        if ($application->repository_url === null || $domain === null) {
+            throw ValidationException::withMessages([
+                'repository_url' => 'A repository URL and a domain are required before deploying.',
+            ]);
+        }
+
+        $request = new OperationRequest(
+            protocolVersion: (int) config('hostnur.protocol_version', 1),
+            requestId: (string) Str::uuid(),
+            idempotencyKey: (string) Str::uuid(),
+            operation: 'agent.register_application',
+            resource: null,
+            parameters: [
+                'application' => $application->getKey(),
+                'repository_url' => (string) $application->repository_url,
+                'server_name' => (string) $domain->hostname,
+                'provider' => (string) $application->provider,
+                'runtime' => (string) $application->runtime,
+                'runtime_version' => (string) ($application->runtime_version ?? ''),
+            ],
+            timeoutSeconds: null,
+        );
+
+        try {
+            $this->agent->registerApplication($request);
+        } catch (\Throwable $exception) {
+            throw ValidationException::withMessages([
+                'repository_url' => 'Could not register the source with the agent: '.$exception->getMessage(),
+            ]);
+        }
     }
 
     private function mapState(TaskStatus $status): DeploymentState

@@ -364,5 +364,15 @@ class ApplicationInventoryTest extends TestCase
             ->assertHasNoErrors();
 
         $this->assertSame(2, (int) $application->refresh()->revisions()->first()->settings['workers']);
+
+        Livewire::test(ApplicationShow::class, ['application' => $application->getKey()])
+            ->set('workers', 0)
+            ->set('runtime_version', '')
+            ->call('applyLaravelDefaults')
+            ->assertSet('runtime', 'php')
+            ->assertSet('health_path', 'up')
+            ->assertSet('workers', 1)
+            ->assertSet('scheduler', true)
+            ->assertSet('persistent_paths_text', 'storage/app');
     }
 }
