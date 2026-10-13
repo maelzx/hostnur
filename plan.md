@@ -470,6 +470,10 @@ ask only when the choice materially changes scope, cost, access, or product beha
   `php artisan migrate`, `route:list` and `view:cache` all passed. The user's port
   9000 server was not restarted; the local DB gained only the additive application
   tables. No host provisioning, no network check on save, no Rust.
+- Feature commit `b405b68` pushed; remote CI **passed** for PHP 8.3/Node 24 and
+  PHP 8.4/Node 24 (locked installs, static gates, asset build, migration,
+  template/queue and tests): <https://github.com/maelzx/hostnur/actions/runs/38343245245>,
+  verified with `gh run watch 38343245245 --exit-status`.
 - Next slice: **P7.1** (deployment schema/preflight) from section 9.9.
 
 ### Session 019 — Phase 5 UI shell/dashboard/task visibility (P5.1–P5.4) (2026-10-13)
