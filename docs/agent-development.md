@@ -251,13 +251,21 @@ belongs with the deployment orchestration in phase 15.
 - **PHP-FPM** (`provider/php_fpm.rs`): one pool per application running workers
   as the managed account with a registered socket; same validate/reload/rollback
   discipline via `php-fpm -t` + `systemctl reload`.
+- **Workers/scheduler** (`provider/worker.rs`): root-owned systemd units run as
+  the app identity with an approved working directory/restart policy; the
+  scheduler is a `oneshot` service + timer (single-instance). `ExecStart` is a
+  program plus quoted argv, never a root shell string; units are verified with
+  `systemd-analyze verify` before enabling.
 
-Verified on the arm64 Lima VM (root-run `tests/provider_vm.rs`):
+Verified on the arm64 Lima VM (root-run `tests/provider_vm.rs` and
+`tests/worker_vm.rs`):
 
 - a managed static site served its document root over HTTP, and an **invalid**
   candidate failed `nginx -t` while the live file was restored;
 - a managed FPM pool appeared at its socket and a PHP `index.php` was served
-  through the Nginx fastcgi block.
+  through the Nginx fastcgi block;
+- a managed worker ran as the app UID (`MainPID` verified) and a scheduler timer
+  was active.
 
 Deferred/recorded: the unprivileged Composer/Laravel build (P14.2) and a full
 Laravel end-to-end release (rest of P14.6) — the provider renders/serves but does

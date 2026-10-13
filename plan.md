@@ -1435,9 +1435,12 @@ ask only when the choice materially changes scope, cost, access, or product beha
   when `composer.json` is present; verified app-owned `vendor/autoload.php` on the
   VM) and a `deployments` journal table recording each release's state
   (`staged`/`active`/`superseded`/`rolled_back`) for restart reconciliation.
-- Deferred still: queue workers/scheduler, blue/green routing, per-app `public/`
-  ACLs, full crash/cancel reconciliation wiring, and panel/task integration
-  (P15.6/P15.7).
+- Also added: `provider/worker.rs` — root-owned systemd worker units and a
+  scheduler oneshot+timer running as the app identity (`systemd-analyze verify`
+  gated), verified on the VM (`tests/worker_vm.rs`: worker active as the app UID,
+  timer active).
+- Deferred still: blue/green routing, per-app `public/` ACLs, full crash/cancel
+  reconciliation wiring, and panel/task integration (P15.6/P15.7).
 - Next slice: remaining phase-15 items (workers/scheduler, panel integration) or
   **phase 16** (real TLS) once a public VM + test domain are available.
 
