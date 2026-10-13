@@ -27,6 +27,7 @@ pub mod process;
 pub mod provider;
 pub mod provision;
 pub mod runtime;
+pub mod tls;
 pub mod transport;
 
 /// Agent protocol version implemented by this build. Mirrors

@@ -6,7 +6,10 @@ pub mod php_fpm;
 pub mod policy;
 pub mod worker;
 
-pub use nginx::{ManagedSite, NginxError, NginxManager, SiteKind, render_site};
+pub use nginx::{
+    ManagedSite, NginxError, NginxManager, SiteKind, render_http_challenge_site, render_site,
+    render_tls_site,
+};
 pub use php_fpm::{FpmError, FpmManager, ManagedPool, render_pool};
 pub use policy::{RuntimeError, RuntimePolicy, validate_hostname};
 pub use worker::{

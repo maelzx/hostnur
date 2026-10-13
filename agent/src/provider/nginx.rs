@@ -118,6 +118,111 @@ fn is_safe_name(name: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
 }
 
+/// Render an HTTP-only site that serves the ACME challenge (pre-issuance).
+pub fn render_http_challenge_site(
+    site: &ManagedSite,
+    webroot: &Path,
+) -> Result<String, NginxError> {
+    if !is_safe_name(&site.name) {
+        return Err(NginxError::InvalidSite("unsafe site name".to_string()));
+    }
+    policy::validate_hostname(&site.server_name)
+        .map_err(|error: RuntimeError| NginxError::InvalidSite(error.to_string()))?;
+    if !site.root.is_absolute() || !webroot.is_absolute() {
+        return Err(NginxError::InvalidSite(
+            "paths must be absolute".to_string(),
+        ));
+    }
+    let mut out = String::new();
+    out.push_str("# Managed by Hostnur - do not edit.\n");
+    out.push_str("server {\n    listen 80;\n");
+    out.push_str(&format!("    server_name {};\n", site.server_name));
+    out.push_str(&format!(
+        "    location ^~ /.well-known/acme-challenge/ {{ root {}; }}\n",
+        webroot.display()
+    ));
+    out.push_str(&format!("    root {};\n", site.root.display()));
+    out.push_str("    location / { try_files $uri $uri/ =404; }\n}\n");
+    Ok(out)
+}
+
+/// Render a managed TLS site: HTTP-01 challenge + redirect on :80, TLS on :443.
+pub fn render_tls_site(
+    site: &ManagedSite,
+    webroot: &Path,
+    fullchain: &Path,
+    private_key: &Path,
+) -> Result<String, NginxError> {
+    if !is_safe_name(&site.name) {
+        return Err(NginxError::InvalidSite("unsafe site name".to_string()));
+    }
+    policy::validate_hostname(&site.server_name)
+        .map_err(|error: RuntimeError| NginxError::InvalidSite(error.to_string()))?;
+    if !site.root.is_absolute() || site.root == Path::new("/") {
+        return Err(NginxError::InvalidSite(
+            "document root must be an absolute non-root path".to_string(),
+        ));
+    }
+    for path in [webroot, fullchain, private_key] {
+        if !path.is_absolute() {
+            return Err(NginxError::InvalidSite(
+                "paths must be absolute".to_string(),
+            ));
+        }
+    }
+
+    let access_log = format!("/var/log/nginx/{}.access.log", site.name);
+    let error_log = format!("/var/log/nginx/{}.error.log", site.name);
+
+    let mut out = String::new();
+    out.push_str("# Managed by Hostnur - do not edit.\n");
+    out.push_str("server {\n    listen 80;\n");
+    out.push_str(&format!("    server_name {};\n", site.server_name));
+    out.push_str(&format!(
+        "    location ^~ /.well-known/acme-challenge/ {{ root {}; }}\n",
+        webroot.display()
+    ));
+    out.push_str("    location / { return 301 https://$host$request_uri; }\n}\n\n");
+
+    out.push_str("server {\n    listen 443 ssl;\n");
+    out.push_str(&format!("    server_name {};\n", site.server_name));
+    out.push_str(&format!("    ssl_certificate {};\n", fullchain.display()));
+    out.push_str(&format!(
+        "    ssl_certificate_key {};\n",
+        private_key.display()
+    ));
+    out.push_str(&format!("    root {};\n", site.root.display()));
+    out.push_str(&format!("    access_log {access_log};\n"));
+    out.push_str(&format!("    error_log {error_log};\n"));
+    out.push_str("    index index.php index.html;\n");
+    out.push_str("    location ~ /\\.(?!well-known) { deny all; }\n");
+
+    match site.kind {
+        SiteKind::Laravel => {
+            let socket = site.fpm_socket.as_ref().ok_or_else(|| {
+                NginxError::InvalidSite("laravel site needs an fpm socket".to_string())
+            })?;
+            if !socket.is_absolute() {
+                return Err(NginxError::InvalidSite(
+                    "fpm socket must be absolute".to_string(),
+                ));
+            }
+            out.push_str("    location / { try_files $uri $uri/ /index.php?$query_string; }\n");
+            out.push_str("    location ~ \\.php$ {\n        include snippets/fastcgi-php.conf;\n");
+            out.push_str(&format!(
+                "        fastcgi_pass unix:{};\n",
+                socket.display()
+            ));
+            out.push_str("    }\n");
+        }
+        SiteKind::Static => {
+            out.push_str("    location / { try_files $uri $uri/ =404; }\n");
+        }
+    }
+    out.push_str("}\n");
+    Ok(out)
+}
+
 /// Manages files in the root-owned managed include directory.
 #[derive(Debug, Clone)]
 pub struct NginxManager {
