@@ -9,6 +9,7 @@
 
 use std::collections::BTreeMap;
 use std::io::{self, Read};
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -178,11 +179,30 @@ pub fn run(spec: &CommandSpec) -> Result<ProcessOutcome, ProcessError> {
         command.current_dir(working_dir);
     }
     // New process group so the whole tree can be signalled together.
-    #[allow(unused_imports)]
-    use std::os::unix::process::CommandExt;
     command.process_group(0);
+
     if let (Some(uid), Some(gid)) = (spec.uid, spec.gid) {
-        command.uid(uid).gid(gid);
+        // Drop the process identity in the forked child before exec. The
+        // closure only calls async-signal-safe syscalls. Supplementary groups
+        // are cleared *before* dropping to the target GID/UID so the child
+        // never inherits the agent's extra groups.
+        //
+        // SAFETY: pre_exec runs between fork and exec; setgroups/setgid/setuid
+        // are async-signal-safe and the closure captures only Copy values.
+        unsafe {
+            command.pre_exec(move || {
+                if libc::setgroups(0, std::ptr::null()) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                if libc::setgid(gid) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                if libc::setuid(uid) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
     }
 
     let started = Instant::now();

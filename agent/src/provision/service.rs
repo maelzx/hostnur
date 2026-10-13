@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::contract::Uuid;
 use crate::journal::{Journal, JournalError, ManagedApplication};
 
+use super::accounts::Accounts;
 use super::policy::{self, Lifecycle};
 
 /// Reports observed host state so policy decisions can be tested without root.
@@ -52,6 +53,12 @@ pub enum ProvisionError {
     RegistryMismatch,
     /// A journal operation failed.
     Registry(String),
+    /// A system account-management tool failed.
+    AccountToolFailed { tool: String, detail: String },
+    /// A managed account could not be resolved after creation.
+    AccountMissing { name: String },
+    /// Observed identity disagrees with the recorded identity (drift).
+    IdentityDrift { name: String },
 }
 
 impl std::fmt::Display for ProvisionError {
@@ -81,6 +88,15 @@ impl std::fmt::Display for ProvisionError {
                 f.write_str("registry identity does not match the derived identifier")
             }
             ProvisionError::Registry(message) => write!(f, "registry error: {message}"),
+            ProvisionError::AccountToolFailed { tool, detail } => {
+                write!(f, "account tool `{tool}` failed: {detail}")
+            }
+            ProvisionError::AccountMissing { name } => {
+                write!(f, "managed account `{name}` was not found after creation")
+            }
+            ProvisionError::IdentityDrift { name } => {
+                write!(f, "identity for `{name}` disagrees with the registry")
+            }
         }
     }
 }
@@ -169,6 +185,85 @@ impl<'a> ProvisioningService<'a> {
             application: stored,
             reused: !created,
         })
+    }
+
+    /// Create (or reconcile) the isolated Linux account for an application.
+    ///
+    /// Idempotent and crash-safe: a reservation with no account creates one; a
+    /// reservation whose account already exists adopts the observed identity
+    /// (resuming after a crash) unless it disagrees with a recorded identity,
+    /// which is drift.
+    pub fn provision_identity(
+        &self,
+        application_id: &Uuid,
+        provider: Option<&str>,
+        revision: Option<&str>,
+        accounts: &dyn Accounts,
+    ) -> Result<ManagedApplication, ProvisionError> {
+        let reservation = self.reserve(application_id, provider, revision)?;
+        let name = reservation.application.account_name.clone();
+        let observed = accounts.lookup(&name);
+
+        match (
+            observed,
+            reservation.application.account_uid,
+            reservation.application.account_gid,
+        ) {
+            (Some(ids), Some(uid), Some(gid)) => {
+                if ids.uid != uid || ids.gid != gid {
+                    self.record_state(
+                        application_id,
+                        Lifecycle::Drifted,
+                        Some(ids.uid),
+                        Some(ids.gid),
+                    )?;
+                    return Err(ProvisionError::IdentityDrift { name });
+                }
+            }
+            (Some(ids), _, _) => {
+                // Resume: account exists but the registry had not recorded it.
+                self.record_state(
+                    application_id,
+                    Lifecycle::AccountCreated,
+                    Some(ids.uid),
+                    Some(ids.gid),
+                )?;
+            }
+            (None, Some(_), _) => {
+                // Registry claims an account that no longer exists.
+                self.record_state(application_id, Lifecycle::Drifted, None, None)?;
+                return Err(ProvisionError::IdentityDrift { name });
+            }
+            (None, None, _) => {
+                let ids = accounts.create(&name)?;
+                self.record_state(
+                    application_id,
+                    Lifecycle::AccountCreated,
+                    Some(ids.uid),
+                    Some(ids.gid),
+                )?;
+            }
+        }
+
+        self.journal
+            .managed_application(application_id)?
+            .ok_or(ProvisionError::RegistryMismatch)
+    }
+
+    fn record_state(
+        &self,
+        application_id: &Uuid,
+        lifecycle: Lifecycle,
+        uid: Option<u32>,
+        gid: Option<u32>,
+    ) -> Result<(), ProvisionError> {
+        self.journal.update_managed_application_state(
+            application_id,
+            lifecycle.as_str(),
+            uid,
+            gid,
+        )?;
+        Ok(())
     }
 }
 
@@ -318,5 +413,115 @@ mod tests {
             matches!(error, ProvisionError::RegistryMismatch),
             "{error:?}"
         );
+    }
+
+    struct FakeAccounts {
+        ids: std::cell::RefCell<
+            std::collections::HashMap<String, super::super::accounts::AccountIds>,
+        >,
+        next: std::cell::Cell<u32>,
+    }
+
+    impl FakeAccounts {
+        fn new() -> Self {
+            Self {
+                ids: std::cell::RefCell::new(std::collections::HashMap::new()),
+                next: std::cell::Cell::new(1000),
+            }
+        }
+    }
+
+    impl super::super::accounts::Accounts for FakeAccounts {
+        fn lookup(&self, name: &str) -> Option<super::super::accounts::AccountIds> {
+            self.ids.borrow().get(name).copied()
+        }
+
+        fn create(&self, name: &str) -> Result<super::super::accounts::AccountIds, ProvisionError> {
+            let uid = self.next.get();
+            self.next.set(uid + 1);
+            let ids = super::super::accounts::AccountIds { uid, gid: uid };
+            self.ids.borrow_mut().insert(name.to_string(), ids);
+            Ok(ids)
+        }
+
+        fn delete(&self, name: &str) -> Result<(), ProvisionError> {
+            self.ids.borrow_mut().remove(name);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn provision_identity_creates_then_is_idempotent() {
+        let journal = Journal::open_in_memory().unwrap();
+        let probe = FakeProbe::empty();
+        let accounts = FakeAccounts::new();
+        let service = ProvisioningService::new(&journal, &probe);
+        let app = id("224065ac-4bc7-4ba4-a06d-8c8bca950c32");
+
+        let first = service
+            .provision_identity(&app, Some("php-laravel"), Some("rev-1"), &accounts)
+            .unwrap();
+        assert_eq!(first.lifecycle_state, "account_created");
+        assert_eq!(first.account_uid, Some(1000));
+        assert_eq!(first.account_gid, Some(1000));
+        assert_eq!(accounts.next.get(), 1001);
+
+        let second = service
+            .provision_identity(&app, None, None, &accounts)
+            .unwrap();
+        assert_eq!(second, first);
+        // No new identity was allocated.
+        assert_eq!(accounts.next.get(), 1001);
+    }
+
+    #[test]
+    fn provision_identity_resumes_after_crash() {
+        let journal = Journal::open_in_memory().unwrap();
+        let probe = FakeProbe::empty();
+        let accounts = FakeAccounts::new();
+        let service = ProvisioningService::new(&journal, &probe);
+        let app = id("224065ac-4bc7-4ba4-a06d-8c8bca950c32");
+
+        // Reserved but the account exists (crash before the registry update).
+        service.reserve(&app, None, None).unwrap();
+        accounts.create("hn_224065ac4bc7").expect("seed account");
+
+        let resumed = service
+            .provision_identity(&app, None, None, &accounts)
+            .unwrap();
+        assert_eq!(resumed.lifecycle_state, "account_created");
+        assert_eq!(resumed.account_uid, Some(1000));
+    }
+
+    #[test]
+    fn provision_identity_detects_changed_uid() {
+        let journal = Journal::open_in_memory().unwrap();
+        let probe = FakeProbe::empty();
+        let accounts = FakeAccounts::new();
+        let service = ProvisioningService::new(&journal, &probe);
+        let app = id("224065ac-4bc7-4ba4-a06d-8c8bca950c32");
+
+        service
+            .provision_identity(&app, None, None, &accounts)
+            .unwrap();
+        // The account is recreated externally with a different UID.
+        accounts.ids.borrow_mut().insert(
+            "hn_224065ac4bc7".to_string(),
+            super::super::accounts::AccountIds {
+                uid: 2000,
+                gid: 2000,
+            },
+        );
+
+        let error = service
+            .provision_identity(&app, None, None, &accounts)
+            .unwrap_err();
+        assert!(
+            matches!(error, ProvisionError::IdentityDrift { .. }),
+            "{error:?}"
+        );
+
+        let state = journal.managed_application(&app).unwrap().unwrap();
+        assert_eq!(state.lifecycle_state, "drifted");
     }
 }

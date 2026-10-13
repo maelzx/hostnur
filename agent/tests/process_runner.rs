@@ -88,6 +88,44 @@ fn working_directory_is_honored() {
 }
 
 #[test]
+#[ignore = "requires root to switch process identity"]
+fn runs_as_target_identity_without_extra_groups() {
+    let user = nix::unistd::User::from_name("nobody")
+        .ok()
+        .flatten()
+        .expect("`nobody` account is required for this test");
+
+    let mut spec = CommandSpec::new("/usr/bin/id", Duration::from_secs(5));
+    spec.uid = Some(user.uid.as_raw());
+    spec.gid = Some(user.gid.as_raw());
+
+    let outcome = run(&spec).expect("run id");
+    assert!(outcome.succeeded(), "{outcome:?}");
+    let stdout = String::from_utf8_lossy(&outcome.stdout);
+
+    assert!(
+        stdout.contains(&format!("uid={}(", user.uid.as_raw())),
+        "expected target uid in: {stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("gid={}(", user.gid.as_raw())),
+        "expected target gid in: {stdout}"
+    );
+    // Supplementary groups must be empty: the group list is exactly the target gid.
+    let groups = stdout.split("groups=").nth(1).expect("groups field");
+    let group_ids: Vec<&str> = groups.trim().split(',').collect();
+    assert_eq!(
+        group_ids.len(),
+        1,
+        "unexpected supplementary groups: {stdout}"
+    );
+    assert!(
+        group_ids[0].starts_with(&format!("{}(", user.gid.as_raw())),
+        "unexpected group: {stdout}"
+    );
+}
+
+#[test]
 fn policy_rejects_unlisted_programs() {
     let policy = ProcessPolicy::new(["/usr/bin/pwd"]);
     let shell = CommandSpec::new("/bin/sh", Duration::from_secs(1));
