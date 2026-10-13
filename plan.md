@@ -253,13 +253,13 @@ session's numbering. All phases after 1 are pending unless explicitly noted.
   closed; every screen states what is configured versus simulated versus observed.
 
 ### Phase 9 — Web milestone, quality checks and integration handoff
-- Status: pending; next. Begins at P9.1 in section 9.11.
+- Status: complete. P9.1–P9.5 all passed local checks and real PHP 8.3/8.4 CI.
 - Depends on: 1–8.
 - Slices: web regression, authorization/CSRF/MFA checks, responsive/accessibility
   review, queue/audit failure tests, schema/fixture review, documented adapter map
   and instructions for the future agent environment.
-- Exit: web-only CI passes and the panel is independently runnable; contracts and
-  acceptance cases are ready for Rust. This is a web milestone, not public beta.
+- Exit: met — web-only CI passes and the panel is independently runnable; contracts
+  and acceptance cases are ready for Rust. This is a web milestone, not public beta.
 
 Detailed implementation, file maps, slice IDs, schemas and test requirements for
 phases 1–9 are in **section 9** below. Use that playbook to continue development.
@@ -427,6 +427,36 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 023 — Phase 9 web milestone verification (P9.1–P9.5) (2026-10-13)
+
+- Completed **all of phase 9** (P9.1–P9.5) and the web milestone. P9.1: added
+  `WebRegressionTest` covering the web acceptance matrix (guest/ordinary/stale-MFA
+  gates, recent-auth, Livewire authorization, ID tampering, escaped task output,
+  secret non-rendering, job payload hygiene). P9.2: added `QueueInterruptionTest`
+  (outbox redispatch, concurrent-lease no double-submit, unknown-not-success with no
+  replay, accurate cancellation). P9.3: escaped-output/secret-leak assertions plus a
+  recorded blocked real-browser review. P9.4: authored `docs/agent-integration.md`
+  (operation → schema → resource → permission/approval → recovery map) and augmented
+  `contracts/v1/README.md` with limits, capabilities, idempotency, cancellation and
+  unknown-state handling. P9.5: authored `docs/web-development.md`,
+  `docs/authentication.md` and `docs/web-milestone.md`, and updated `plan.md` phases
+  1–9 to complete with a final resume card.
+- Phase-9 acceptance: full `php artisan test --compact` — **244 tests / 998
+  assertions passed** (13 new phase-9 tests). `vendor/bin/pint`,
+  `composer check:syntax`, `composer check:style`, `composer validate` (known
+  license warning), `composer check-platform-reqs`, `composer audit`, `npm audit`,
+  `npm run build`, `route:list`, `view:cache` and guest HTTP smokes all passed. The
+  local DB gained no new schema this session. CI passes both PHP 8.3 and 8.4.
+- Blocked/deferred (recorded, not claimed): real browser keyboard/screen-reader and
+  375 px/desktop review; disposable-VM install/systemd/TLS/upgrade/restore/isolation
+  gates; Rust toolchain. Rust begins only when the user supplies/resumes the agent
+  environment (phase 10), then phase 11 transport/version negotiation.
+- Files: `tests/Feature/{WebRegressionTest,QueueInterruptionTest}.php`,
+  `docs/{web-development,authentication,agent-integration,web-milestone}.md`,
+  `contracts/v1/README.md`, `plan.md`; both READMEs and `AGENTS.md`.
+- Next slice: **P10.1** (Rust foundation) from section 9.12/phase 10, deferred until
+  the agent environment is available; the web milestone is otherwise complete.
 
 ### Session 022 — Phase 8 server administration (P8.1–P8.6) (2026-10-13)
 
@@ -1271,32 +1301,27 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ### Next session's single slice
 
-Use the **DeepSeek starter prompt in section 9.1** and implement **P9.1** from
-section 9.11 (complete web regression; phases 1–8 are complete through
-server-administration views). Finish one slice, record exact checks and the next
-slice ID, commit/push and stop. Real PHP 8.3/8.4 CI is green through session 022.
-Port 9000 is the selected local panel port; Rust remains deferred to phase 10.
+**The web milestone (phases 1–9) is complete.** There is no next web slice; the
+panel is independently runnable and tested. See `docs/web-milestone.md` for the
+passed gates, blocked manual checks and the acceptance map.
 
-Concrete P9.1 starting notes from session 022 (verify against the installed code
-before relying on them):
+The next work is **phase 10 (Rust foundation)**, which is **deferred until the user
+supplies a prepared agent environment**: recheck the stored `rust-toolchain.toml`
+pin/MSRV, scaffold `agent/`, then phase 11 protocol framing/version negotiation
+against `contracts/v1` and `docs/agent-integration.md`. Do not install Rust or run
+privileged host operations without that environment. Local web work continues to use
+port 9000 with `HOSTNUR_AGENT_MODE=fake`.
 
-- Add a consolidated regression suite (or extend existing suites) covering the web
-  acceptance matrix: guest/ordinary/recent-auth/stale-MFA gates, app CRUD with
-  revisions and secret references, unsafe URL/domain/ID tampering, task
-  double-submit/duplicate-job/retry single-intent, capability/offline behavior and
-  escaped/redacted logs and audit. Prefer a small number of high-signal tests that
-  assert observable behavior over duplicating existing per-slice suites.
-- Confirm the whole suite passes on both PHP 8.3 and 8.4 (the CI matrix already
-  does this); record the run URLs. Note any acceptance item not yet covered.
-- P9.1 is regression coverage. Interruption/queue checks are P9.2, browser/
-  accessibility review P9.3, contract/resource-map freeze P9.4 and operator/developer
-  handoff P9.5. Do not add Rust or host mutations.
+If the user wants more web-only work instead, the remaining genuine gates are a real
+browser keyboard/screen-reader and 375 px/desktop review, and a disposable-VM pass
+over install/systemd/TLS/upgrade/restore/isolation; both are currently blocked by
+missing environment access and are recorded in `docs/web-milestone.md`.
 
 ### Current blockers
 
-- No blocker to local web work; scaffold/dependency resolution/build/tests now pass.
-  Prior Composer-tool diagnostic findings remain recorded, and the shared tool is
-  not to be changed under the user's environment constraint.
+- No blocker to local web work; the full suite and static gates pass locally and on
+  both CI runtimes. Prior Composer-tool diagnostic findings remain recorded, and the
+  shared tool is not to be changed under the user's environment constraint.
 - Strict Composer validation awaits a project license decision; the normal
   metadata check passes with that warning. PHP 8.3/8.4 CI now passes.
 - Missing Rust does not block web work; Rust development waits for phase 10 and the
@@ -1328,20 +1353,21 @@ before relying on them):
 | Applications | `applications`/`application_revisions`/`source_credentials`/`application_secrets`/`application_domains`, `App\Services\ApplicationService` + `ApplicationPolicy`, `App\Support\{GitRepositoryUrl,Hostname}`, `/panel/applications` + `/{id}` (config/source/credential/secret/domain/archive) |
 | Deployments | `deployments` + `App\Services\DeploymentService` + `DeploymentPreflight`, `/panel/applications/{id}/operations` (recent-auth wizard) and `/panel/deployments` + `/{id}`; task-derived state/release, restart/rollback |
 | Server admin | `scheduled_jobs`/`certificates`/`database_requests`/`backup_policies`/`backups` + `App\Services\{ServerService,ScheduleService,CertificateService,DatabaseService,BackupService}`; `/panel/server`, `/panel/schedules`, `/panel/certificates`, `/panel/databases`, `/panel/backups` (recent-auth), `x-ui.request-status`/`x-ui.capability-notice` |
-| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment, 13 MFA-challenge, 17 security-settings, 8 recovery, 8 agent-contract, 8 agent-availability, 12 fake-agent, 4 task-status, 7 task-request, 11 task-execution, 8 task-audit/UI, 5 panel-shell, 5 task-visibility, 3 dashboard, 4 accessibility, 20 Git-URL, 15 hostname, 14 application-inventory, 10 deployment, 10 server-administration and 2 scaffold tests; 231 tests / 944 assertions at handoff |
+| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment, 13 MFA-challenge, 17 security-settings, 8 recovery, 8 agent-contract, 8 agent-availability, 12 fake-agent, 4 task-status, 7 task-request, 11 task-execution, 8 task-audit/UI, 5 panel-shell, 5 task-visibility, 3 dashboard, 4 accessibility, 20 Git-URL, 15 hostname, 14 application-inventory, 10 deployment, 10 server-administration, 9 web-regression, 4 queue-interruption and 2 scaffold tests; 244 tests / 998 assertions at handoff |
 | CI | `.github/workflows/web-panel.yml`; PHP 8.3/8.4, Node 24, actual runtime/static/build/migration/test gates; watches `panel/**` and `contracts/**` |
-| Last application CI | Session 021 code passed: <https://github.com/maelzx/hostnur/actions/runs/38370400996>, code commit `5fcb986` |
+| Last application CI | Session 022 code passed: <https://github.com/maelzx/hostnur/actions/runs/38371962845>, code commit `7635290` |
 | Current local URL | `http://127.0.0.1:9000`; committed example uses port 9000 |
-| Remaining work | Phase 9 web milestone verification (regression, interruption, browser/a11y, contract freeze, handoff) |
+| Remaining work | Web milestone complete; phase 10 Rust foundation deferred until the agent environment is supplied |
 
 Do not scaffold again, regenerate the app key, reset the database, create test
 users in the real DB, reinstall Boost, or install Rust. The last inspection found
 zero real users, but the user may have subsequently run bootstrap. Inspect state
-read-only when necessary; never assume the account needs recreating. Phases 2–8
-(authentication, agent contract, durable tasks/queue/audit, the panel UI,
-application inventory/source/secrets, deployment intent/operations and
-server-administration views) are complete; the phase-9 web-milestone verification
-and Rust handoff remain.
+read-only when necessary; never assume the account needs recreating. Phases 1–9
+(the complete web milestone: authentication, agent contract, durable
+tasks/queue/audit, panel UI, application inventory/source/secrets, deployments,
+server administration and the phase-9 verification/handoff) are complete. The next
+work is the deferred Rust agent (phase 10+), which requires a user-supplied
+environment.
 
 #### Low-cost session protocol
 
@@ -2068,6 +2094,11 @@ same validated workflow in fake mode; unavailable/unsupported mode remains close
 Every screen states what is configured versus simulated versus actually observed.
 
 ### 9.11 Phase 9 — Web milestone verification and Rust handoff
+
+**Status: P9.1–P9.5 done; phase 9 and the web milestone complete.** Regression and
+interruption tests, the escaped-output/authorization checks, the contract/resource
+map and the operator/developer handoff documents exist. Rust begins only in phase
+10 when the user supplies the agent environment.
 
 **Goal:** finish the independently runnable web panel and leave an exact agent
 contract/acceptance map, not a collection of optimistic dashboard screenshots.

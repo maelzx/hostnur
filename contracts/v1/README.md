@@ -43,6 +43,36 @@ cancellation is reported as requested until confirmed.
 stable machine code plus a safe user message; raw secrets, environments and
 exception traces are never included.
 
+## Limits
+
+Bounded protocol message (1 MiB), parameters (64), operation events (100) and
+server observations (100); parameters carry operation-specific values only, never
+an arbitrary root command or shell string. Retained task output is additionally
+capped and redacted by the panel before persistence.
+
+## Capabilities
+
+`CapabilitySnapshot` reports the protocol version, mode, availability, supported
+operations and an availability reason. `unavailable` lists no operations and fails
+mutations closed; `real` reports unavailable until phase 11; `fake` lists only the
+operations it simulates. Callers must check capability support before requesting an
+operation.
+
+## Idempotency
+
+`submit` is idempotent on `idempotency_key`: the same key reuses the same execution
+and acceptance is distinct from completion. The same key with a different payload
+is a `conflict`. Panel-side transactions dedupe on actor + key so duplicate jobs or
+double clicks create one intent.
+
+## Cancellation and unknown state
+
+`cancel` reports `requested` / `unsupported` / `already_finished`; it is not a
+rollback and is never reported as complete until confirmed. Inspecting an unknown
+execution is explicit (`execution_unknown`) and is treated as `unknown`, never as
+success. A lost receipt is reconciled with the same identity; destructive
+operations are never blindly replayed.
+
 ## Modes and failure behavior
 
 `HOSTNUR_AGENT_MODE` selects the adapter:

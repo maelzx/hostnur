@@ -23,15 +23,16 @@ LTS on amd64, with PHP/Laravel as the first hosted application workflow.
 SQLite and database-backed queues. Local setup/run instructions are in
 [`panel/README.md`](panel/README.md); the selected local port is **9000**.
 Web-only GitHub Actions and syntax/style gates pass on PHP 8.3/8.4 and Node 24.
-Phase 1 through phase 8 are complete: authentication, the typed agent contract
-(unavailable + deterministic fake adapters), durable panel tasks with a database
-queue/leases/approvals/audit, a protected operations shell with dashboard and
-task/audit history, application inventory with encrypted source/secrets and
-normalized domains, deployment intent/preflight/wizard with task-derived
-progress/restart/rollback, and server-administration views (services, packages,
-firewall, schedules, domains/TLS, databases and backup policies) over the same
-validated workflow. See [`panel/README.md`](panel/README.md) for setup
-instructions. Run outcomes and the session handoff are recorded in `plan.md`.
+Phase 1 through phase 9 are complete: the full web-only milestone, including
+authentication, the typed agent contract (unavailable + deterministic fake
+adapters), durable panel tasks with database queue/leases/approvals/audit, the
+operations shell with dashboard and task/audit history, application
+inventory/source/secrets, deployment intent/preflight/wizard and
+server-administration views. The panel is independently runnable and tested; see
+[`docs/web-milestone.md`](docs/web-milestone.md) and
+[`panel/README.md`](panel/README.md). Rust (phase 10) begins only when a prepared
+agent environment is supplied. Run outcomes and the session handoff are recorded in
+`plan.md`.
 
 For DeepSeek continuation, start with **`plan.md` section 9.1**, then the selected
 phase's detailed slice. Section 9 provides the complete web-only implementation

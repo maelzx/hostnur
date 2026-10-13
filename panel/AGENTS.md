@@ -37,8 +37,11 @@
   preflight, wizard confirmation, task-derived progress/logs and restart/rollback
   over the existing task pipeline) is complete, and phase 8 (server administration:
   service/package/firewall views, scheduled jobs, domains/TLS, database requests and
-  backup policies through the same validated workflow) is complete. Phase 9 (web
-  milestone verification and Rust handoff) is next.
+  backup policies through the same validated workflow) is complete, and phase 9
+  (web regression, interruption checks, contract/resource map and operator/
+  developer handoff) is complete. The web milestone is done; see
+  `../docs/web-milestone.md`. Rust (phase 10) starts only when the user supplies a
+  prepared agent environment. Keep using `HOSTNUR_AGENT_MODE=fake` locally.
 - Bootstrap uses `panel_setup` as durable one-time state, claimed in the same DB
   transaction as user creation. Do not turn deletion or repeat bootstrap into a
   reset mechanism. `is_admin` defaults false and is not mass assignable.

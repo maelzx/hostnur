@@ -153,7 +153,7 @@ npm audit
 npm run build
 ```
 
-Sessions 004–022 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
+Sessions 004–023 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
 24.12.0 and npm 11.6.2. The suite contains 20 administrator-bootstrap tests, 14
 authentication tests, 12 MFA-enrollment tests, 13 MFA-challenge tests, 17
 security-settings tests, 8 administrator-recovery tests, 8 agent-contract tests,
@@ -161,8 +161,8 @@ security-settings tests, 8 administrator-recovery tests, 8 agent-contract tests,
 tests, 11 task-execution tests, 8 task-audit/UI tests, 5 panel-shell tests, 5
 task-visibility tests, 3 dashboard tests, 4 accessibility tests, 20 Git-URL tests,
 15 hostname tests, 14 application-inventory tests, 10 deployment tests, 10
-server-administration tests and two scaffold baseline tests. Run individual suites
-with:
+server-administration tests, 9 web-regression tests, 4 queue-interruption tests and
+two scaffold baseline tests. Run individual suites with:
 
 ```bash
 php artisan test --compact tests/Feature/AuthenticationTest.php
@@ -185,6 +185,8 @@ php artisan test --compact tests/Feature/AccessibilityTest.php
 php artisan test --compact tests/Feature/ApplicationInventoryTest.php
 php artisan test --compact tests/Feature/DeploymentTest.php
 php artisan test --compact tests/Feature/ServerAdministrationTest.php
+php artisan test --compact tests/Feature/WebRegressionTest.php
+php artisan test --compact tests/Feature/QueueInterruptionTest.php
 ```
 
 Authentication tests use isolated in-memory SQLite and cover guest redirects,
@@ -360,6 +362,16 @@ requests when unavailable, schedule/cron/timezone/command validation without cro
 installation, OpenSSL certificate matching and host coverage with hidden keys,
 generated hidden database credentials, simulated non-recoverable backups, and the
 gated pages.
+
+## Web milestone
+
+The web-only milestone is complete: the panel is independently runnable and tested
+without Rust or host mutation. See [`../docs/web-milestone.md`](../docs/web-milestone.md)
+for passed gates, blocked manual checks and the acceptance map, plus
+[`../docs/web-development.md`](../docs/web-development.md),
+[`../docs/authentication.md`](../docs/authentication.md) and
+[`../docs/agent-integration.md`](../docs/agent-integration.md). Rust (phase 10)
+starts only when a prepared agent environment is supplied.
 
 Bootstrap tests use isolated in-memory SQLite, including interleaved setup writes,
 rollback and secret-output checks; they do not create your real administrator.
