@@ -68,7 +68,8 @@ below has no native build step and does not raise the MSRV beyond the pin.
 | `signal-hook` | 0.4.5 | SIGTERM/SIGINT flag registration | MIT OR Apache-2.0 |
 | `serde` | 1.0.229 | derive-based (de)serialization for contract DTOs (phase 11.1) | MIT OR Apache-2.0 |
 | `serde_json` | 1.0.154 | strict JSON request parsing and response serialization (phase 11.1) | MIT OR Apache-2.0 |
-| `nix` | 0.31.3 | safe `SO_PEERCRED` peer-credential wrapper (phase 11.2) | MIT |
+| `nix` | 0.31.3 | safe syscall wrappers: `SO_PEERCRED`, signals, `setgroups`/`setgid`/`setuid`, `openat2`-adjacent fs ops (phases 11.2, 12.2) | MIT |
+| `libc` | 0.2.190 | `openat2(2)` beneath-resolution syscall and child-identity drop (phases 12.2, 12.3) | MIT OR Apache-2.0 |
 | `rusqlite` | 0.40.2 | agent-owned execution journal and resource registry (phase 11.3); `bundled` compiles SQLite from source (C toolchain) | MIT |
 | `getrandom` | 0.4.3 | OS CSPRNG for execution/resource UUIDs (phase 11.3) | MIT OR Apache-2.0 |
 | `tempfile` (dev) | 3.27.0 | temporary config directories in tests | MIT OR Apache-2.0 |
@@ -163,6 +164,43 @@ supported operations); an unrelated user is denied at `connect()`; and
 `systemctl restart` recreates the socket and serves again. `server.snapshot`
 returns live read-only metrics (load, memory, uptime, root-disk usage, CPU count),
 hostname and OS from `/proc`/`statvfs` — no writable operation and no shell.
+
+## Managed application isolation (phase 12)
+
+`agent/src/provision/` turns an approved application UUID into an isolated Linux
+identity and a managed layout:
+
+- **Identity/namespace** (`policy.rs`): account name `hn_<12 hex of UUID>`,
+  layout `/opt/hostnur/apps/<uuid>/{releases,shared,shared/secrets,current}`,
+  and the `reserved -> account_created -> layout_prepared -> ready` lifecycle
+  (plus `failed`/`drifted`). Names and paths are always derived from the UUID.
+- **Accounts** (`accounts.rs`): `groupadd`/`useradd` via the allowlisted process
+  primitive with a validated argv; the result is read back from NSS, not trusted
+  from tool output. No login shell, no home, not in the panel socket group.
+- **Safe filesystem** (`safe_fs.rs`): every managed write is resolved with
+  `openat2(RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS)` from a
+  single trusted base descriptor; files publish with an atomic rename.
+- **UID switching** (`process.rs`): the child clears supplementary groups with
+  `setgroups([])` before `setgid`/`setuid`, so it never inherits the agent's
+  groups.
+- **Reconciliation** (`service.rs`): idempotent reserve/provision/reconcile;
+  unmanaged accounts or paths are refused, identity drift is detected, and a
+  re-verified layout is marked ready.
+
+Privilege model for this phase: a **root-run harness** on the disposable VM, not
+yet the hardened systemd service (which still runs as `hostnur`). Root-only tests
+are `#[ignore]`d and executed directly:
+
+```bash
+cargo test --locked --no-run
+sudo target/debug/deps/provision_vm-<hash> --ignored --nocapture
+sudo target/debug/deps/process_runner-<hash> --ignored --nocapture
+```
+
+The vetted isolation runs verified on the arm64 Lima VM: two apps provisioned with
+distinct UIDs, `shared` `0750` app-owned, `secrets` `0700`, `releases` root-owned
+`0755`; app A read its own secret and was denied app B's; a symlinked parent was
+refused; and a child ran as the target UID with no supplementary groups.
 
 ## Blocked / deferred checks
 

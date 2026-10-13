@@ -474,7 +474,9 @@ with privileged cases evidenced on the VM. The agent supports a narrow tested se
 of read-only operations and safe primitives; later handlers remain unsupported.
 
 ### Phase 12 — Linux application isolation and resource reconciliation
-- Status: planned; requires disposable Ubuntu VM access for isolation evidence.
+- Status: **complete (P12.1–P12.5)** in session 027, verified with a root-run
+  harness on the arm64 Lima VM. Privileged provisioning runs via the harness, not
+  yet the hardened systemd service.
 - Depends on: 6, 11.
 
 #### Objective and resource identity
@@ -1397,6 +1399,40 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 027 — Phase 12 application isolation (P12.1–P12.5) (2026-10-13)
+
+- Completed **all of phase 12**. P12.1: managed-application registry
+  (`managed_applications` table) and namespace policy (`agent/src/provision/policy.rs`):
+  `hn_<12 hex>`, fixed `/opt/hostnur/apps/<uuid>/...` layout, lifecycle
+  `reserved -> account_created -> layout_prepared -> ready` (+ `failed`/`drifted`);
+  `ProvisioningService::reserve` refuses account-name collisions and unmanaged
+  accounts/paths (host state injected via a `HostProbe` so policy is testable
+  without root). P12.2: `accounts.rs` creates no-login, no-home, no-socket-group
+  accounts via allowlisted `groupadd`/`useradd` and reads the identity back from
+  NSS; the process primitive now clears supplementary groups
+  (`setgroups([])`) before `setgid`/`setuid` in a `pre_exec` child. P12.3:
+  `safe_fs.rs` resolves every managed path with
+  `openat2(RESOLVE_BENEATH|NO_SYMLINKS|NO_MAGICLINKS)` from one trusted base fd,
+  creates the verified mode/ownership tree and publishes files with an atomic
+  rename. P12.4: idempotent `reconcile` resumes partial states, re-verifies layout,
+  heals loosened modes and detects identity drift. P12.5: root-run VM isolation
+  harness.
+- Dependencies: added `libc` (openat2 + identity drop); `nix` features extended
+  (`process`, `signal`, `hostname`). Recorded in `docs/agent-development.md`.
+- Checks (Lima Ubuntu 24.04 arm64 VM): `cargo fmt`, `cargo clippy --locked
+  --all-targets -- -D warnings`, `cargo build --locked`, `cargo test --locked` —
+  **121 tests passed**. Root-only `#[ignore]` harnesses run directly as root:
+  `provision_vm` (two apps, distinct UIDs, `shared` `0750` app-owned, `secrets`
+  `0700`, `releases` root-owned `0755`; A reads its own secret but is denied B's;
+  symlinked parent refused) and `process_runner`
+  (`runs_as_target_identity_without_extra_groups`) both passed.
+- Blocked/deferred: still arm64-only locally (amd64 is CI-only); the hardened
+  systemd unit continues to run the agent as `hostnur` — running privileged
+  provisioning through the service is revisited when deployment handlers ship
+  (phase 14/15); full openat2 tests are Linux-only (CI covers them).
+- Next slice: **phase 13** (real public/private Git source lifecycle), which needs
+  confirmation of supported Git providers/auth modes.
 
 ### Session 026 — Phase 11 transport/execution boundary, part 1 (P11.1–P11.4) (2026-10-13)
 
@@ -2389,12 +2425,13 @@ The panel is independently runnable and tested; the agent crate builds, tests an
 runs unprivileged in the Lima VM. See `docs/web-milestone.md` and
 `docs/agent-development.md` for passed gates, blocked checks and acceptance maps.
 
-**Phase 11 is complete** (P11.1–P11.6, session 026). The next work is **phase 12
-(Linux application isolation and resource reconciliation)**, which needs a
-disposable Ubuntu 24.04 **amd64** VM for isolation evidence. Continue the agent in
-the Lima VM (`agent/`); the PHP panel runs on the host (PHP 8.4/Composer 2.9).
-Local web work continues on port 9000 with `HOSTNUR_AGENT_MODE=fake`. A live
-PHP↔Rust end-to-end test remains a recorded follow-up.
+**Phases 11 and 12 are complete** (sessions 026–027). The next work is **phase 13
+(real public/private Git source lifecycle)**, which first needs a decision on the
+supported providers/auth modes (public HTTPS, private HTTPS scoped token, and/or
+SSH deploy key). Continue the agent in the Lima VM (`agent/`) with the root-run
+harness for privileged slices; the PHP panel runs on the host. Local web work
+continues on port 9000 with `HOSTNUR_AGENT_MODE=fake`. Recorded follow-ups: a live
+PHP↔Rust end-to-end test, and amd64 VM evidence.
 
 Push the phase-10 commit to observe the agent CI workflow; a real CI run is still
 outstanding. The remaining genuine web gates (real browser keyboard/screen-reader
@@ -2412,10 +2449,12 @@ isolation) are unchanged and recorded in `docs/web-milestone.md`.
   1.99.0 toolchain was verified there. Phases 10 and 11 are complete locally. The
   agent CI workflow's real run is pending a push (sessions committed locally only).
 - Disposable Ubuntu 24.04 **amd64** VM access is still required for genuine amd64
-  install/systemd/TLS/upgrade/restore/isolation gates (phase 12+); those remain
-  unverified until supplied.
+  install/systemd/TLS/upgrade/restore/isolation gates; local phase-12 evidence is
+  arm64 with amd64 covered only by the CI build target.
 - A live PHP↔Rust cross-language end-to-end test (panel over the socket to the real
   agent) is a recorded follow-up; PHP is not installed in the VM.
+- Phase 13 awaits a provider/auth decision: which Git providers and authentication
+  modes (public HTTPS, private HTTPS scoped token, SSH deploy key) to support first.
 - Official domain, Git authentication details, database engine, release signing,
   and license await the decision checkpoints listed in section 6.
 

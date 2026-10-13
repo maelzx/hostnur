@@ -363,6 +363,9 @@ impl<'a> ProvisioningService<'a> {
         root: &ManagedRoot,
         accounts: &dyn Accounts,
     ) -> Result<ManagedApplication, ProvisionError> {
+        if self.journal.managed_application(application_id)?.is_none() {
+            self.reserve(application_id, None, None)?;
+        }
         let current = self
             .journal
             .managed_application(application_id)?
