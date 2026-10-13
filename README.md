@@ -16,6 +16,8 @@ LTS on amd64, with PHP/Laravel as the first hosted application workflow.
   commands for the runnable Laravel/Livewire scaffold.
 - [Agent development](docs/agent-development.md): the Rust agent crate, prepared
   environment, toolchain/target decisions and commands.
+- [Disposable test host runbook](docs/p16-test-host.md): rebuild the throwaway
+  public host used for phase-16 TLS and socket-deploy validation.
 - [Original requirements](vps-control-panel-plan.md): source product specification;
   subsequent confirmed decisions are recorded in `plan.md`.
 

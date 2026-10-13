@@ -1419,6 +1419,22 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ## 8. Current handoff
 
+### Session 033 — Pause; disposable host destroyed (2026-10-13)
+
+- Paused for the night. The DigitalOcean test droplet is **destroyed**; nothing
+  needs cleanup on the dev machine except the Lima VM (kept) and the SSH key
+  (`~/.ssh/hostnur_p16_ed25519`, kept). All code/docs are committed locally
+  (through `a376ef6` + this session).
+- The exact rebuild steps for the disposable host (baseline, amd64 cross-build,
+  agent install, panel install, DNS/TLS, admin bootstrap, AssetKOM socket deploy,
+  and "make AssetKOM usable" remaining steps) are recorded in
+  [`docs/p16-test-host.md`](docs/p16-test-host.md). Recreate by following it
+  top-to-bottom; the droplet IP and any DNS record will change, so update the
+  placeholders.
+- To fully confirm AssetKOM in a browser after recreate: DNS A record → new IP,
+  create the first AssetKOM admin (its `users` table ships empty), and
+  (recommended) issue HTTPS for the app hostname + set production env/SMTP.
+
 ### Session 032 — Socket deploy, PHP 8.4 pipeline and guided app setup (2026-10-13)
 
 - Completed the pending phase-15 item: `application.deploy` is now executed over
@@ -2601,14 +2617,14 @@ The panel is independently runnable and tested; the agent crate builds, tests an
 runs unprivileged in the Lima VM. See `docs/web-milestone.md` and
 `docs/agent-development.md` for passed gates, blocked checks and acceptance maps.
 
-**Phases 11–15 are substantially complete for their scopes** (sessions 026–030).
-The next work is **phase 16 (real TLS lifecycle)**, which needs a test domain/DNS
-and a publicly reachable VM — likely not possible on the current private VM, so
-record it as environment-blocked and consider the remaining phase-15 items
-(Composer build, workers/scheduler, crash reconciliation, panel integration)
-first. Continue the agent in the Lima VM (`agent/`) with the root-run harness for
-privileged slices. Recorded follow-ups: live PHP↔Rust end-to-end, amd64 VM
-evidence, live private-repo clone, and per-app `public/` ACLs.
+**Phases 11–16 are complete for their scopes** (sessions 026–033). Phase 16 and
+the socket-driven deploy were validated on a disposable public DigitalOcean host,
+which was then destroyed (session 033). To resume: recreate that host by following
+[`docs/p16-test-host.md`](docs/p16-test-host.md) (baseline → amd64 agent build →
+agent/panel install → DNS/TLS → admin bootstrap → deploy), then continue with
+phase 17. Recorded follow-ups: production-vs-staging issuance already chosen per
+run, per-app `public/` ACLs, the migration recovery-prerequisite gate, a
+dedicated non-root panel identity, and pushing commits to observe CI.
 
 Push the phase-10 commit to observe the agent CI workflow; a real CI run is still
 outstanding. The remaining genuine web gates (real browser keyboard/screen-reader
