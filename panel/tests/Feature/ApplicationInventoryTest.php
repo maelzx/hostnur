@@ -7,6 +7,7 @@ use App\Enums\DomainHttpsPolicy;
 use App\Enums\SourceStatus;
 use App\Enums\TaskStatus;
 use App\Exceptions\ApplicationConflictException;
+use App\Livewire\Panel\ApplicationShow;
 use App\Models\Application;
 use App\Models\ApplicationRevision;
 use App\Models\Task;
@@ -17,6 +18,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
 use Tests\Support\InteractsWithPanel;
 use Tests\TestCase;
 
@@ -335,5 +337,32 @@ class ApplicationInventoryTest extends TestCase
 
         $response->assertOk()->assertDontSee('<script>alert(1)</script>', false);
         $this->assertStringContainsString('&lt;script&gt;', $response->getContent());
+    }
+
+    public function test_the_livewire_component_saves_source_and_configuration(): void
+    {
+        $admin = $this->confirmedAdmin();
+        $this->actingAs($admin)->withSession($this->mfaProof($admin) + $this->recentAuth($admin));
+
+        $application = $this->application($admin);
+
+        Livewire::test(ApplicationShow::class, ['application' => $application->getKey()])
+            ->set('repository_url', 'https://github.com/maelzx/AssetKOM.git')
+            ->set('git_ref', 'main')
+            ->call('saveSource')
+            ->assertHasNoErrors();
+
+        $this->assertSame(
+            'https://github.com/maelzx/AssetKOM.git',
+            $application->refresh()->repository_url,
+        );
+
+        Livewire::test(ApplicationShow::class, ['application' => $application->getKey()])
+            ->set('runtime', 'php')
+            ->set('workers', 2)
+            ->call('saveConfiguration')
+            ->assertHasNoErrors();
+
+        $this->assertSame(2, (int) $application->refresh()->revisions()->first()->settings['workers']);
     }
 }

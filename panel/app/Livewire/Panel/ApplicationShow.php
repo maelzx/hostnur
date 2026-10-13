@@ -88,7 +88,7 @@ class ApplicationShow extends Component
         $application = $this->application();
         $this->authorize('update', $application);
 
-        $service->updateConfiguration($application->refresh(), [
+        $service->updateConfiguration($this->actor(), $application->refresh(), [
             'runtime' => $this->runtime,
             'runtime_version' => $this->runtime_version !== '' ? $this->runtime_version : null,
             'build_command' => $this->build_command !== '' ? $this->build_command : null,
@@ -108,7 +108,7 @@ class ApplicationShow extends Component
         $application = $this->application();
         $this->authorize('manageSource', $application);
 
-        $service->updateSource($application, [
+        $service->updateSource($this->actor(), $application, [
             'repository_url' => $this->repository_url,
             'git_ref' => $this->git_ref !== '' ? $this->git_ref : null,
             'source_credential_id' => $this->source_credential_id !== '' ? $this->source_credential_id : null,
