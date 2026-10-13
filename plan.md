@@ -455,6 +455,10 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - Files: `tests/Feature/{WebRegressionTest,QueueInterruptionTest}.php`,
   `docs/{web-development,authentication,agent-integration,web-milestone}.md`,
   `contracts/v1/README.md`, `plan.md`; both READMEs and `AGENTS.md`.
+- Feature commit `4ec19da` pushed; remote CI **passed** for PHP 8.3/Node 24 and
+  PHP 8.4/Node 24 (locked installs, static gates, asset build, migration,
+  template/queue and tests): <https://github.com/maelzx/hostnur/actions/runs/38372991483>,
+  verified with `gh run watch 38372991483 --exit-status`.
 - Next slice: **P10.1** (Rust foundation) from section 9.12/phase 10, deferred until
   the agent environment is available; the web milestone is otherwise complete.
 

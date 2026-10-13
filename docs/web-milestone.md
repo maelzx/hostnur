@@ -13,9 +13,10 @@ database or backup is actually provisioned.
   validate` (known license warning), `composer check-platform-reqs`,
   `composer audit`, `npm audit`, `npm run build`.
 - CI: GitHub Actions `web-panel.yml` on PHP 8.3/Node 24 and PHP 8.4/Node 24 with
-  committed lockfiles. The phase-8 checkpoint passed at commit `7635290`
-  (<https://github.com/maelzx/hostnur/actions/runs/38371962845>); the phase-9 run is
-  recorded in `../plan.md` Session 023.
+  committed lockfiles. The phase-9 checkpoint passed at commit `4ec19da`
+  (<https://github.com/maelzx/hostnur/actions/runs/38372991483>); the phase-8
+  checkpoint passed at commit `7635290`
+  (<https://github.com/maelzx/hostnur/actions/runs/38371962845>).
 
 ## Acceptance matrix → evidence
 
