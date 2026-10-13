@@ -680,7 +680,9 @@ snapshots as the intended non-root identity, with pinned commits and verified
 transport trust. Secrets do not survive in artifacts, history or diagnostics.
 
 ### Phase 14 — PHP/Laravel provider and transactional Nginx routing
-- Status: planned; approved runtime/package and web-server policies must be ratified.
+- Status: **substantially complete** (P14.1, P14.3–P14.6) in session 029, verified
+  with a root-run harness on the arm64 Lima VM. P14.2 (unprivileged Composer/
+  Laravel build) and the full Laravel release are deferred to phase 15.
 - Depends on: 12, 13.
 
 #### Objective and provider contract
@@ -1402,6 +1404,34 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 029 — Phase 14 PHP/Laravel provider and Nginx routing (2026-10-13)
+
+- Implemented **P14.1, P14.3–P14.6** (P14.2 Composer/Laravel build deferred).
+  P14.1: `agent/src/packages.rs` — approved package catalog with a fixed `apt-get`
+  argv, minimal env, bounded `DPkg::Lock::Timeout=60`, version read-back via
+  `dpkg-query`, and no argument injection (package ids only). P14.3/14.4:
+  `provider/nginx.rs` renders Laravel/static server blocks from derived values
+  (validated hostname, agent-owned root/socket/log paths, dotfile deny) and
+  `provider/php_fpm.rs` renders one pool per app running as the managed account.
+  P14.5: `NginxManager`/`FpmManager` validate (`nginx -t` / `php-fpm -t`) before
+  reload and restore the previous known-good file on validation or reload
+  failure. P14.6: real sites served on the VM.
+- Runtime/package decision (user): native Ubuntu 24.04 PHP 8.3 baseline **plus**
+  the ability to opt into external PHP repositories/versions — implemented as an
+  explicit operator allowlist (`RuntimePolicy::allow_versions`); nothing is
+  auto-added and unknown versions are refused.
+- Checks (Lima Ubuntu 24.04 arm64 VM, nginx 1.24 + php8.3-fpm installed):
+  `cargo fmt`, `cargo clippy --locked --all-targets -- -D warnings`,
+  `cargo build --locked`, `cargo test --locked` — **140 tests passed**. Root-run
+  `tests/provider_vm.rs` passed: a managed static site served over HTTP with a
+  failed-validation rollback, and a PHP-FPM-backed site served `index.php`
+  through a managed pool.
+- Deferred: P14.2 unprivileged Composer/Laravel build and full Laravel release
+  (phase 15); amd64 remains CI-only; live package install through the primitive
+  was not exercised in the harness (nginx/php-fpm were pre-installed via apt).
+- Next slice: **phase 15** (real deployment orchestration, logs/health/rollback),
+  the first genuine end-to-end native deployment milestone.
 
 ### Session 028 — Phase 13 Git source lifecycle, public + private HTTPS (2026-10-13)
 
@@ -2455,15 +2485,14 @@ The panel is independently runnable and tested; the agent crate builds, tests an
 runs unprivileged in the Lima VM. See `docs/web-milestone.md` and
 `docs/agent-development.md` for passed gates, blocked checks and acceptance maps.
 
-**Phases 11–13 are complete for their chosen scopes** (sessions 026–028). The next
-work is **phase 14 (PHP/Laravel provider and transactional Nginx routing)**, which
-needs the approved runtime/package and web-server policies ratified first (native
-Ubuntu 24.04 PHP 8.3/PHP-FPM baseline, approved package-install primitive, and the
-managed Nginx/FPM template rules). Continue the agent in the Lima VM (`agent/`)
-with the root-run harness for privileged slices; the PHP panel runs on the host.
-Local web work continues on port 9000 with `HOSTNUR_AGENT_MODE=fake`. Recorded
-follow-ups: live PHP↔Rust end-to-end, amd64 VM evidence, and live private-repo
-clone.
+**Phases 11–14 are complete for their scopes** (sessions 026–029; phase 14 except
+the Composer/Laravel build). The next work is **phase 15 (real deployment
+orchestration, logs, health and rollback)** — the first genuine end-to-end native
+deployment milestone — which will also finish P14.2's unprivileged Composer build
+and a real Laravel release. Continue the agent in the Lima VM (`agent/`) with the
+root-run harness for privileged slices; the PHP panel runs on the host. Local web
+work continues on port 9000 with `HOSTNUR_AGENT_MODE=fake`. Recorded follow-ups:
+live PHP↔Rust end-to-end, amd64 VM evidence, and live private-repo clone.
 
 Push the phase-10 commit to observe the agent CI workflow; a real CI run is still
 outstanding. The remaining genuine web gates (real browser keyboard/screen-reader
@@ -2485,10 +2514,10 @@ isolation) are unchanged and recorded in `docs/web-milestone.md`.
   arm64 with amd64 covered only by the CI build target.
 - A live PHP↔Rust cross-language end-to-end test (panel over the socket to the real
   agent) is a recorded follow-up; PHP is not installed in the VM.
-- Phase 14 awaits ratification of the runtime/package and web-server policies:
-  the native Ubuntu 24.04 PHP 8.3/PHP-FPM baseline, the internal approved
-  package-install allowlist (Nginx/FPM/extensions), and the managed Nginx/FPM
-  template boundaries. SSH deploy keys (P13.4) remain deferred by decision.
+- Phase 15 will finish P14.2 (unprivileged Composer/Laravel build) and a real
+  Laravel release end-to-end; SSH deploy keys (P13.4) remain deferred by decision.
+  The full Laravel activation strategy (FPM/worker reload, migration policy) is
+  chosen in phase 15.
 - Official domain, Git authentication details, database engine, release signing,
   and license await the decision checkpoints listed in section 6.
 

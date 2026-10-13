@@ -233,6 +233,37 @@ mechanism is unit-tested for permissions, cleanup and non-leakage; SSH host-key
 pinning (P13.4); and panel/task integration of real source results (P13.6), which
 belongs with the deployment orchestration in phase 15.
 
+## PHP/Laravel provider and routing (phase 14)
+
+`agent/src/packages.rs` and `agent/src/provider/`:
+
+- **Packages** (`packages.rs`): an approved package catalog (id -> apt name);
+  `apt-get install` runs with a fixed argv, minimal env and a bounded
+  `DPkg::Lock::Timeout`; lock files are never deleted; the installed version is
+  read back via `dpkg-query`.
+- **Runtime policy** (`provider/policy.rs`): native Ubuntu 24.04 PHP 8.3 is the
+  baseline; extra versions require explicit operator opt-in and unknown
+  versions are refused; hostnames are validated for server blocks.
+- **Nginx** (`provider/nginx.rs`): agent-rendered server blocks (Laravel
+  front-controller + fastcgi, or static), dotfile deny, derived log/root paths;
+  `apply`/`remove` validate with `nginx -t` before `nginx -s reload` and restore
+  the previous known-good file on any failure.
+- **PHP-FPM** (`provider/php_fpm.rs`): one pool per application running workers
+  as the managed account with a registered socket; same validate/reload/rollback
+  discipline via `php-fpm -t` + `systemctl reload`.
+
+Verified on the arm64 Lima VM (root-run `tests/provider_vm.rs`):
+
+- a managed static site served its document root over HTTP, and an **invalid**
+  candidate failed `nginx -t` while the live file was restored;
+- a managed FPM pool appeared at its socket and a PHP `index.php` was served
+  through the Nginx fastcgi block.
+
+Deferred/recorded: the unprivileged Composer/Laravel build (P14.2) and a full
+Laravel end-to-end release (rest of P14.6) — the provider renders/serves but does
+not yet run Composer or Lumen-style build steps; that lands with the deployment
+orchestration in phase 15.
+
 ## Blocked / deferred checks
 
 Recorded, not claimed:
