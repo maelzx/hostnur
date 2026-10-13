@@ -107,6 +107,11 @@ fn deploy_activate_health_redeploy_and_rollback() {
     let work = dir.path().join("work");
     std::fs::create_dir_all(work.join("public")).unwrap();
     git(&["init", "--quiet", "-b", "main"], &work);
+    std::fs::write(
+        work.join("composer.json"),
+        br#"{"name":"hostnur/fixture","require":{},"autoload":{"psr-4":{"Fixture\\":"src/"}}}"#,
+    )
+    .unwrap();
     std::fs::write(work.join("public/index.php"), b"<?php echo 'marker-v1';").unwrap();
     git(&["add", "."], &work);
     git(&["commit", "--quiet", "-m", "v1"], &work);
@@ -165,6 +170,7 @@ fn deploy_activate_health_redeploy_and_rollback() {
         server_name: "127.0.0.1",
         allow_protocol: "file",
         run_migrations: false,
+        build: true,
         env: BTreeMap::new(),
     };
 
@@ -178,6 +184,19 @@ fn deploy_activate_health_redeploy_and_rollback() {
         || curl_marker().contains("marker-v1"),
         Duration::from_secs(5)
     ));
+
+    // The unprivileged Composer build produced an app-owned autoloader.
+    use std::os::unix::fs::MetadataExt;
+    let autoload = PathBuf::from(MANAGED_ROOT)
+        .join(APP)
+        .join("releases")
+        .join(r1)
+        .join("vendor/autoload.php");
+    assert!(
+        autoload.is_file(),
+        "composer build should create vendor/autoload.php"
+    );
+    assert_eq!(std::fs::metadata(&autoload).unwrap().uid(), ids.uid);
 
     // Redeploy v2.
     let r2 = "22222222-2222-4222-8222-222222222222";

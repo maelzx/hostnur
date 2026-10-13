@@ -16,6 +16,7 @@ use std::time::Duration;
 use crate::contract::Uuid;
 use crate::git::{CheckoutRequest, GitRunner};
 use crate::journal::Journal;
+use crate::process::{CommandSpec, run};
 use crate::provider::{
     FpmManager, ManagedPool, ManagedSite, NginxManager, SiteKind, render_pool, render_site,
 };
@@ -37,6 +38,8 @@ pub struct DeployInput<'a> {
     pub server_name: &'a str,
     pub allow_protocol: &'a str,
     pub run_migrations: bool,
+    /// Run the unprivileged Composer build when `composer.json` is present.
+    pub build: bool,
     pub env: BTreeMap<String, String>,
 }
 
@@ -46,6 +49,7 @@ pub enum DeployError {
     Provision(String),
     Source(String),
     Provider(String),
+    Build(String),
     MigrationPrerequisiteMissing,
     MissingLayout,
     Health(HealthResult),
@@ -58,6 +62,7 @@ impl std::fmt::Display for DeployError {
             DeployError::Provision(m) => write!(f, "provisioning failed: {m}"),
             DeployError::Source(m) => write!(f, "source failed: {m}"),
             DeployError::Provider(m) => write!(f, "provider failed: {m}"),
+            DeployError::Build(m) => write!(f, "build failed: {m}"),
             DeployError::MigrationPrerequisiteMissing => {
                 f.write_str("migrations require a recovery prerequisite that is not configured")
             }
@@ -143,6 +148,10 @@ impl<'a> Deployer<'a> {
         }
         .checkout(&checkout)
         .map_err(|error| DeployError::Source(error.to_string()))?;
+
+        if input.build {
+            self.build_release(&release_dir, uid, gid)?;
+        }
 
         // Per-release environment (app-owned, private).
         if !input.env.is_empty() {
@@ -246,6 +255,55 @@ impl<'a> Deployer<'a> {
         } else {
             Err(DeployError::Health(result))
         }
+    }
+
+    /// Run the Composer production build as the application user when a
+    /// `composer.json` is present. Scripts are disabled (untrusted app code).
+    fn build_release(&self, release_dir: &Path, uid: u32, gid: u32) -> Result<(), DeployError> {
+        if !release_dir.join("composer.json").is_file() {
+            return Ok(());
+        }
+
+        let mut spec = CommandSpec::new("/usr/bin/composer", Duration::from_secs(900));
+        spec.args = [
+            "install",
+            "--no-interaction",
+            "--no-dev",
+            "--no-progress",
+            "--no-scripts",
+            "--prefer-dist",
+            "--optimize-autoloader",
+        ]
+        .iter()
+        .map(|arg| (*arg).to_string())
+        .collect();
+        spec.working_dir = Some(release_dir.to_path_buf());
+
+        let mut env = BTreeMap::new();
+        env.insert("HOME".to_string(), release_dir.display().to_string());
+        env.insert("PATH".to_string(), "/usr/bin:/bin".to_string());
+        env.insert(
+            "COMPOSER_HOME".to_string(),
+            release_dir.join(".composer").display().to_string(),
+        );
+        env.insert(
+            "COMPOSER_CACHE_DIR".to_string(),
+            release_dir.join(".composer/cache").display().to_string(),
+        );
+        env.insert("COMPOSER_NO_INTERACTION".to_string(), "1".to_string());
+        spec.env = env;
+        spec.uid = Some(uid);
+        spec.gid = Some(gid);
+        spec.output_cap_bytes = 262_144;
+
+        let outcome = run(&spec).map_err(|error| DeployError::Build(error.to_string()))?;
+        if !outcome.succeeded() {
+            return Err(DeployError::Build(format!(
+                "composer exit code {:?}",
+                outcome.exit_code
+            )));
+        }
+        Ok(())
     }
 
     fn current_path(&self, application_id: &Uuid) -> PathBuf {
