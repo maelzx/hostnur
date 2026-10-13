@@ -473,7 +473,11 @@ ask only when the choice materially changes scope, cost, access, or product beha
   smoke redirected `/panel/tasks` and `/panel/audit` to `/login`. The user's port
   9000 server was not started; the local DB gained only the additive task/audit
   tables. No Rust.
-- Next slice: **P5.1** (panel shell and dashboard) from section 9.7.
+- Feature commit `9deae38` pushed; remote CI **passed** for PHP 8.3/Node 24 and
+  PHP 8.4/Node 24 (locked installs, static gates, asset build, migration,
+  template/queue and tests): <https://github.com/maelzx/hostnur/actions/runs/38335015107>,
+  verified with `gh run watch 38335015107 --exit-status`.
+- Next slice: **P5.1** (protected panel shell and components) from section 9.7.
 
 ### Session 017 — P3.5 contract regression (2026-10-12)
 
