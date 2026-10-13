@@ -11,9 +11,12 @@
 //! process that waits for a shutdown signal.
 
 pub mod cli;
+pub mod clock;
 pub mod config;
 pub mod contract;
 pub mod error;
+pub mod ids;
+pub mod journal;
 pub mod logging;
 pub mod runtime;
 pub mod transport;
