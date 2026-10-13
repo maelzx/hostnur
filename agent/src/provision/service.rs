@@ -8,6 +8,10 @@ use crate::journal::{Journal, JournalError, ManagedApplication};
 
 use super::accounts::Accounts;
 use super::policy::{self, Lifecycle};
+use super::safe_fs::ManagedRoot;
+
+/// One layout entry: (relative path, mode, optional owner uid/gid).
+type LayoutPlan = Vec<(String, u32, Option<(u32, u32)>)>;
 
 /// Reports observed host state so policy decisions can be tested without root.
 pub trait HostProbe {
@@ -59,6 +63,10 @@ pub enum ProvisionError {
     AccountMissing { name: String },
     /// Observed identity disagrees with the recorded identity (drift).
     IdentityDrift { name: String },
+    /// A managed filesystem operation failed.
+    Filesystem(String),
+    /// A managed directory does not have the intended mode/ownership.
+    LayoutMismatch { path: String },
 }
 
 impl std::fmt::Display for ProvisionError {
@@ -96,6 +104,10 @@ impl std::fmt::Display for ProvisionError {
             }
             ProvisionError::IdentityDrift { name } => {
                 write!(f, "identity for `{name}` disagrees with the registry")
+            }
+            ProvisionError::Filesystem(detail) => write!(f, "filesystem error: {detail}"),
+            ProvisionError::LayoutMismatch { path } => {
+                write!(f, "managed layout `{path}` has unexpected mode/ownership")
             }
         }
     }
@@ -265,6 +277,128 @@ impl<'a> ProvisioningService<'a> {
         )?;
         Ok(())
     }
+
+    /// Create and verify the managed directory layout beneath `root`.
+    ///
+    /// Intermediate trusted parents are root-owned; the writable `shared` tree
+    /// is owned by the application account. Modes/ownership are read back and
+    /// checked before the application is marked ready.
+    pub fn prepare_layout(
+        &self,
+        application_id: &Uuid,
+        root: &ManagedRoot,
+    ) -> Result<ManagedApplication, ProvisionError> {
+        let app = self
+            .journal
+            .managed_application(application_id)?
+            .ok_or(ProvisionError::RegistryMismatch)?;
+        let name = app.account_name.clone();
+        let uid = app
+            .account_uid
+            .ok_or(ProvisionError::AccountMissing { name: name.clone() })?;
+        let gid = app
+            .account_gid
+            .ok_or(ProvisionError::AccountMissing { name })?;
+
+        let uuid = application_id.as_str();
+        let plan: LayoutPlan = vec![
+            (uuid.to_string(), policy::MODE_ROOT_DIR, None),
+            (format!("{uuid}/releases"), policy::MODE_RELEASES, None),
+            (
+                format!("{uuid}/shared"),
+                policy::MODE_SHARED,
+                Some((uid, gid)),
+            ),
+            (
+                format!("{uuid}/shared/secrets"),
+                policy::MODE_SECRETS,
+                Some((uid, gid)),
+            ),
+        ];
+
+        for (relative, mode, owner) in &plan {
+            root.create_dir(relative, *mode, *owner)
+                .map_err(|error| ProvisionError::Filesystem(error.to_string()))?;
+        }
+
+        self.record_state(
+            application_id,
+            Lifecycle::LayoutPrepared,
+            Some(uid),
+            Some(gid),
+        )?;
+
+        for (relative, mode, owner) in &plan {
+            let meta = root
+                .metadata(relative)
+                .map_err(|error| ProvisionError::Filesystem(error.to_string()))?;
+            let owner_ok = match owner {
+                Some((expected_uid, expected_gid)) => {
+                    meta.uid == *expected_uid && meta.gid == *expected_gid
+                }
+                None => true,
+            };
+            if meta.mode != *mode || !owner_ok {
+                self.record_state(application_id, Lifecycle::Failed, Some(uid), Some(gid))?;
+                return Err(ProvisionError::LayoutMismatch {
+                    path: relative.clone(),
+                });
+            }
+        }
+
+        self.record_state(application_id, Lifecycle::Ready, Some(uid), Some(gid))?;
+        self.journal
+            .managed_application(application_id)?
+            .ok_or(ProvisionError::RegistryMismatch)
+    }
+
+    /// Resume or verify provisioning for an application from its recorded state.
+    ///
+    /// A partially provisioned application is completed; an already-ready
+    /// application is re-verified, and a disagreeing layout is recorded as drift
+    /// rather than silently accepted or recreated.
+    pub fn reconcile(
+        &self,
+        application_id: &Uuid,
+        root: &ManagedRoot,
+        accounts: &dyn Accounts,
+    ) -> Result<ManagedApplication, ProvisionError> {
+        let current = self
+            .journal
+            .managed_application(application_id)?
+            .ok_or(ProvisionError::RegistryMismatch)?;
+        let state =
+            Lifecycle::parse(&current.lifecycle_state).ok_or(ProvisionError::RegistryMismatch)?;
+
+        match state {
+            Lifecycle::Reserved => {
+                self.provision_identity(application_id, None, None, accounts)?;
+                self.prepare_layout(application_id, root)
+            }
+            Lifecycle::AccountCreated => self.prepare_layout(application_id, root),
+            Lifecycle::LayoutPrepared | Lifecycle::Ready => {
+                self.provision_identity(application_id, None, None, accounts)?;
+                match self.prepare_layout(application_id, root) {
+                    Err(ProvisionError::LayoutMismatch { path }) => {
+                        self.record_state(
+                            application_id,
+                            Lifecycle::Drifted,
+                            current.account_uid,
+                            current.account_gid,
+                        )?;
+                        Err(ProvisionError::LayoutMismatch { path })
+                    }
+                    other => other,
+                }
+            }
+            Lifecycle::Failed | Lifecycle::Drifted => {
+                // Re-run identity then layout; a genuine identity drift is
+                // re-detected and preserved rather than overwritten.
+                self.provision_identity(application_id, None, None, accounts)?;
+                self.prepare_layout(application_id, root)
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -422,11 +556,21 @@ mod tests {
         next: std::cell::Cell<u32>,
     }
 
+    fn current_uid() -> u32 {
+        nix::unistd::getuid().as_raw()
+    }
+
+    fn current_gid() -> u32 {
+        nix::unistd::getgid().as_raw()
+    }
+
     impl FakeAccounts {
+        /// Start from the current process identity so unprivileged tests can
+        /// exercise a real `chown` to the same uid/group.
         fn new() -> Self {
             Self {
                 ids: std::cell::RefCell::new(std::collections::HashMap::new()),
-                next: std::cell::Cell::new(1000),
+                next: std::cell::Cell::new(current_uid()),
             }
         }
     }
@@ -439,7 +583,10 @@ mod tests {
         fn create(&self, name: &str) -> Result<super::super::accounts::AccountIds, ProvisionError> {
             let uid = self.next.get();
             self.next.set(uid + 1);
-            let ids = super::super::accounts::AccountIds { uid, gid: uid };
+            let ids = super::super::accounts::AccountIds {
+                uid,
+                gid: current_gid(),
+            };
             self.ids.borrow_mut().insert(name.to_string(), ids);
             Ok(ids)
         }
@@ -462,16 +609,16 @@ mod tests {
             .provision_identity(&app, Some("php-laravel"), Some("rev-1"), &accounts)
             .unwrap();
         assert_eq!(first.lifecycle_state, "account_created");
-        assert_eq!(first.account_uid, Some(1000));
-        assert_eq!(first.account_gid, Some(1000));
-        assert_eq!(accounts.next.get(), 1001);
+        assert_eq!(first.account_uid, Some(current_uid()));
+        assert_eq!(first.account_gid, Some(current_gid()));
+        assert_eq!(accounts.next.get(), current_uid() + 1);
 
         let second = service
             .provision_identity(&app, None, None, &accounts)
             .unwrap();
         assert_eq!(second, first);
         // No new identity was allocated.
-        assert_eq!(accounts.next.get(), 1001);
+        assert_eq!(accounts.next.get(), current_uid() + 1);
     }
 
     #[test]
@@ -490,7 +637,7 @@ mod tests {
             .provision_identity(&app, None, None, &accounts)
             .unwrap();
         assert_eq!(resumed.lifecycle_state, "account_created");
-        assert_eq!(resumed.account_uid, Some(1000));
+        assert_eq!(resumed.account_uid, Some(current_uid()));
     }
 
     #[test]
@@ -508,8 +655,8 @@ mod tests {
         accounts.ids.borrow_mut().insert(
             "hn_224065ac4bc7".to_string(),
             super::super::accounts::AccountIds {
-                uid: 2000,
-                gid: 2000,
+                uid: current_uid() + 100,
+                gid: current_gid(),
             },
         );
 
@@ -523,5 +670,114 @@ mod tests {
 
         let state = journal.managed_application(&app).unwrap().unwrap();
         assert_eq!(state.lifecycle_state, "drifted");
+    }
+
+    #[test]
+    fn prepare_layout_creates_verified_tree() {
+        use std::os::unix::fs::MetadataExt;
+
+        let journal = Journal::open_in_memory().unwrap();
+        let probe = FakeProbe::empty();
+        let accounts = FakeAccounts::new();
+        let service = ProvisioningService::new(&journal, &probe);
+        let app = id("224065ac-4bc7-4ba4-a06d-8c8bca950c32");
+        service
+            .provision_identity(&app, None, None, &accounts)
+            .unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = ManagedRoot::open(dir.path()).unwrap();
+        let ready = service.prepare_layout(&app, &root).unwrap();
+        assert_eq!(ready.lifecycle_state, "ready");
+
+        let secrets = dir.path().join(app.as_str()).join("shared").join("secrets");
+        let meta = std::fs::metadata(&secrets).unwrap();
+        assert_eq!(meta.mode() & 0o777, 0o700);
+        assert_eq!(meta.uid(), current_uid());
+
+        let releases = dir.path().join(app.as_str()).join("releases");
+        assert_eq!(std::fs::metadata(&releases).unwrap().mode() & 0o777, 0o755);
+    }
+
+    #[test]
+    fn reconcile_resumes_from_partial_state() {
+        let journal = Journal::open_in_memory().unwrap();
+        let probe = FakeProbe::empty();
+        let accounts = FakeAccounts::new();
+        let service = ProvisioningService::new(&journal, &probe);
+        let app = id("224065ac-4bc7-4ba4-a06d-8c8bca950c32");
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = ManagedRoot::open(dir.path()).unwrap();
+        service
+            .provision_identity(&app, None, None, &accounts)
+            .unwrap();
+        service.prepare_layout(&app, &root).unwrap();
+
+        // Simulate a crash that recorded only the layout-prepared checkpoint.
+        journal
+            .update_managed_application_state(
+                &app,
+                "layout_prepared",
+                Some(current_uid()),
+                Some(current_gid()),
+            )
+            .unwrap();
+
+        let reconciled = service.reconcile(&app, &root, &accounts).unwrap();
+        assert_eq!(reconciled.lifecycle_state, "ready");
+    }
+
+    #[test]
+    fn reconcile_heals_a_loosened_mode() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let journal = Journal::open_in_memory().unwrap();
+        let probe = FakeProbe::empty();
+        let accounts = FakeAccounts::new();
+        let service = ProvisioningService::new(&journal, &probe);
+        let app = id("224065ac-4bc7-4ba4-a06d-8c8bca950c32");
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = ManagedRoot::open(dir.path()).unwrap();
+        service
+            .provision_identity(&app, None, None, &accounts)
+            .unwrap();
+        service.prepare_layout(&app, &root).unwrap();
+
+        // Someone loosens the shared tree after provisioning.
+        let shared = dir.path().join(app.as_str()).join("shared");
+        std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o777)).unwrap();
+
+        let reconciled = service.reconcile(&app, &root, &accounts).unwrap();
+        assert_eq!(reconciled.lifecycle_state, "ready");
+        assert_eq!(
+            std::fs::metadata(&shared).unwrap().permissions().mode() & 0o777,
+            policy::MODE_SHARED
+        );
+    }
+
+    #[test]
+    fn reconcile_refuses_a_symlinked_layout() {
+        use std::os::unix::fs::symlink;
+
+        let journal = Journal::open_in_memory().unwrap();
+        let probe = FakeProbe::empty();
+        let accounts = FakeAccounts::new();
+        let service = ProvisioningService::new(&journal, &probe);
+        let app = id("224065ac-4bc7-4ba4-a06d-8c8bca950c32");
+        service
+            .provision_identity(&app, None, None, &accounts)
+            .unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let victim = tempfile::tempdir().unwrap();
+        let root = ManagedRoot::open(dir.path()).unwrap();
+
+        // A symlink occupies the expected layout root; it must never be followed.
+        symlink(victim.path(), dir.path().join(app.as_str())).unwrap();
+
+        let error = service.reconcile(&app, &root, &accounts).unwrap_err();
+        assert!(matches!(error, ProvisionError::Filesystem(_)), "{error:?}");
     }
 }

@@ -7,6 +7,7 @@
 
 pub mod accounts;
 pub mod policy;
+pub mod safe_fs;
 pub mod service;
 
 pub use accounts::{AccountIds, Accounts, SystemAccounts};
@@ -15,4 +16,5 @@ pub use policy::{
     MODE_RELEASES, MODE_ROOT_DIR, MODE_SECRET_FILE, MODE_SECRETS, MODE_SHARED, account_name,
     is_valid_account_name, layout,
 };
+pub use safe_fs::{EntryMeta, MAX_FILE_BYTES, ManagedRoot};
 pub use service::{HostProbe, ProvisionError, ProvisioningService, Reservation, SystemHostProbe};
