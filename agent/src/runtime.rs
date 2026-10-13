@@ -5,6 +5,7 @@
 //! lifecycle behaviour can be tested without launching a daemon or sending real
 //! signals. No privileged operation handlers are enabled in this build.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -15,10 +16,14 @@ use signal_hook::flag;
 use crate::VERSION;
 use crate::config::AgentConfig;
 use crate::contract::Catalog;
+use crate::deploy::DeployRuntime;
 use crate::dispatch::AgentHandler;
 use crate::error::{AgentError, ErrorCode};
+use crate::git::GitRunner;
 use crate::journal::Journal;
 use crate::logging::{self, Level};
+use crate::provider::{FpmManager, NginxManager, RuntimePolicy};
+use crate::provision::SystemAccounts;
 use crate::transport::{self, Listener, ServerContext};
 
 /// Poll interval for the shutdown flag.
@@ -96,7 +101,23 @@ pub fn run(config: &AgentConfig) -> Result<(), AgentError> {
     );
 
     let catalog = Catalog::embedded();
-    let handler = AgentHandler::new(&journal);
+    let deploy = DeployRuntime {
+        db_path: config.state_dir.join("agent.db"),
+        apps_root: PathBuf::from("/opt/hostnur/apps"),
+        accounts: SystemAccounts::default(),
+        git: GitRunner::default(),
+        nginx: NginxManager::default(),
+        fpm: FpmManager::default(),
+        allow_protocol: "https".to_string(),
+    };
+    let extra_php: Vec<&str> = config
+        .php_versions
+        .iter()
+        .map(String::as_str)
+        .filter(|version| *version != "8.3")
+        .collect();
+    let policy = RuntimePolicy::default().allow_versions("php", &extra_php);
+    let handler = AgentHandler::with_deploy(&journal, deploy, policy);
     let context = ServerContext {
         catalog: &catalog,
         handler: &handler,

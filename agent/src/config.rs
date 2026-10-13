@@ -35,7 +35,7 @@ const MAX_SOCKET_PATH_BYTES: usize = 107;
 
 /// Top-level settings accepted by this schema version. Anything else is an
 /// unknown setting and is rejected.
-const KNOWN_KEYS: [&str; 9] = [
+const KNOWN_KEYS: [&str; 10] = [
     "version",
     "socket_path",
     "state_dir",
@@ -45,6 +45,7 @@ const KNOWN_KEYS: [&str; 9] = [
     "socket_mode",
     "connection_read_timeout_seconds",
     "allowed_peer_uids",
+    "php_versions",
 ];
 
 /// Validated agent configuration.
@@ -61,6 +62,8 @@ pub struct AgentConfig {
     /// OS UIDs permitted to connect. Empty means no peer is authorized (fail
     /// closed); the panel/worker identity must be listed explicitly.
     pub allowed_peer_uids: Vec<u32>,
+    /// Operator-approved PHP runtime versions (native 8.3 by default).
+    pub php_versions: Vec<String>,
 }
 
 impl AgentConfig {
@@ -110,6 +113,7 @@ impl AgentConfig {
             DEFAULT_CONNECTION_READ_TIMEOUT_SECONDS,
         )?;
         let allowed_peer_uids = optional_u32_array(table, "allowed_peer_uids")?;
+        let php_versions = optional_string_array(table, "php_versions", &["8.3"])?;
 
         let config = AgentConfig {
             version: u32::try_from(version)
@@ -122,6 +126,7 @@ impl AgentConfig {
             socket_mode,
             connection_read_timeout_seconds,
             allowed_peer_uids,
+            php_versions,
         };
         config.validate()?;
         Ok(config)
@@ -178,6 +183,18 @@ impl AgentConfig {
             return Err(invalid(format!(
                 "`connection_read_timeout_seconds` must be between {MIN_CONNECTION_READ_TIMEOUT_SECONDS} and {MAX_CONNECTION_READ_TIMEOUT_SECONDS}"
             )));
+        }
+
+        for version in &self.php_versions {
+            let valid = version.split_once('.').is_some_and(|(major, minor)| {
+                !major.is_empty()
+                    && !minor.is_empty()
+                    && major.chars().all(|c| c.is_ascii_digit())
+                    && minor.chars().all(|c| c.is_ascii_digit())
+            });
+            if !valid {
+                return Err(invalid("`php_versions` must contain versions like \"8.4\""));
+            }
         }
 
         Ok(())
@@ -274,6 +291,29 @@ fn optional_bounded_u32(
                 .ok_or_else(|| invalid(format!("setting `{key}` must be an integer")))?;
             u32::try_from(raw)
                 .map_err(|_| invalid(format!("setting `{key}` must be a non-negative integer")))
+        }
+    }
+}
+
+fn optional_string_array(
+    table: &toml::map::Map<String, toml::Value>,
+    key: &str,
+    default: &[&str],
+) -> Result<Vec<String>, AgentError> {
+    match table.get(key) {
+        None => Ok(default.iter().map(|value| (*value).to_string()).collect()),
+        Some(value) => {
+            let items = value
+                .as_array()
+                .ok_or_else(|| invalid(format!("setting `{key}` must be an array of strings")))?;
+            let mut result = Vec::with_capacity(items.len());
+            for item in items {
+                let text = item.as_str().ok_or_else(|| {
+                    invalid(format!("setting `{key}` must be an array of strings"))
+                })?;
+                result.push(text.to_string());
+            }
+            Ok(result)
         }
     }
 }

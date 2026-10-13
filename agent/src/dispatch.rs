@@ -13,7 +13,9 @@ use crate::contract::{
     AgentMode, CapabilitySnapshot, ContractErrorCode, OperationReceipt, OperationRequest,
     OperationSnapshot, OperationStatus, Uuid,
 };
+use crate::deploy::DeployRuntime;
 use crate::git::policy::{NetworkPolicy, validate_repository_url};
+use crate::git::{GitRef, validate_ref};
 use crate::journal::{ApplicationSource, Journal};
 use crate::observe;
 use crate::provider::RuntimePolicy;
@@ -32,22 +34,100 @@ pub const SUPPORTED_OPERATIONS: [&str; 5] = [
 /// Handler backed by the durable journal.
 pub struct AgentHandler<'a> {
     journal: &'a Journal,
+    deploy: Option<DeployRuntime>,
+    policy: RuntimePolicy,
 }
 
 impl<'a> AgentHandler<'a> {
     pub fn new(journal: &'a Journal) -> Self {
-        Self { journal }
+        Self {
+            journal,
+            deploy: None,
+            policy: RuntimePolicy::default(),
+        }
+    }
+
+    /// Handler with a privileged deployment runtime and runtime policy enabled.
+    pub fn with_deploy(journal: &'a Journal, deploy: DeployRuntime, policy: RuntimePolicy) -> Self {
+        Self {
+            journal,
+            deploy: Some(deploy),
+            policy,
+        }
+    }
+
+    fn deploy_release(&self, request: &OperationRequest) -> Value {
+        let Some(runtime) = self.deploy.as_ref() else {
+            return error_body(
+                ContractErrorCode::UnsupportedOperation,
+                "deployment is not enabled in this agent build",
+            );
+        };
+        let Some(resource) = request.resource.as_ref() else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "application resource is required",
+            );
+        };
+        if resource.kind != "application" {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "resource must be an application",
+            );
+        }
+
+        let git_ref = match request.parameters.get("ref").and_then(Value::as_str) {
+            Some(value) => match validate_ref(value) {
+                Ok(reference) => reference,
+                Err(error) => {
+                    return error_body(ContractErrorCode::InvalidParameters, &error.to_string());
+                }
+            },
+            None => GitRef::Name("main".to_string()),
+        };
+        let run_migrations = request
+            .parameters
+            .get("run_migrations")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+
+        let acceptance = match self.journal.accept(request) {
+            Ok(acceptance) => acceptance,
+            Err(error) => return error_body(ContractErrorCode::Conflict, &error.to_string()),
+        };
+
+        if !acceptance.reused {
+            let runtime = runtime.clone();
+            let execution_id = acceptance.execution_id.clone();
+            let application_id = resource.id.clone();
+            std::thread::spawn(move || {
+                runtime.run_worker(execution_id, application_id, git_ref, run_migrations);
+            });
+        }
+
+        to_value(OperationReceipt {
+            protocol_version: 1,
+            request_id: acceptance.request_id.clone(),
+            execution_id: acceptance.execution_id.clone(),
+            operation: request.operation.clone(),
+            status: acceptance.status,
+            accepted_at: acceptance.accepted_at.clone(),
+        })
     }
 
     fn capabilities(&self) -> Value {
+        let mut operations: Vec<String> = SUPPORTED_OPERATIONS
+            .iter()
+            .map(|op| (*op).to_string())
+            .collect();
+        if self.deploy.is_some() {
+            operations.push("application.deploy".to_string());
+        }
         to_value(CapabilitySnapshot {
             protocol_version: 1,
             mode: AgentMode::Real,
             available: true,
-            operations: SUPPORTED_OPERATIONS
-                .iter()
-                .map(|op| (*op).to_string())
-                .collect(),
+            operations,
             sampled_at: clock::now_rfc3339(),
             reason: None,
         })
@@ -100,7 +180,7 @@ impl<'a> AgentHandler<'a> {
         };
         let runtime = parameter("runtime").unwrap_or("php");
         let runtime_version = parameter("runtime_version").unwrap_or("");
-        if let Err(error) = RuntimePolicy::default().validate(runtime, runtime_version) {
+        if let Err(error) = self.policy.validate(runtime, runtime_version) {
             return error_body(ContractErrorCode::InvalidParameters, &error.to_string());
         }
 
@@ -196,6 +276,7 @@ impl RequestHandler for AgentHandler<'_> {
             "agent.inspect" => self.inspect(request),
             "agent.cancel" => self.cancel(request),
             "agent.register_application" => self.register_application(request),
+            "application.deploy" => self.deploy_release(request),
             _ => error_body(
                 ContractErrorCode::UnsupportedOperation,
                 "the operation is not implemented by this agent build",

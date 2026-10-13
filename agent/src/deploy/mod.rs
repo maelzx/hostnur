@@ -111,10 +111,6 @@ impl<'a> Deployer<'a> {
 
     /// Deploy and activate a release.
     pub fn deploy(&self, input: &DeployInput<'_>) -> Result<DeploymentOutcome, DeployError> {
-        if input.run_migrations {
-            return Err(DeployError::MigrationPrerequisiteMissing);
-        }
-
         let service = ProvisioningService::new(self.journal, &SystemHostProbe);
         let app = service
             .reconcile(&input.application_id, self.root, self.accounts)
@@ -149,27 +145,7 @@ impl<'a> Deployer<'a> {
         .checkout(&checkout)
         .map_err(|error| DeployError::Source(error.to_string()))?;
 
-        if input.build {
-            self.build_release(&release_dir, uid, gid)?;
-        }
-
-        // Per-release environment (app-owned, private).
-        if !input.env.is_empty() {
-            let env_text = input
-                .env
-                .iter()
-                .map(|(key, value)| format!("{key}={value}"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            self.root
-                .write_file(
-                    &format!("{release_rel}/.env"),
-                    0o600,
-                    Some((uid, gid)),
-                    env_text.as_bytes(),
-                )
-                .map_err(|error| DeployError::Io(error.to_string()))?;
-        }
+        self.prepare_release(input, &release_rel, &release_dir, uid, gid)?;
 
         // Provider config: pool + route pointing at the agent-owned `current`.
         let pool = ManagedPool {
@@ -181,7 +157,7 @@ impl<'a> Deployer<'a> {
         };
         let pool_config =
             render_pool(&pool).map_err(|error| DeployError::Provider(error.to_string()))?;
-        self.fpm
+        self.fpm_for(input.runtime_version)
             .apply(&pool.name, &pool_config)
             .map_err(|error| DeployError::Provider(error.to_string()))?;
 
@@ -202,9 +178,9 @@ impl<'a> Deployer<'a> {
         let previous = self.current_target(&input.application_id);
         self.switch_current(&input.application_id, &release_dir)?;
 
-        if let Err(error) = self.reload_all() {
+        if let Err(error) = self.reload_all(input.runtime_version) {
             self.restore_current(&input.application_id, previous.as_deref())?;
-            let _ = self.reload_all();
+            let _ = self.reload_all(input.runtime_version);
             return Err(error);
         }
 
@@ -221,7 +197,7 @@ impl<'a> Deployer<'a> {
         }
         if !result.healthy {
             self.restore_current(&input.application_id, previous.as_deref())?;
-            let _ = self.reload_all();
+            let _ = self.reload_all(input.runtime_version);
             return Err(DeployError::Health(result));
         }
 
@@ -265,8 +241,15 @@ impl<'a> Deployer<'a> {
             return Err(DeployError::MissingLayout);
         }
         let previous = self.current_target(application_id);
+        let version = self
+            .journal
+            .application_source(application_id)
+            .ok()
+            .flatten()
+            .map(|source| source.runtime_version)
+            .unwrap_or_default();
         self.switch_current(application_id, &release_dir)?;
-        self.reload_all()?;
+        self.reload_all(&version)?;
         let result = HealthClient::new(server_name).probe();
         if !result.healthy {
             return Err(DeployError::Health(result));
@@ -290,50 +273,205 @@ impl<'a> Deployer<'a> {
 
     /// Run the Composer production build as the application user when a
     /// `composer.json` is present. Scripts are disabled (untrusted app code).
-    fn build_release(&self, release_dir: &Path, uid: u32, gid: u32) -> Result<(), DeployError> {
-        if !release_dir.join("composer.json").is_file() {
-            return Ok(());
+    fn php_binary(&self, version: &str) -> PathBuf {
+        if version.is_empty() {
+            PathBuf::from("/usr/bin/php")
+        } else {
+            PathBuf::from(format!("/usr/bin/php{version}"))
         }
+    }
 
-        let mut spec = CommandSpec::new("/usr/bin/composer", Duration::from_secs(900));
-        spec.args = [
-            "install",
-            "--no-interaction",
-            "--no-dev",
-            "--no-progress",
-            "--no-scripts",
-            "--prefer-dist",
-            "--optimize-autoloader",
-        ]
-        .iter()
-        .map(|arg| (*arg).to_string())
-        .collect();
-        spec.working_dir = Some(release_dir.to_path_buf());
+    fn fpm_for(&self, version: &str) -> FpmManager {
+        if version.is_empty() {
+            self.fpm.clone()
+        } else {
+            FpmManager::for_php_version(version)
+        }
+    }
 
+    /// Run an application command as the app user with a minimal environment.
+    fn run_app(
+        &self,
+        program: &Path,
+        args: &[&str],
+        dir: &Path,
+        uid: u32,
+        gid: u32,
+        extra_env: &[(&str, String)],
+    ) -> Result<crate::process::ProcessOutcome, DeployError> {
+        let mut spec = CommandSpec::new(program, Duration::from_secs(1200));
+        spec.args = args.iter().map(|arg| (*arg).to_string()).collect();
+        spec.working_dir = Some(dir.to_path_buf());
         let mut env = BTreeMap::new();
-        env.insert("HOME".to_string(), release_dir.display().to_string());
+        env.insert("HOME".to_string(), dir.display().to_string());
         env.insert("PATH".to_string(), "/usr/bin:/bin".to_string());
+        env.insert("COMPOSER_NO_INTERACTION".to_string(), "1".to_string());
         env.insert(
             "COMPOSER_HOME".to_string(),
-            release_dir.join(".composer").display().to_string(),
+            dir.join(".composer").display().to_string(),
         );
         env.insert(
             "COMPOSER_CACHE_DIR".to_string(),
-            release_dir.join(".composer/cache").display().to_string(),
+            dir.join(".composer/cache").display().to_string(),
         );
-        env.insert("COMPOSER_NO_INTERACTION".to_string(), "1".to_string());
+        env.insert(
+            "npm_config_cache".to_string(),
+            dir.join(".npm").display().to_string(),
+        );
+        for (key, value) in extra_env {
+            env.insert((*key).to_string(), value.clone());
+        }
         spec.env = env;
         spec.uid = Some(uid);
         spec.gid = Some(gid);
-        spec.output_cap_bytes = 262_144;
+        spec.output_cap_bytes = crate::process::MAX_OUTPUT_BYTES;
+        run(&spec).map_err(|error| DeployError::Build(error.to_string()))
+    }
 
-        let outcome = run(&spec).map_err(|error| DeployError::Build(error.to_string()))?;
-        if !outcome.succeeded() {
-            return Err(DeployError::Build(format!(
-                "composer exit code {:?}",
-                outcome.exit_code
-            )));
+    /// Install dependencies, build frontend assets and prepare a Laravel app.
+    fn prepare_release(
+        &self,
+        input: &DeployInput<'_>,
+        release_rel: &str,
+        release_dir: &Path,
+        uid: u32,
+        gid: u32,
+    ) -> Result<(), DeployError> {
+        let php = self.php_binary(input.runtime_version);
+
+        // PHP dependencies (allow framework post-install scripts as the app user).
+        if release_dir.join("composer.json").is_file() {
+            let outcome = self.run_app(
+                Path::new("/usr/bin/composer"),
+                &[
+                    "install",
+                    "--no-interaction",
+                    "--no-dev",
+                    "--no-progress",
+                    "--prefer-dist",
+                    "--optimize-autoloader",
+                ],
+                release_dir,
+                uid,
+                gid,
+                &[],
+            )?;
+            if !outcome.succeeded() {
+                return Err(DeployError::Build(format!(
+                    "composer exit code {:?}",
+                    outcome.exit_code
+                )));
+            }
         }
+
+        // Frontend assets (Vite/Tailwind, etc.).
+        if release_dir.join("package.json").is_file() {
+            let install = self.run_app(
+                Path::new("/usr/bin/npm"),
+                &["ci"],
+                release_dir,
+                uid,
+                gid,
+                &[],
+            )?;
+            if !install.succeeded() {
+                return Err(DeployError::Build("npm ci failed".to_string()));
+            }
+            let build = self.run_app(
+                Path::new("/usr/bin/npm"),
+                &["run", "build"],
+                release_dir,
+                uid,
+                gid,
+                &[],
+            )?;
+            if !build.succeeded() {
+                return Err(DeployError::Build("npm run build failed".to_string()));
+            }
+        }
+
+        // Environment: start from .env.example, then apply explicit overrides.
+        let env_path = release_dir.join(".env");
+        let example_path = release_dir.join(".env.example");
+        let mut env_text = if env_path.is_file() {
+            std::fs::read_to_string(&env_path).unwrap_or_default()
+        } else if example_path.is_file() {
+            std::fs::read_to_string(&example_path).unwrap_or_default()
+        } else {
+            String::new()
+        };
+        if !input.env.is_empty() {
+            for (key, value) in &input.env {
+                env_text = upsert_env(&env_text, key, value);
+            }
+        }
+        if !env_text.is_empty() {
+            self.root
+                .write_file(
+                    &format!("{release_rel}/.env"),
+                    0o600,
+                    Some((uid, gid)),
+                    env_text.as_bytes(),
+                )
+                .map_err(|error| DeployError::Io(error.to_string()))?;
+        }
+
+        let artisan = release_dir.join("artisan");
+        if artisan.is_file() {
+            // Generate an application key once.
+            if env_text
+                .lines()
+                .all(|line| !line.starts_with("APP_KEY=") || line == "APP_KEY=")
+            {
+                let outcome = self.run_app(
+                    &php,
+                    &["artisan", "key:generate", "--force"],
+                    release_dir,
+                    uid,
+                    gid,
+                    &[],
+                )?;
+                if !outcome.succeeded() {
+                    return Err(DeployError::Build(
+                        "php artisan key:generate failed".to_string(),
+                    ));
+                }
+            }
+
+            // SQLite database for development-style apps.
+            if env_text.contains("DB_CONNECTION=sqlite") {
+                let db_rel = format!("{release_rel}/database/database.sqlite");
+                if !release_dir.join("database/database.sqlite").exists() {
+                    self.root
+                        .write_file(&db_rel, 0o600, Some((uid, gid)), b"")
+                        .map_err(|error| DeployError::Io(error.to_string()))?;
+                }
+            }
+
+            if input.run_migrations {
+                let outcome = self.run_app(
+                    &php,
+                    &["artisan", "migrate", "--force"],
+                    release_dir,
+                    uid,
+                    gid,
+                    &[],
+                )?;
+                if !outcome.succeeded() {
+                    return Err(DeployError::Build("php artisan migrate failed".to_string()));
+                }
+            }
+
+            let _ = self.run_app(
+                &php,
+                &["artisan", "storage:link"],
+                release_dir,
+                uid,
+                gid,
+                &[],
+            );
+        }
+
         Ok(())
     }
 
@@ -368,12 +506,17 @@ impl<'a> Deployer<'a> {
         }
     }
 
-    fn reload_all(&self) -> Result<(), DeployError> {
+    fn reload_all(&self, php_version: &str) -> Result<(), DeployError> {
         // Reload FPM (workers/OPcache) then Nginx. Reuse the managers' own
         // reload paths by re-applying the existing pool/site is unnecessary; a
         // direct reload is enough because the route and pool are unchanged.
+        let version = if php_version.is_empty() {
+            "8.3"
+        } else {
+            php_version
+        };
         let fpm = std::process::Command::new("/usr/bin/systemctl")
-            .args(["reload", "php8.3-fpm"])
+            .args(["reload", &format!("php{version}-fpm")])
             .status()
             .map_err(|error| DeployError::Provider(error.to_string()))?;
         if !fpm.success() {
@@ -397,4 +540,122 @@ fn io(error: std::io::Error) -> DeployError {
 /// Extract the release UUID from a `.../releases/<uuid>` path.
 fn release_id_from_path(path: &Path) -> Option<Uuid> {
     Uuid::parse(path.file_name()?.to_str()?).ok()
+}
+
+/// Owned deployment runtime, cloned into socket-driven deploy workers.
+#[derive(Clone)]
+pub struct DeployRuntime {
+    pub db_path: PathBuf,
+    pub apps_root: PathBuf,
+    pub accounts: crate::provision::SystemAccounts,
+    pub git: GitRunner,
+    pub nginx: NginxManager,
+    pub fpm: FpmManager,
+    pub allow_protocol: String,
+}
+
+impl DeployRuntime {
+    /// Run a deploy for an accepted execution, updating journal state and events.
+    pub fn run_worker(
+        &self,
+        execution_id: Uuid,
+        application_id: Uuid,
+        git_ref: crate::git::GitRef,
+        run_migrations: bool,
+    ) {
+        let Ok(journal) = Journal::open(&self.db_path) else {
+            return;
+        };
+        let _ = journal.set_status(
+            &execution_id,
+            crate::contract::OperationStatus::Running,
+            Some(5),
+        );
+        let _ = journal.append_event(&execution_id, "Deployment started.");
+
+        match self.execute(&journal, &application_id, git_ref, run_migrations) {
+            Ok((release_id, commit)) => {
+                let _ = journal.append_event(
+                    &execution_id,
+                    &format!("Activated release {release_id} ({commit})."),
+                );
+                let _ = journal.set_status(
+                    &execution_id,
+                    crate::contract::OperationStatus::Succeeded,
+                    Some(100),
+                );
+            }
+            Err(message) => {
+                let _ =
+                    journal.append_event(&execution_id, &format!("Deployment failed: {message}"));
+                let _ = journal.set_status(
+                    &execution_id,
+                    crate::contract::OperationStatus::Failed,
+                    Some(100),
+                );
+            }
+        }
+    }
+
+    fn execute(
+        &self,
+        journal: &Journal,
+        application_id: &Uuid,
+        git_ref: crate::git::GitRef,
+        run_migrations: bool,
+    ) -> Result<(Uuid, String), String> {
+        let source = journal
+            .application_source(application_id)
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "no source registered for this application".to_string())?;
+        let root = ManagedRoot::open(&self.apps_root).map_err(|error| error.to_string())?;
+        let deployer = Deployer {
+            journal,
+            accounts: &self.accounts,
+            root: &root,
+            git: self.git.clone(),
+            nginx: self.nginx.clone(),
+            fpm: self.fpm.clone(),
+            apps_root: self.apps_root.clone(),
+        };
+        let release_id = crate::ids::new_uuid_v4();
+        let input = DeployInput {
+            application_id: application_id.clone(),
+            release_id: release_id.clone(),
+            provider: &source.provider,
+            runtime: &source.runtime,
+            runtime_version: &source.runtime_version,
+            repository_url: &source.repository_url,
+            git_ref,
+            server_name: &source.server_name,
+            allow_protocol: &self.allow_protocol,
+            run_migrations,
+            build: true,
+            env: BTreeMap::new(),
+        };
+        let outcome = deployer.deploy(&input).map_err(|error| error.to_string())?;
+        Ok((outcome.release_id, outcome.commit))
+    }
+}
+
+/// Set or replace `KEY=value` in a dotenv-style text buffer.
+fn upsert_env(text: &str, key: &str, value: &str) -> String {
+    let prefix = format!("{key}=");
+    let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
+    let mut replaced = false;
+    for line in &mut lines {
+        if line.starts_with(&prefix) {
+            *line = format!("{key}={value}");
+            replaced = true;
+        }
+    }
+    let mut out = lines.join("\n");
+    if !replaced {
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(&format!("{key}={value}"));
+    }
+    out.push('\n');
+    out
 }

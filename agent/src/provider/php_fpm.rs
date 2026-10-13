@@ -108,11 +108,18 @@ pub struct FpmManager {
 
 impl Default for FpmManager {
     fn default() -> Self {
+        Self::for_php_version("8.3")
+    }
+}
+
+impl FpmManager {
+    /// Manager for a specific PHP version (e.g. `8.4`).
+    pub fn for_php_version(version: &str) -> Self {
         Self {
-            fpm_binary: PathBuf::from("/usr/sbin/php-fpm8.3"),
+            fpm_binary: PathBuf::from(format!("/usr/sbin/php-fpm{version}")),
             systemctl: PathBuf::from("/usr/bin/systemctl"),
-            service_name: "php8.3-fpm".to_string(),
-            pool_dir: PathBuf::from("/etc/php/8.3/fpm/pool.d"),
+            service_name: format!("php{version}-fpm"),
+            pool_dir: PathBuf::from(format!("/etc/php/{version}/fpm/pool.d")),
             deadline: Duration::from_secs(30),
         }
     }
