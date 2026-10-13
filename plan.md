@@ -472,6 +472,14 @@ ask only when the choice materially changes scope, cost, access, or product beha
   PHP 8.4/Node 24 (locked installs, static gates, asset build, migration,
   template/queue and tests): <https://github.com/maelzx/hostnur/actions/runs/38335876307>,
   verified with `gh run watch 38335876307 --exit-status`.
+- Follow-up fix (same session): the dashboard cached the `ServerSnapshot` DTO
+  object, which Laravel 13's database cache store unserialized into
+  `__PHP_Incomplete_Class` (its `serializableClasses` allowlist is empty). The
+  dashboard now caches `ServerSnapshot::toArray()` plain data and rebuilds the DTO
+  via `fromArray`; added a database-store dashboard test that would catch the
+  regression. Commit `dcb25ba`; CI passed
+  (<https://github.com/maelzx/hostnur/actions/runs/38337001830>). Cache/config/view
+  cleared on the running dev server.
 - Next slice: **P6.1** (application schema/inventory/policy) from section 9.8.
 
 ### Session 018 — Phase 4 tasks/queue/audit (P4.1–P4.6) (2026-10-13)
