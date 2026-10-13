@@ -246,14 +246,14 @@ session's numbering. All phases after 1 are pending unless explicitly noted.
   distinction is clear and uploads/secrets are never exposed in task output.
 
 ### Phase 8 — Server administration configuration and views
-- Status: pending; next. Begins at P8.1 in section 9.10.
+- Status: complete. P8.1–P8.6 all passed local checks and real PHP 8.3/8.4 CI.
 - Depends on: 4, 5, 6.
-- Slices: domains/TLS requests, managed-service/package views, schedules, firewall
-  status, database and backup settings, version/capability-aware unavailable states.
-- Exit: validated panel data/actions and simulated UI flows work without direct
-  privileged execution. Actual provisioning, renewal and restore remain deferred.
+- Exit: met — an authenticated admin can configure/request all agreed views through
+  the same validated workflow in fake mode; unavailable/unsupported mode remains
+  closed; every screen states what is configured versus simulated versus observed.
 
 ### Phase 9 — Web milestone, quality checks and integration handoff
+- Status: pending; next. Begins at P9.1 in section 9.11.
 - Depends on: 1–8.
 - Slices: web regression, authorization/CSRF/MFA checks, responsive/accessibility
   review, queue/audit failure tests, schema/fixture review, documented adapter map
@@ -427,6 +427,42 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 022 — Phase 8 server administration (P8.1–P8.6) (2026-10-13)
+
+- Completed **all of phase 8** (P8.1–P8.6). Added the server-administration
+  migration (applied locally as batch 9) for `scheduled_jobs`, `certificates`,
+  `database_requests`, `backup_policies` and `backups` plus models and enums
+  (`ServiceAction`, `DatabaseEngine`, `BackupScope`, `CertificateSource`,
+  `RequestState`). Added `ServerService`, `ScheduleService`,
+  `CertificateService`, `DatabaseService`, `BackupService` and a shared
+  `TaskService::requestApproved` (UI confirmation + recent auth = approval), all
+  reusing the one task pipeline.
+- P8.1: read-only service/firewall snapshot plus allowlisted service-control and
+  package requests (IDs resolved from the snapshot/catalog, never typed names or
+  arbitrary flags), closed when the agent is unavailable. P8.2: desired schedules
+  with validated cron/timezone/bounded command reference; saving never installs
+  cron/systemd. P8.3: HTTP-01 issuance requests (rejecting wildcards) and
+  user-supplied certificate ingestion validated locally with OpenSSL for key match,
+  validity and hostname coverage, with encrypted write-only keys. P8.4: app-scoped
+  database intent with panel-generated credentials (never an admin password/SQL).
+  P8.5: backup policies plus simulated backups that are never labelled recoverable
+  (no restore). P8.6: shared `x-ui.request-status`/`x-ui.capability-notice`
+  components, task links and server-side gates.
+- Also enriched `ServerSnapshot` with an optional read-only `firewall` summary and
+  updated the catalog contract (`run_migrations`, certificate provider, database
+  request, backup policy parameters). Added server `AuditAction` cases. UI:
+  `ServerOverview`, `ScheduleIndex`, `CertificateIndex`, `DatabaseIndex`,
+  `BackupIndex` under `layouts.panel` with the nav Server group and recent-auth
+  routes. No root execution, no panel `.env`/secret export, no Rust.
+- Checks: full `php artisan test --compact` — **231 tests / 944 assertions passed**
+  (10 new phase-8 tests). `vendor/bin/pint`, `composer check:syntax`,
+  `composer check:style`, `composer validate` (known license warning),
+  `composer check-platform-reqs`, `composer audit`, `npm audit`, `npm run build`,
+  `php artisan migrate`, `route:list`, `view:cache` and a guest HTTP smoke all
+  passed. The user's port 9000 server was not restarted; the local DB gained only
+  the additive server-administration tables.
+- Next slice: **P9.1** (complete web regression) from section 9.11.
 
 ### Session 021 — Phase 7 deployment intent/operations (P7.1–P7.5) (2026-10-13)
 
@@ -1231,29 +1267,26 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ### Next session's single slice
 
-Use the **DeepSeek starter prompt in section 9.1** and implement **P8.1** from
-section 9.10 (managed services/packages/firewall views; phases 1–7 are complete
-including deployment intent/operations). Finish one slice, record exact checks and
-the next slice ID, commit/push and stop. Real PHP 8.3/8.4 CI is green through
-session 021. Port 9000 is the selected local panel port; Rust remains deferred to
-phase 10.
+Use the **DeepSeek starter prompt in section 9.1** and implement **P9.1** from
+section 9.11 (complete web regression; phases 1–8 are complete through
+server-administration views). Finish one slice, record exact checks and the next
+slice ID, commit/push and stop. Real PHP 8.3/8.4 CI is green through session 022.
+Port 9000 is the selected local panel port; Rust remains deferred to phase 10.
 
-Concrete P8.1 starting notes from session 021 (verify against the installed code
+Concrete P9.1 starting notes from session 022 (verify against the installed code
 before relying on them):
 
-- Add read-only server-administration views for managed services, the approved
-  package catalog and firewall status, driven by adapter-owned snapshots
-  (`ServerSnapshot`/`CapabilitySnapshot`) and clearly labeled simulated/offline/
-  stale — never arbitrary unit names, package IDs or flags, and no firewall
-  mutations. Use `layouts.panel`, `x-ui.*` and the dashboard adapter-state pattern.
-- Service controls must resolve IDs from a managed snapshot; package selection is a
-  catalog ID; the installed panel dependencies are not the OS package catalog. Fake
-  catalog entries are labeled samples. Unavailable/offline states are explicit and
-  never zero.
-- P8.1 is the services/packages/firewall slice only. Scheduled jobs are P8.2,
-  domains/TLS P8.3, database requests P8.4, backups P8.5 and unified request/error
-  views P8.6. Reuse the capability catalog, policies, secret handling and task
-  pipeline; no root execution and no Rust.
+- Add a consolidated regression suite (or extend existing suites) covering the web
+  acceptance matrix: guest/ordinary/recent-auth/stale-MFA gates, app CRUD with
+  revisions and secret references, unsafe URL/domain/ID tampering, task
+  double-submit/duplicate-job/retry single-intent, capability/offline behavior and
+  escaped/redacted logs and audit. Prefer a small number of high-signal tests that
+  assert observable behavior over duplicating existing per-slice suites.
+- Confirm the whole suite passes on both PHP 8.3 and 8.4 (the CI matrix already
+  does this); record the run URLs. Note any acceptance item not yet covered.
+- P9.1 is regression coverage. Interruption/queue checks are P9.2, browser/
+  accessibility review P9.3, contract/resource-map freeze P9.4 and operator/developer
+  handoff P9.5. Do not add Rust or host mutations.
 
 ### Current blockers
 
@@ -1278,7 +1311,7 @@ before relying on them):
 | Item | Existing implementation / evidence |
 |---|---|
 | Web foundation | `panel/`; Laravel 13.35.0, Livewire 4.4.7, Tailwind 4.3.3, Vite 8.3.4 |
-| Current browser entry | `routes/web.php`: `/` redirects guests to `login` and admins to `/panel`; `layouts.panel` shell with `App\Livewire\Panel` pages (Dashboard, TaskIndex, TaskShow, AuditIndex, AuditShow, ApplicationIndex, ApplicationShow, ApplicationOperations, DeploymentIndex, DeploymentShow, SecuritySettings, ConfirmPassword) and `App\Livewire\Auth` guest/MFA pages |
+| Current browser entry | `routes/web.php`: `/` redirects guests to `login` and admins to `/panel`; `layouts.panel` shell with `App\Livewire\Panel` pages (Dashboard, TaskIndex/Show, AuditIndex/Show, ApplicationIndex/Show, ApplicationOperations, DeploymentIndex/Show, ServerOverview, ScheduleIndex, CertificateIndex, DatabaseIndex, BackupIndex, SecuritySettings, ConfirmPassword) and `App\Livewire\Auth` guest/MFA pages |
 | Layout/assets | `resources/views/layouts/app.blade.php`, `resources/css/app.css`, `vite.config.js`; Livewire supplies Alpine |
 | Database | SQLite; database sessions/cache/queue; baseline user/cache/job migrations plus MFA, fake execution and task/audit migrations |
 | Administrator bootstrap | `app/Console/Commands/BootstrapAdministrator.php`; `hostnur:admin:bootstrap` |
@@ -1290,21 +1323,21 @@ before relying on them):
 | Tasks/queue/audit | `app/Services/TaskService` + `AuditRecorder`, `app/Jobs/RunTask`, `hostnur:tasks:reconcile` (scheduled), `tasks`/`task_events`/`audit_events`, `App\Listeners\AuthenticationEventSubscriber`, `/panel/tasks`, `/panel/tasks/{id}`, `/panel/audit`, `/panel/audit/{id}` |
 | Applications | `applications`/`application_revisions`/`source_credentials`/`application_secrets`/`application_domains`, `App\Services\ApplicationService` + `ApplicationPolicy`, `App\Support\{GitRepositoryUrl,Hostname}`, `/panel/applications` + `/{id}` (config/source/credential/secret/domain/archive) |
 | Deployments | `deployments` + `App\Services\DeploymentService` + `DeploymentPreflight`, `/panel/applications/{id}/operations` (recent-auth wizard) and `/panel/deployments` + `/{id}`; task-derived state/release, restart/rollback |
-| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment, 13 MFA-challenge, 17 security-settings, 8 recovery, 8 agent-contract, 8 agent-availability, 12 fake-agent, 4 task-status, 7 task-request, 11 task-execution, 8 task-audit/UI, 5 panel-shell, 5 task-visibility, 3 dashboard, 4 accessibility, 20 Git-URL, 15 hostname, 14 application-inventory, 10 deployment and 2 scaffold tests; 221 tests / 898 assertions at handoff |
+| Server admin | `scheduled_jobs`/`certificates`/`database_requests`/`backup_policies`/`backups` + `App\Services\{ServerService,ScheduleService,CertificateService,DatabaseService,BackupService}`; `/panel/server`, `/panel/schedules`, `/panel/certificates`, `/panel/databases`, `/panel/backups` (recent-auth), `x-ui.request-status`/`x-ui.capability-notice` |
+| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment, 13 MFA-challenge, 17 security-settings, 8 recovery, 8 agent-contract, 8 agent-availability, 12 fake-agent, 4 task-status, 7 task-request, 11 task-execution, 8 task-audit/UI, 5 panel-shell, 5 task-visibility, 3 dashboard, 4 accessibility, 20 Git-URL, 15 hostname, 14 application-inventory, 10 deployment, 10 server-administration and 2 scaffold tests; 231 tests / 944 assertions at handoff |
 | CI | `.github/workflows/web-panel.yml`; PHP 8.3/8.4, Node 24, actual runtime/static/build/migration/test gates; watches `panel/**` and `contracts/**` |
-| Last application CI | Session 020 code passed: <https://github.com/maelzx/hostnur/actions/runs/38343245245>, code commit `b405b68` |
+| Last application CI | Session 021 code passed: <https://github.com/maelzx/hostnur/actions/runs/38370400996>, code commit `5fcb986` |
 | Current local URL | `http://127.0.0.1:9000`; committed example uses port 9000 |
-| Remaining work | Phase 8 server administration, then the final web milestone/review phases |
+| Remaining work | Phase 9 web milestone verification (regression, interruption, browser/a11y, contract freeze, handoff) |
 
 Do not scaffold again, regenerate the app key, reset the database, create test
 users in the real DB, reinstall Boost, or install Rust. The last inspection found
 zero real users, but the user may have subsequently run bootstrap. Inspect state
-read-only when necessary; never assume the account needs recreating. Phases 2–7
+read-only when necessary; never assume the account needs recreating. Phases 2–8
 (authentication, agent contract, durable tasks/queue/audit, the panel UI,
-application inventory/source/secrets and deployment intent/operations) are
-complete; server-administration flows (services/packages/firewall, schedules,
-domains/TLS, databases, backups) and the final milestone/review phases do not
-exist yet.
+application inventory/source/secrets, deployment intent/operations and
+server-administration views) are complete; the phase-9 web-milestone verification
+and Rust handoff remain.
 
 #### Low-cost session protocol
 
@@ -1980,6 +2013,11 @@ restart and supported simulated rollback. Run failure/timeout/cancel variants to
 No live public application, certificate or systemd service is claimed by this phase.
 
 ### 9.10 Phase 8 — Server administration views and desired configuration
+
+**Status: P8.1–P8.6 done; phase 8 complete.** Service/package/firewall views,
+scheduled jobs, domains/TLS, database requests and backup policies exist through the
+same validated workflow; unavailable mode stays closed and host state remains
+unapplied. Phase 9 (web milestone verification and Rust handoff) is next.
 
 Use the same capability catalog, policies, secret handling, approvals and task
 pipeline for every feature. Each small resource gets a focused model/form/action

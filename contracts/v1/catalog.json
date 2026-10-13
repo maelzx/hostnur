@@ -66,7 +66,9 @@
         },
         "certificate.issue": {
             "resource": "domain",
-            "parameters": {},
+            "parameters": {
+                "provider": { "type": "enum", "required": true, "values": ["http01"] }
+            },
             "read_only": false,
             "retry": "no_blind_replay"
         },
@@ -81,14 +83,16 @@
         "database.provision": {
             "resource": null,
             "parameters": {
-                "revision": { "type": "uuid", "required": true }
+                "request": { "type": "uuid", "required": true }
             },
             "read_only": false,
             "retry": "no_blind_replay"
         },
         "backup.create": {
             "resource": "backup",
-            "parameters": {},
+            "parameters": {
+                "policy": { "type": "uuid", "required": false }
+            },
             "read_only": false,
             "retry": "capability_declared"
         }

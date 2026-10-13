@@ -45,7 +45,8 @@ class PanelShellTest extends TestCase
             ->assertSee('Task history')
             ->assertSee('Audit history')
             ->assertSee('Security settings')
-            ->assertSee('Available in a later phase');
+            ->assertSee('Server overview')
+            ->assertSee('Scheduled jobs');
 
         foreach (['panel.dashboard', 'panel.tasks.index', 'panel.audit.index', 'panel.security', 'panel.security.mfa'] as $name) {
             $this->assertTrue(Route::has($name), "Route {$name} is missing.");

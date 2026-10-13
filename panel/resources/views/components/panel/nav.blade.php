@@ -95,7 +95,25 @@
 
             <li>
                 <p class="px-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Server</p>
-                <p class="mt-2 rounded-lg px-2 py-1.5 text-slate-400">Available in a later phase</p>
+                <ul class="mt-2 space-y-1">
+                    @foreach ([
+                        'panel.server' => 'Server overview',
+                        'panel.schedules.index' => 'Scheduled jobs',
+                        'panel.certificates.index' => 'Domains & TLS',
+                        'panel.databases.index' => 'Databases',
+                        'panel.backups.index' => 'Backups',
+                    ] as $name => $label)
+                        <li>
+                            <a
+                                href="{{ route($name) }}"
+                                @if (request()->routeIs($name)) aria-current="page" @endif
+                                class="block rounded-lg px-2 py-1.5 font-medium {{ request()->routeIs($name) ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700 hover:bg-slate-100' }}"
+                            >
+                                {{ $label }}
+                            </a>
+                        </li>
+                    @endforeach
+                </ul>
             </li>
         </ul>
 

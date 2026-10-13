@@ -22,6 +22,7 @@ final readonly class ServerSnapshot
         public ?string $reason,
         public ?string $hostname = null,
         public ?string $os = null,
+        public ?array $firewall = null,
     ) {}
 
     /**
@@ -30,7 +31,7 @@ final readonly class ServerSnapshot
     public static function fromArray(array $data): self
     {
         $extra = array_diff(array_keys($data), [
-            'protocol_version', 'mode', 'available', 'sampled_at', 'metrics', 'services', 'reason', 'hostname', 'os',
+            'protocol_version', 'mode', 'available', 'sampled_at', 'metrics', 'services', 'reason', 'hostname', 'os', 'firewall',
         ]);
 
         if ($extra !== []) {
@@ -85,7 +86,9 @@ final readonly class ServerSnapshot
             throw AgentContractException::invalidParameters('Server snapshot os must be a string or null.');
         }
 
-        return new self($protocolVersion, $mode, $available, $sampledAt, $metrics, $services, $reason, $hostname, $os);
+        $firewall = self::firewall($data['firewall'] ?? null);
+
+        return new self($protocolVersion, $mode, $available, $sampledAt, $metrics, $services, $reason, $hostname, $os, $firewall);
     }
 
     /**
@@ -103,6 +106,7 @@ final readonly class ServerSnapshot
             'reason' => $this->reason,
             'hostname' => $this->hostname,
             'os' => $this->os,
+            'firewall' => $this->firewall,
         ];
     }
 
@@ -202,5 +206,37 @@ final readonly class ServerSnapshot
         if (count($items) > $max) {
             throw AgentContractException::invalidParameters("Server snapshot may contain at most {$max} {$label}.");
         }
+    }
+
+    /**
+     * @return array{enabled: bool, incoming_policy: string, rule_count: int}|null
+     */
+    private static function firewall(mixed $firewall): ?array
+    {
+        if ($firewall === null) {
+            return null;
+        }
+
+        if (! is_array($firewall)) {
+            throw AgentContractException::invalidParameters('Server snapshot firewall must be an object or null.');
+        }
+
+        $extra = array_diff(array_keys($firewall), ['enabled', 'incoming_policy', 'rule_count']);
+
+        if ($extra !== []) {
+            throw AgentContractException::invalidParameters(
+                'Firewall summary has unexpected keys: '.implode(', ', $extra).'.'
+            );
+        }
+
+        $enabled = $firewall['enabled'] ?? null;
+        $policy = $firewall['incoming_policy'] ?? null;
+        $count = $firewall['rule_count'] ?? null;
+
+        if (! is_bool($enabled) || ! is_string($policy) || $policy === '' || ! is_int($count) || $count < 0) {
+            throw AgentContractException::invalidParameters('Firewall summary is invalid.');
+        }
+
+        return ['enabled' => $enabled, 'incoming_policy' => $policy, 'rule_count' => $count];
     }
 }

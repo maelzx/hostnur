@@ -120,4 +120,24 @@ return [
         'max_persistent_paths' => 20,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Server Administration
+    |--------------------------------------------------------------------------
+    |
+    | Allowlisted package, engine and provider catalogs plus bounded counts. The
+    | installed panel dependencies are not the OS package catalog. Fake catalog
+    | entries are labelled samples.
+    |
+    */
+
+    'server' => [
+        'packages' => ['nginx', 'mariadb-server', 'php8.3-fpm', 'redis-server', 'certbot'],
+        'database_engines' => ['mariadb', 'postgresql'],
+        'certificate_providers' => ['http01'],
+        'max_schedules' => 20,
+        'max_backup_policies' => 10,
+        'certificate_max_bytes' => 65536,
+    ],
+
 ];

@@ -18,5 +18,10 @@
     ],
     "reason": "Simulated data; no real host was contacted.",
     "hostname": "hostnur-demo",
-    "os": "Ubuntu 24.04 LTS"
+    "os": "Ubuntu 24.04 LTS",
+    "firewall": {
+        "enabled": true,
+        "incoming_policy": "deny",
+        "rule_count": 3
+    }
 }

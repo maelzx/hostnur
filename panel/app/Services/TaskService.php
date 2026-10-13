@@ -103,6 +103,22 @@ final class TaskService
         return $task;
     }
 
+    /**
+     * Request and, for a consequential operation, immediately approve it: the UI
+     * confirmation plus recent authentication is the approval. Used by the
+     * administration request services so they share the one task pipeline.
+     */
+    public function requestApproved(User $actor, OperationRequest $request): Task
+    {
+        $task = $this->request($actor, $request);
+
+        if ($task->status === TaskStatus::AwaitingApproval) {
+            $task = $this->approve($actor, $task);
+        }
+
+        return $task;
+    }
+
     public function approve(User $approver, Task $task): Task
     {
         if ($task->status !== TaskStatus::AwaitingApproval) {

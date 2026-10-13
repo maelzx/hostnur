@@ -46,6 +46,21 @@
         },
         "reason": { "type": ["string", "null"] },
         "hostname": { "type": ["string", "null"] },
-        "os": { "type": ["string", "null"] }
+        "os": { "type": ["string", "null"] },
+        "firewall": {
+            "oneOf": [
+                { "type": "null" },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["enabled", "incoming_policy", "rule_count"],
+                    "properties": {
+                        "enabled": { "type": "boolean" },
+                        "incoming_policy": { "type": "string", "minLength": 1 },
+                        "rule_count": { "type": "integer", "minimum": 0 }
+                    }
+                }
+            ]
+        }
     }
 }

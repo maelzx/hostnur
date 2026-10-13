@@ -153,15 +153,16 @@ npm audit
 npm run build
 ```
 
-Sessions 004–021 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
+Sessions 004–022 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
 24.12.0 and npm 11.6.2. The suite contains 20 administrator-bootstrap tests, 14
 authentication tests, 12 MFA-enrollment tests, 13 MFA-challenge tests, 17
 security-settings tests, 8 administrator-recovery tests, 8 agent-contract tests,
 8 agent-availability tests, 12 fake-agent tests, 4 task-status tests, 7 task-request
 tests, 11 task-execution tests, 8 task-audit/UI tests, 5 panel-shell tests, 5
 task-visibility tests, 3 dashboard tests, 4 accessibility tests, 20 Git-URL tests,
-15 hostname tests, 14 application-inventory tests, 10 deployment tests and two
-scaffold baseline tests. Run individual suites with:
+15 hostname tests, 14 application-inventory tests, 10 deployment tests, 10
+server-administration tests and two scaffold baseline tests. Run individual suites
+with:
 
 ```bash
 php artisan test --compact tests/Feature/AuthenticationTest.php
@@ -183,6 +184,7 @@ php artisan test --compact tests/Feature/DashboardTest.php
 php artisan test --compact tests/Feature/AccessibilityTest.php
 php artisan test --compact tests/Feature/ApplicationInventoryTest.php
 php artisan test --compact tests/Feature/DeploymentTest.php
+php artisan test --compact tests/Feature/ServerAdministrationTest.php
 ```
 
 Authentication tests use isolated in-memory SQLite and cover guest redirects,
@@ -330,6 +332,34 @@ capability), idempotent single-submit, edited-intent approval invalidation, task
 derived state and simulation labels, unknown-not-success, restart/rollback with
 foreign/unknown release rejection, revoked-authorization failure, and the gated
 operations page with its policy wording.
+
+## Server administration
+
+Read-only observation plus allowlisted requests, all behind auth + administrator +
+MFA + recent password confirmation:
+
+- `/panel/server` shows agent-reported services (control requests resolve a
+  snapshot service ID, never a typed unit name), the approved package catalog
+  (install requests use a catalog ID, never arbitrary APT flags/repositories) and a
+  read-only firewall summary. Requests are closed when the agent is unavailable.
+- `/panel/schedules` stores desired cron schedules (validated expression/timezone/
+  bounded command reference); saving never installs cron or systemd and the panel's
+  own scheduler only runs task maintenance.
+- `/panel/certificates` requests HTTP-01 issuance (no wildcard/DNS-01) and ingests
+  user-supplied certificates after local OpenSSL validation of key match, validity
+  and hostname coverage; private keys are encrypted and write-only.
+- `/panel/databases` records app-scoped engine/database/user intent with
+  panel-generated credentials (never an admin password or arbitrary SQL); the
+  panel's own database is never used for a hosted application.
+- `/panel/backups` configures policies (schedule/retention/destination credential
+  reference) and records simulated backups that are never labelled recoverable;
+  restore is not available.
+
+Server tests cover snapshot-derived service IDs, catalog-only packages, closed
+requests when unavailable, schedule/cron/timezone/command validation without cron
+installation, OpenSSL certificate matching and host coverage with hidden keys,
+generated hidden database credentials, simulated non-recoverable backups, and the
+gated pages.
 
 Bootstrap tests use isolated in-memory SQLite, including interleaved setup writes,
 rollback and secret-output checks; they do not create your real administrator.

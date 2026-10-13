@@ -60,6 +60,26 @@ class Application extends Model
         return $this->hasMany(ApplicationDomain::class)->orderBy('hostname');
     }
 
+    public function scheduledJobs(): HasMany
+    {
+        return $this->hasMany(ScheduledJob::class)->orderBy('name');
+    }
+
+    public function databaseRequests(): HasMany
+    {
+        return $this->hasMany(DatabaseRequest::class)->latest('created_at');
+    }
+
+    public function backupPolicies(): HasMany
+    {
+        return $this->hasMany(BackupPolicy::class)->latest('created_at');
+    }
+
+    public function backups(): HasMany
+    {
+        return $this->hasMany(Backup::class)->latest('created_at');
+    }
+
     public function sourceCredential(): BelongsTo
     {
         return $this->belongsTo(SourceCredential::class);
