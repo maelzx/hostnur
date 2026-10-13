@@ -264,6 +264,36 @@ Laravel end-to-end release (rest of P14.6) — the provider renders/serves but d
 not yet run Composer or Lumen-style build steps; that lands with the deployment
 orchestration in phase 15.
 
+## Deployment orchestration (phase 15)
+
+`agent/src/deploy/` joins the phase 12–14 primitives into a release flow:
+
+- reserve/reconcile identity + layout (phase 12);
+- stage a unique release under `<app>/releases/<release_id>` and check out the
+  pinned commit as the app user (phase 13);
+- write a per-release `.env` at `0600` app-owned;
+- prepare the FPM pool and an Nginx route whose document root is the agent-owned
+  `<app>/current/public` (phase 14);
+- atomically switch the `current` symlink (temp symlink + `rename`), reload FPM
+  (clears OPcache) and Nginx, then **health-gate** with a bounded local HTTP
+  probe, polling briefly for the reload to settle;
+- on unhealthy activation, restore the previous `current` target and reload.
+
+Migrations are **opt-in and refused** unless a recovery prerequisite is
+configured (none is yet), so `run_migrations=true` fails closed. The permission
+model keeps `.env` `0600` and `shared/secrets` `0700`; the release tree is
+traversable so the web worker can reach `public/`. Per-app ACLs that expose only
+the `public/` subtree (traverse-only on the release dir) are a recorded hardening
+follow-up.
+
+Verified on the arm64 Lima VM (root-run `tests/deploy_vm.rs`): deploy v1 served
+`marker-v1`, redeploy v2 served `marker-v2`, rollback to v1 served `marker-v1`,
+and a migration-requested deploy was refused.
+
+Deferred/recorded: the unprivileged Composer build (P14.2), queue workers/
+scheduler, blue/green routing, and full journaled crash/cancel reconciliation and
+panel/task integration (part of P15.6/P15.7).
+
 ## Blocked / deferred checks
 
 Recorded, not claimed:

@@ -805,7 +805,11 @@ The provider records exact supported prerequisites and leaves traffic/release
 promotion to the orchestration designed next.
 
 ### Phase 15 — Real deployment orchestration, logs, health and rollback
-- Status: planned; first genuine end-to-end native deployment milestone.
+- Status: **substantially complete** (staging, source pinning, provider wiring,
+  atomic `current` activation, health-gated reload and rollback) in session 030,
+  verified with a root-run harness on the arm64 Lima VM. Migrations fail closed.
+  Composer build, workers/scheduler, blue/green, and journaled crash/cancel +
+  panel integration remain.
 - Depends on: 4, 7, 11, 14.
 
 #### Objective and admission rules
@@ -1404,6 +1408,33 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 030 — Phase 15 deployment orchestration (2026-10-13)
+
+- Implemented the core of phase 15: `agent/src/deploy/mod.rs` orchestrates a
+  release — reserve/reconcile identity+layout, stage `<app>/releases/<release_id>`
+  and check out the pinned commit as the app user, write a per-release `0600`
+  `.env`, prepare the FPM pool and an Nginx route rooted at
+  `<app>/current/public`, atomically switch the agent-owned `current` symlink
+  (temp symlink + `rename`), reload FPM/Nginx and health-gate with a bounded
+  local HTTP probe (polling for the reload to settle); an unhealthy activation
+  restores the previous release. `deploy/health.rs` is a dependency-free bounded
+  probe. Migration requests fail closed (`MigrationPrerequisiteMissing`).
+- Decisions (user): release-dir + atomic `current` symlink + FPM/worker reload
+  with brief maintenance; migrations opt-in only and refused without a recovery
+  prerequisite.
+- Checks (Lima Ubuntu 24.04 arm64 VM): `cargo fmt`, `cargo clippy --locked
+  --all-targets -- -D warnings`, `cargo build --locked`, `cargo test --locked` —
+  **141 tests passed**. Root-run `tests/deploy_vm.rs` passed: deploy v1 served
+  `marker-v1`, redeploy v2 served `marker-v2`, rollback to v1 served `marker-v1`,
+  and a migration-requested deploy was refused. (A discovered issue — the app-owned
+  release dir blocked the web worker from `public/` — was fixed by making the
+  release tree traversable while keeping `.env`/secrets private.)
+- Deferred: P14.2 unprivileged Composer build, queue workers/scheduler,
+  blue/green routing, journaled crash/cancel reconciliation, per-app `public/`
+  ACLs, and panel/task integration (P15.6/P15.7).
+- Next slice: **phase 16** (real TLS lifecycle) — needs a test domain/DNS and a
+  publicly reachable VM.
 
 ### Session 029 — Phase 14 PHP/Laravel provider and Nginx routing (2026-10-13)
 
@@ -2485,14 +2516,14 @@ The panel is independently runnable and tested; the agent crate builds, tests an
 runs unprivileged in the Lima VM. See `docs/web-milestone.md` and
 `docs/agent-development.md` for passed gates, blocked checks and acceptance maps.
 
-**Phases 11–14 are complete for their scopes** (sessions 026–029; phase 14 except
-the Composer/Laravel build). The next work is **phase 15 (real deployment
-orchestration, logs, health and rollback)** — the first genuine end-to-end native
-deployment milestone — which will also finish P14.2's unprivileged Composer build
-and a real Laravel release. Continue the agent in the Lima VM (`agent/`) with the
-root-run harness for privileged slices; the PHP panel runs on the host. Local web
-work continues on port 9000 with `HOSTNUR_AGENT_MODE=fake`. Recorded follow-ups:
-live PHP↔Rust end-to-end, amd64 VM evidence, and live private-repo clone.
+**Phases 11–15 are substantially complete for their scopes** (sessions 026–030).
+The next work is **phase 16 (real TLS lifecycle)**, which needs a test domain/DNS
+and a publicly reachable VM — likely not possible on the current private VM, so
+record it as environment-blocked and consider the remaining phase-15 items
+(Composer build, workers/scheduler, crash reconciliation, panel integration)
+first. Continue the agent in the Lima VM (`agent/`) with the root-run harness for
+privileged slices. Recorded follow-ups: live PHP↔Rust end-to-end, amd64 VM
+evidence, live private-repo clone, and per-app `public/` ACLs.
 
 Push the phase-10 commit to observe the agent CI workflow; a real CI run is still
 outstanding. The remaining genuine web gates (real browser keyboard/screen-reader
@@ -2514,10 +2545,11 @@ isolation) are unchanged and recorded in `docs/web-milestone.md`.
   arm64 with amd64 covered only by the CI build target.
 - A live PHP↔Rust cross-language end-to-end test (panel over the socket to the real
   agent) is a recorded follow-up; PHP is not installed in the VM.
-- Phase 15 will finish P14.2 (unprivileged Composer/Laravel build) and a real
-  Laravel release end-to-end; SSH deploy keys (P13.4) remain deferred by decision.
-  The full Laravel activation strategy (FPM/worker reload, migration policy) is
-  chosen in phase 15.
+- Phase 16 (real TLS) needs a test domain/DNS and a publicly reachable VM; the
+  current Lima VM is private, so ACME HTTP-01 issuance is environment-blocked
+  until a public VM/domain is supplied. Remaining phase-15 items (unprivileged
+  Composer build, workers/scheduler, journaled crash/cancel reconciliation, panel
+  integration) can proceed first. SSH deploy keys (P13.4) remain deferred.
 - Official domain, Git authentication details, database engine, release signing,
   and license await the decision checkpoints listed in section 6.
 
