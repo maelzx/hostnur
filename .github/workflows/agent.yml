@@ -1,0 +1,79 @@
+name: Agent
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'agent/**'
+      - 'contracts/**'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/agent.yml'
+  pull_request:
+    paths:
+      - 'agent/**'
+      - 'contracts/**'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/agent.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  agent:
+    name: Rust ${{ matrix.rust }} / ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The pinned toolchain is also the declared MSRV (rust-toolchain.toml).
+          # x86_64 is the Ubuntu 24.04 amd64 deployment target; this job validates
+          # the real target even though local development runs on arm64.
+          - rust: '1.99.0'
+            target: x86_64-unknown-linux-gnu
+    defaults:
+      run:
+        working-directory: agent
+        shell: bash
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install "${{ matrix.rust }}" \
+            --profile minimal \
+            --component clippy \
+            --component rustfmt \
+            --target "${{ matrix.target }}"
+          rustup default "${{ matrix.rust }}"
+          rustc --version
+          cargo --version
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Lint (Clippy, warnings denied)
+        run: cargo clippy --locked --all-targets --target "${{ matrix.target }}" -- -D warnings
+
+      - name: Build (locked)
+        run: cargo build --locked --target "${{ matrix.target }}"
+
+      - name: Test (locked)
+        run: cargo test --locked --target "${{ matrix.target }}"
+
+      - name: Smoke test the built binary
+        run: |
+          "./target/${{ matrix.target }}/debug/hostnur-agent" --version
+          cfg="$(mktemp)"
+          printf 'version = 1\nsocket_path = "/run/hostnur/agent.sock"\nstate_dir = "/var/lib/hostnur/agent"\n' > "$cfg"
+          "./target/${{ matrix.target }}/debug/hostnur-agent" check-config --config "$cfg"

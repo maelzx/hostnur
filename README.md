@@ -14,6 +14,8 @@ LTS on amd64, with PHP/Laravel as the first hosted application workflow.
   prerequisites, inspection results, and setup checkpoints.
 - [Web panel setup and checks](panel/README.md): local install, run and verification
   commands for the runnable Laravel/Livewire scaffold.
+- [Agent development](docs/agent-development.md): the Rust agent crate, prepared
+  environment, toolchain/target decisions and commands.
 - [Original requirements](vps-control-panel-plan.md): source product specification;
   subsequent confirmed decisions are recorded in `plan.md`.
 
@@ -30,9 +32,11 @@ operations shell with dashboard and task/audit history, application
 inventory/source/secrets, deployment intent/preflight/wizard and
 server-administration views. The panel is independently runnable and tested; see
 [`docs/web-milestone.md`](docs/web-milestone.md) and
-[`panel/README.md`](panel/README.md). Rust (phase 10) begins only when a prepared
-agent environment is supplied. Run outcomes and the session handoff are recorded in
-`plan.md`.
+[`panel/README.md`](panel/README.md). Phase 10 is also complete: the independent
+Rust `agent/` crate (foundation scaffold with typed configuration, diagnostics,
+lifecycle and logging; no privileged handlers yet) builds/tests under rustc 1.99.0
+in the prepared environment. See [`docs/agent-development.md`](docs/agent-development.md).
+Run outcomes and the session handoff are recorded in `plan.md`.
 
 For DeepSeek continuation, start with **`plan.md` section 9.1**, then the selected
 phase's detailed slice. Section 9 provides the complete web-only implementation

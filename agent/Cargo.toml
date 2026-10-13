@@ -1,0 +1,15 @@
+[package]
+name = "hostnur-agent"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+description = "Hostnur privileged operations agent (foundation scaffold)"
+repository = "https://github.com/maelzx/hostnur"
+publish = false
+
+[dependencies]
+signal-hook = "0.4.5"
+toml = "1.1.8"
+
+[dev-dependencies]
+tempfile = "3.27.0"

@@ -20,14 +20,18 @@ Rust prerequisites apply only to the later prepared agent environment.
 | Composer | Existing 2.9.2 locally; intended 2.10.3+ in CI/releases | Do not upgrade shared tooling here; preserve diagnostic findings and verify actual dependency compatibility |
 | Node.js | Existing 24.12.0 locally; patched 24.x for CI | `.nvmrc` selects the 24 line; no local runtime installation/upgrade |
 | npm | Compatible with selected Node 24 | Commit the scaffold's `package-lock.json`; use `npm ci` thereafter |
-| Rust/Cargo | Deferred baseline 1.99.0, edition 2024 | Stored pin in `rust-toolchain.toml`; recheck in prepared environment at phase 10 |
-| Rust MSRV | Deferred initial 1.99 | Verify with future crate/dependencies in phase 10; not a web prerequisite |
+| Rust/Cargo | 1.99.0, edition 2024 (verified session 025) | Pinned in `rust-toolchain.toml`; confirmed as current stable in the phase-10 Lima VM |
+| Rust MSRV | 1.99 | Verified with the phase-10 crate/dependencies; the pin is also the declared MSRV |
 | SQLite | Ubuntu-provided SQLite, accessed through PDO | Local 3.45.1 available; actual queue/locking behavior remains to be tested |
 
 The selected Rust version is present in the official stable manifest dated
-2026-10-01. The pin includes rustfmt and Clippy, but requires no action in the current
-environment. Rust is a later **agent build** dependency; the web panel builds and
-tests independently. An installed Hostnur agent will be a compiled executable.
+2026-10-01 and was verified in the phase-10 prepared environment (session 025): the
+Lima Ubuntu 24.04 arm64 VM resolved stable to 1.99.0
+(`rustc 1.99.0 (b940084d7 2026-09-28)`, `cargo 1.99.0 (5f94df478 2026-08-27)`) and
+built/tested the `agent/` crate with it. The pin includes rustfmt and Clippy. Rust is
+the **agent build** dependency; the web panel still builds and tests independently.
+See [`agent-development.md`](agent-development.md). An installed Hostnur agent is a
+compiled executable.
 
 PHP 8.3 is the initial production baseline, avoiding an extra PHP repository for
 the panel on Ubuntu 24.04. PHP versions managed for hosted applications are a
@@ -111,12 +115,16 @@ feature checkpoint is item 5; the CI jobs have passed.
    through phases 2–9. Keep fixture results visibly simulated and unavailable
    production operations rejected server-side.
 
-## Later agent checkpoint
+## Agent checkpoint (phase 10, complete)
 
-At phase 10, switch to the prepared environment, recheck the Rust pin/MSRV, scaffold
-the independent agent and add its own build/test/format/Clippy CI. Phase 11 adds
-the actual transport and cross-language validation; later VM gates prove host
-operations. The current machine does not need Rust, Docker, QEMU or new packages.
+Phase 10 was implemented in the prepared agent environment (a Lima Ubuntu 24.04 VM,
+session 025). At that point the Rust pin/MSRV was rechecked (1.99.0, verified as
+current stable), the independent `agent/` crate was scaffolded, and its own
+format/Clippy/build/test CI was added (`.github/workflows/agent.yml`). The agent
+workflow validates the x86_64-unknown-linux-gnu deployment target in CI even though
+local development runs on arm64. Phase 11 adds the actual transport and
+cross-language validation; later VM gates prove host operations. The Rust toolchain
+is installed only in the prepared VM, not on the web-development host.
 
 ## Verified scaffold checkpoint (session 004)
 

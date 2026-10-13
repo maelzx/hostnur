@@ -2,12 +2,13 @@
 
 Last updated: 2026-10-13.
 
-**Development handoff:** this plan records phases **1–9 complete**, with blocked
-manual/VM checks retained in session 023. The next implementation slice is **P10.1**,
-deferred until the prepared agent environment is available. Detailed phases 10–20
-are expanded directly under their headings in section 5. Section 9 remains the
-web implementation playbook. New Rust/host/package file names and designs below
-are proposed work, not implemented features or verified host behavior.
+**Development handoff:** this plan records phases **1–9 complete** (web milestone)
+and **phase 10 complete** (Rust foundation) with blocked manual/VM checks retained
+in sessions 023 and 025. The next implementation slice is **P11.1** (cross-language
+contract), which needs the prepared agent environment (now a Lima Ubuntu 24.04 VM).
+Detailed phases 10–20 are expanded directly under their headings in section 5.
+Section 9 remains the web implementation playbook. Host/package designs below are
+proposed work, not implemented features or verified host behavior.
 
 ## 1. Purpose and planning authority
 
@@ -265,7 +266,8 @@ Detailed implementation, file maps, slice IDs, schemas and test requirements for
 phases 1–9 are in **section 9** below. Use that playbook to continue development.
 
 ### Phase 10 — Rust foundation in the prepared environment
-- Status: implementation deferred until the prepared agent environment is supplied.
+- Status: **complete (P10.1–P10.5)**, local checks passed in the prepared Lima
+  Ubuntu 24.04 aarch64 VM; real CI run pending push. Session 025.
 - Depends on: 9.
 
 #### Objective and entry gate
@@ -1392,6 +1394,42 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ## 8. Current handoff
 
+### Session 025 — Phase 10 Rust foundation (P10.1–P10.5) (2026-10-13)
+
+- Completed **all of phase 10** in the prepared agent environment: a dedicated
+  **Lima** Ubuntu 24.04 VM (arm64 native; the amd64 deployment target is validated
+  in CI). P10.1: installed/verified rustc/cargo **1.99.0** (stable, released
+  2026-10-01), rustup 1.29.1, gcc 13.3.0, make 4.3; confirmed the stored
+  `rust-toolchain.toml` pin/MSRV (1.99.0, edition 2024) is valid and left it
+  unchanged; target decision recorded. P10.2: created the independent
+  `agent/` crate (`hostnur-agent`, lib + bin, `Cargo.lock` committed) with
+  `--version`/`--help`, exit codes and an `HOSTNUR_AGENT_CONFIG`/`--config` path;
+  the panel needs no Rust to run. P10.3: typed TOML configuration with strict
+  parsing — unknown/missing/wrong-type/unsupported-version/relative-path/`..`/
+  out-of-range settings fail with stable codes (`config_not_found`,
+  `config_parse`, `config_invalid`) and never echo values; `check-config` has no
+  side effects. P10.4: SIGTERM/SIGINT lifecycle with controlled shutdown, idle
+  non-root `run` (no socket, no privileged handler) and bounded single-line JSON
+  logs with a fixed field allowlist (no config/env/credential dumping). P10.5:
+  `.github/workflows/agent.yml` (Rust 1.99.0, fmt/clippy `-D warnings`/build/test/
+  binary smoke on x86_64-unknown-linux-gnu), `docs/agent-development.md` and
+  `agent/.gitignore`.
+- Dependencies (all MIT OR Apache-2.0, no native build, no MSRV impact beyond the
+  pin): `toml` 1.1.8, `signal-hook` 0.4.5, dev `tempfile` 3.27.0. Crate has no
+  `license` field (project license still an open decision) and `publish = false`.
+- Checks (in the Lima VM): `cargo build --locked`, `cargo test --locked` —
+  **34 tests passed** (26 unit + 8 CLI integration), `cargo fmt --all -- --check`,
+  `cargo clippy --locked --all-targets -- -D warnings` all passed. Manual
+  lifecycle: `run` exited 0 on SIGTERM with `agent.starting`/`agent.ready`/
+  `agent.stopped` logs and created no state paths; `run` with a missing config
+  exited 2 with `config_not_found`. No current-host Rust/system changes; web panel
+  untouched.
+- Blocked/deferred (recorded, not claimed): the agent workflow cannot be observed
+  until the branch is pushed (this session committed locally only); privileged
+  host/socket/systemd/install checks need a disposable Ubuntu 24.04 **amd64** VM
+  (phase 11+); x86_64 binary execution/packaging is phase 20.
+- Next slice: **P11.1** (cross-language contract) from phase 11.
+
 ### Session 024 — Detailed planning for phases 10–20 (2026-10-13)
 
 - User requested reading only `plan.md`, expanding each phase separately and
@@ -2285,21 +2323,22 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ### Next session's single slice
 
-**The web milestone (phases 1–9) is complete.** There is no next web slice; the
-panel is independently runnable and tested. See `docs/web-milestone.md` for the
-passed gates, blocked manual checks and the acceptance map.
+**The web milestone (phases 1–9) and the phase-10 Rust foundation are complete.**
+The panel is independently runnable and tested; the agent crate builds, tests and
+runs unprivileged in the Lima VM. See `docs/web-milestone.md` and
+`docs/agent-development.md` for passed gates, blocked checks and acceptance maps.
 
-The next work is **phase 10 (Rust foundation)**, which is **deferred until the user
-supplies a prepared agent environment**: recheck the stored `rust-toolchain.toml`
-pin/MSRV, scaffold `agent/`, then phase 11 protocol framing/version negotiation
-against `contracts/v1` and `docs/agent-integration.md`. Do not install Rust or run
-privileged host operations without that environment. Local web work continues to use
-port 9000 with `HOSTNUR_AGENT_MODE=fake`.
+The next work is **phase 11, slice P11.1 (cross-language contract)**: Rust
+DTOs/parser, transport framing/version decisions and shared fixtures that agree
+with `contracts/v1` and `docs/agent-integration.md`. Work in the prepared Lima
+Ubuntu 24.04 VM (`agent/`); do not treat the PHP schema as the root trust boundary
+and do not run privileged host operations outside a disposable amd64 VM. Local web
+work continues to use port 9000 with `HOSTNUR_AGENT_MODE=fake`.
 
-If the user wants more web-only work instead, the remaining genuine gates are a real
-browser keyboard/screen-reader and 375 px/desktop review, and a disposable-VM pass
-over install/systemd/TLS/upgrade/restore/isolation; both are currently blocked by
-missing environment access and are recorded in `docs/web-milestone.md`.
+Push the phase-10 commit to observe the agent CI workflow; a real CI run is still
+outstanding. The remaining genuine web gates (real browser keyboard/screen-reader
+and 375 px/desktop review; disposable-VM install/systemd/TLS/upgrade/restore/
+isolation) are unchanged and recorded in `docs/web-milestone.md`.
 
 ### Current blockers
 
@@ -2308,10 +2347,12 @@ missing environment access and are recorded in `docs/web-milestone.md`.
   shared tool is not to be changed under the user's environment constraint.
 - Strict Composer validation awaits a project license decision; the normal
   metadata check passes with that warning. PHP 8.3/8.4 CI now passes.
-- Missing Rust does not block web work; Rust development waits for phase 10 and the
-  prepared environment. The existing toolchain pin is metadata for that later work.
-- Disposable VM access is unavailable; real install/systemd/TLS/upgrade/restore
-  gates remain unverified until supplied.
+- Rust is available in the prepared Lima Ubuntu 24.04 **arm64** VM; the pinned
+  1.99.0 toolchain was verified there. Phase 10 is complete locally. The agent CI
+  workflow's real run is pending a push (this session committed locally only).
+- Disposable Ubuntu 24.04 **amd64** VM access is still required for real
+  install/systemd/socket/TLS/upgrade/restore/isolation gates (phase 11+); those
+  remain unverified until supplied.
 - Official domain, Git authentication details, database engine, release signing,
   and license await the decision checkpoints listed in section 6.
 
