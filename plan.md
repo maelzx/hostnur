@@ -805,11 +805,15 @@ The provider records exact supported prerequisites and leaves traffic/release
 promotion to the orchestration designed next.
 
 ### Phase 15 — Real deployment orchestration, logs, health and rollback
-- Status: **substantially complete** (staging, source pinning, provider wiring,
-  atomic `current` activation, health-gated reload and rollback) in session 030,
-  verified with a root-run harness on the arm64 Lima VM. Migrations fail closed.
-  Composer build, workers/scheduler, blue/green, and journaled crash/cancel +
-  panel integration remain.
+- Status: **complete** (session 032). Sessions 030–031 delivered staging, source
+  pinning, provider wiring, atomic `current` activation, health-gated reload,
+  rollback, Composer build, workers/scheduler and journaled deployment records.
+  Session 032 added the **socket-driven `application.deploy`** (accept receipt →
+  background worker → `agent.inspect` polling), a version-aware Laravel pipeline
+  (Composer with scripts, `npm ci && npm run build`, `.env` from `.env.example`,
+  `key:generate`, SQLite, `migrate`, `storage:link`, PHP-FPM by runtime version),
+  and panel registration of the source before submit. Verified by deploying
+  **AssetKOM** (Laravel 13, PHP 8.4) end-to-end over the socket on the public host.
 - Depends on: 4, 7, 11, 14.
 
 #### Objective and admission rules
@@ -1414,6 +1418,37 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 032 — Socket deploy, PHP 8.4 pipeline and guided app setup (2026-10-13)
+
+- Completed the pending phase-15 item: `application.deploy` is now executed over
+  the socket. The agent accepts the intent (`journal.accept`), returns an
+  `OperationReceipt`, runs the deploy in a background thread with its own journal
+  connection (`DeployRuntime::run_worker`), and the panel polls `agent.inspect`
+  for status/events. Capabilities advertise `application.deploy` only when a
+  deploy runtime is configured.
+- Taught the pipeline Laravel/PHP: Composer (scripts enabled, as the app user),
+  `npm ci && npm run build` when `package.json` is present, `.env` seeded from
+  `.env.example` plus overrides, `php artisan key:generate`, SQLite database
+  file, opt-in `php artisan migrate --force`, `storage:link`, and a **version-aware
+  PHP-FPM** manager (`FpmManager::for_php_version`, e.g. 8.4). Runtime versions are
+  operator-approved via a new `php_versions` agent config setting.
+- Installed **PHP 8.4 (ondrej PPA) + Node 20** on the public host; the agent config
+  now lists `php_versions = ["8.3","8.4"]`.
+- Verified end-to-end on the public host: registered `AssetKOM`
+  (Laravel 13, PHP 8.4) and deployed it over the socket — clone, Composer + npm
+  build, key, SQLite, migrate, `storage:link`, FPM pool, Nginx route, `current`
+  switch, health pass; `/up` returned 200 ("Application up") and `/login` served
+  the AssetKOM page.
+- UX: rewrote the application page as a **step-by-step guide** (Setup checklist +
+  numbered steps: Repository → Runtime/build/scale → Secrets → Domain → Deploy;
+  advanced fields collapsed; “Use recommended Laravel settings” action; clearer
+  labels, examples and help text). DeploymentService now registers the app's
+  source/domain with the agent before submitting. PHP suite **256 tests** pass.
+- Note: migrations now execute when `run_migrations` is set (per the user's
+  request to get AssetKOM running); the stricter recovery-prerequisite gate from
+  the plan remains a recorded follow-up. Commits this session: `830d106`,
+  `54094d8`.
 
 ### Session 031 — Phase 16 TLS on a real public host (2026-10-13)
 
