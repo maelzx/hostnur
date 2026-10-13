@@ -30,4 +30,15 @@ enum AuditAction: string
     case AuthRecoveryCodesRegenerated = 'auth.recovery_codes_regenerated';
     case AuthAdminBootstrapped = 'auth.admin_bootstrapped';
     case AuthAdminRecovered = 'auth.admin_recovered';
+
+    case ApplicationCreated = 'application.created';
+    case ApplicationUpdated = 'application.updated';
+    case ApplicationArchived = 'application.archived';
+    case ApplicationSourceUpdated = 'application.source_updated';
+    case ApplicationSecretSet = 'application.secret_set';
+    case ApplicationSecretDeleted = 'application.secret_deleted';
+    case ApplicationDomainAdded = 'application.domain_added';
+    case ApplicationDomainRemoved = 'application.domain_removed';
+    case SourceCredentialStored = 'application.credential_stored';
+    case SourceCredentialRotated = 'application.credential_rotated';
 }

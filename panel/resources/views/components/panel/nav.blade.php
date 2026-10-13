@@ -71,7 +71,17 @@
 
             <li>
                 <p class="px-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Applications</p>
-                <p class="mt-2 rounded-lg px-2 py-1.5 text-slate-400">Available in a later phase</p>
+                <ul class="mt-2 space-y-1">
+                    <li>
+                        <a
+                            href="{{ route('panel.applications.index') }}"
+                            @if (request()->routeIs('panel.applications.*')) aria-current="page" @endif
+                            class="block rounded-lg px-2 py-1.5 font-medium {{ request()->routeIs('panel.applications.*') ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700 hover:bg-slate-100' }}"
+                        >
+                            Applications
+                        </a>
+                    </li>
+                </ul>
             </li>
 
             <li>

@@ -30,7 +30,11 @@
   and 4 (durable tasks/queue/audit) are complete, and phase 5 (protected panel
   shell, navigation, shared UI components, dashboard adapter states and responsive/
   accessible task/audit screens) is complete. Use the shared `x-ui.*` components
-  and `layouts.panel` for new panel pages. Phase 6 is next.
+  and `layouts.panel` for new panel pages. Phase 6 (application inventory,
+  configuration revisions, encrypted Git credentials and environment secrets, and
+  normalized domains/archive) is complete; `App\Services\ApplicationService` and
+  `ApplicationPolicy` are the only write path. Phase 7 (deployment intent and
+  operations) is next.
 - Bootstrap uses `panel_setup` as durable one-time state, claimed in the same DB
   transaction as user creation. Do not turn deletion or repeat bootstrap into a
   reset mechanism. `is_admin` defaults false and is not mass assignable.

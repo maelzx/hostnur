@@ -101,4 +101,23 @@ return [
         'stale_after_seconds' => 120,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Applications
+    |--------------------------------------------------------------------------
+    |
+    | Allowlisted provider/runtime IDs and bounded counts for application
+    | configuration. Configuration values are hosted-app intent only; they never
+    | change the panel's own environment, agent mode or security settings.
+    |
+    */
+
+    'applications' => [
+        'providers' => ['laravel'],
+        'runtimes' => ['php', 'node', 'python', 'static'],
+        'max_secrets' => 100,
+        'max_domains' => 20,
+        'max_persistent_paths' => 20,
+    ],
+
 ];

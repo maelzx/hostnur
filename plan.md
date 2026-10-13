@@ -232,15 +232,14 @@ session's numbering. All phases after 1 are pending unless explicitly noted.
   are not presented as zero; polling and database writes are bounded.
 
 ### Phase 6 — Application, source and secret configuration
-- Status: pending; next. Begins at P6.1 in section 9.8.
+- Status: complete. P6.1–P6.5 all passed local checks and real PHP 8.3/8.4 CI.
 - Depends on: 2, 3, 4.
-- Slices: app inventory, runtime selection, public/private Git repository/ref
-  configuration, encrypted credential references, environment/secrets, domains,
-  persistent-data/health settings and deployment configuration validation.
-- Exit: authorized CRUD and secret masking work; configuration remains distinct
-  from agent-provisioned resources. No Linux users or source builds created yet.
+- Exit: met — authorized CRUD and secret masking work; configuration remains
+  distinct from agent-provisioned resources. No Linux users or source builds
+  created.
 
 ### Phase 7 — Deployment workflows and application operation UI
+- Status: pending; next. Begins at P7.1 in section 9.9.
 - Depends on: 4, 5, 6.
 - Slices: Laravel deployment wizard, preflight/confirmation, task progress, history,
   logs, restart/rollback requests, worker/scheduler settings and migration policy.
@@ -429,6 +428,49 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 020 — Phase 6 application inventory/source/secrets (P6.1–P6.5) (2026-10-13)
+
+- Completed **all of phase 6** (P6.1–P6.5). Added the `applications`,
+  `application_revisions`, `source_credentials`, `application_secrets` and
+  `application_domains` migration (applied locally as batch 7) and Eloquent models;
+  `Provider`/runtime allowlists in `config/hostnur.php`; the
+  `ApplicationPolicy`; support validators `GitRepositoryUrl` (parser-based,
+  rejects embedded credentials/local/ext schemes/query-fragment/custom ports/
+  option-like or traversal paths) and `Hostname` (ASCII/punycode, label/suffix
+  rules, wildcard/scheme/port/path rejection); and the single write path
+  `App\Services\ApplicationService` (create, new immutable configuration
+  revisions, source, credential store/rotate, secret set/delete, domain add/
+  remove, archive).
+- Security properties implemented and tested: UUID identity with unique immutable
+  slug; immutable revisions so an active task's revision cannot mutate; bounded
+  validated settings with relative-path enforcement; Git credentials and env
+  secrets stored with encrypted casts, hidden from JSON/serializers/snapshots and
+  never written to audit metadata; write failure preserves the previous value;
+  normalized globally-unique domains; archiving refused while an application has
+  active tasks and otherwise retaining all history. Added application `AuditAction`
+  cases and the `ApplicationConflictException`. UI: `ApplicationIndex` (create +
+  list) and `ApplicationShow` (configuration/source/credentials/secrets/domains/
+  archive) under `layouts.panel`, plus the navigation link.
+- Files: the application migration, `app/Models/{Application,ApplicationRevision,
+  SourceCredential,ApplicationSecret,ApplicationDomain}.php`,
+  `app/Enums/{SourceCredentialType,DomainHttpsPolicy,SourceStatus}.php`,
+  `app/Policies/ApplicationPolicy.php`, `app/Support/{GitRepositoryUrl,Hostname}.php`,
+  `app/Services/ApplicationService.php`,
+  `app/Exceptions/ApplicationConflictException.php`,
+  `app/Livewire/Panel/{ApplicationIndex,ApplicationShow}.php` + views,
+  `routes/web.php`, `components/panel/nav.blade.php`, `config/hostnur.php`,
+  `app/Enums/AuditAction.php`; tests
+  `tests/Unit/{GitRepositoryUrlTest,HostnameTest}.php` and
+  `tests/Feature/ApplicationInventoryTest.php`; updated both READMEs and `AGENTS.md`.
+- Checks: full `php artisan test --compact` — **211 tests / 861 assertions passed**
+  (49 new phase-6 tests). `vendor/bin/pint`, `composer check:syntax`,
+  `composer check:style`, `composer validate` (known license warning),
+  `composer check-platform-reqs`, `composer audit`, `npm audit`, `npm run build`,
+  `php artisan migrate`, `route:list` and `view:cache` all passed. The user's port
+  9000 server was not restarted; the local DB gained only the additive application
+  tables. No host provisioning, no network check on save, no Rust.
+- Next slice: **P7.1** (deployment schema/preflight) from section 9.9.
 
 ### Session 019 — Phase 5 UI shell/dashboard/task visibility (P5.1–P5.4) (2026-10-13)
 
@@ -1141,30 +1183,31 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ### Next session's single slice
 
-Use the **DeepSeek starter prompt in section 9.1** and implement **P6.1** from
-section 9.8 (application schema/inventory/policy; phases 1–5 are complete including
-the tasks/queue/audit and the panel shell/dashboard). Finish one slice, record exact
-checks and the next slice ID, commit/push and stop. Real PHP 8.3/8.4 CI is green
-through session 019. Port 9000 is the selected local panel port; Rust remains
-deferred to phase 10.
+Use the **DeepSeek starter prompt in section 9.1** and implement **P7.1** from
+section 9.9 (deployment schema and preflight; phases 1–6 are complete including the
+application inventory/revisions/secrets). Finish one slice, record exact checks and
+the next slice ID, commit/push and stop. Real PHP 8.3/8.4 CI is green through
+session 020. Port 9000 is the selected local panel port; Rust remains deferred to
+phase 10.
 
-Concrete P6.1 starting notes from session 019 (verify against the installed code
+Concrete P7.1 starting notes from session 020 (verify against the installed code
 before relying on them):
 
-- Add an `applications` migration + `Application` model per section 9.8: UUID
-  identity, bounded display name, unique **immutable** lowercase slug
-  (`[a-z0-9-]`), provider/runtime/version, desired config revision, archive time;
-  keep observed state/mode/time separate from desired state. Use normal Eloquent
-  relationships and a policy; archive rather than delete when tasks/history exist.
-- Provide an inventory UI (list/create/show/archive) using the `layouts.panel` shell
-  and `x-ui.*` components, with the default provider (Laravel) as an allowlisted ID.
-  Re-authorize server-side and resolve IDs from the DB, never trusting Livewire
-  properties. Refuse archive/config replacement while an active task references the
-  app, and enforce unique immutable identity.
-- P6.1 is inventory/schema/policy only. Configuration/revisions are P6.2, Git
-  metadata/credentials P6.3, environment secrets P6.4 and domains/archive behavior
-  P6.5. No network fetch on save (`not_checked`), no host provisioning, no secrets
-  yet, no Rust.
+- Add a `deployments` migration + model per section 9.9: UUID, application UUID,
+  immutable revision and task UUID, requested Git ref (later resolved commit),
+  requested runtime, mode, state, release reference, health summary, previous
+  supported release and timestamps. Keep secrets as references only. State must
+  distinguish requested/simulated/real success and failure; a real active-release
+  pointer must never be replaced by a fake success.
+- Build a preflight validator that runs against panel configuration only (no remote
+  reachability or package checks): app not archived, supported provider/runtime/
+  operation capability, complete Git/credential references, domain conflicts,
+  health settings and existing-database configuration. Fail before creating a task,
+  and surface what remains agent-dependent.
+- Route deployment intent through the existing `TaskService` (no second queue):
+  persist the deployment record, then request the task. The wizard/confirmation is
+  P7.2, durable progress/logs P7.3, restart/rollback P7.4, workers/scheduler policy
+  P7.5. Do not run Composer/Git/Artisan against hosted source and do not add Rust.
 
 ### Current blockers
 
@@ -1189,7 +1232,7 @@ before relying on them):
 | Item | Existing implementation / evidence |
 |---|---|
 | Web foundation | `panel/`; Laravel 13.35.0, Livewire 4.4.7, Tailwind 4.3.3, Vite 8.3.4 |
-| Current browser entry | `routes/web.php`: `/` redirects guests to `login` and admins to `/panel`; `layouts.panel` shell with `App\Livewire\Panel` pages (Dashboard, TaskIndex, TaskShow, AuditIndex, AuditShow, SecuritySettings, ConfirmPassword) and `App\Livewire\Auth` guest/MFA pages |
+| Current browser entry | `routes/web.php`: `/` redirects guests to `login` and admins to `/panel`; `layouts.panel` shell with `App\Livewire\Panel` pages (Dashboard, TaskIndex, TaskShow, AuditIndex, AuditShow, ApplicationIndex, ApplicationShow, SecuritySettings, ConfirmPassword) and `App\Livewire\Auth` guest/MFA pages |
 | Layout/assets | `resources/views/layouts/app.blade.php`, `resources/css/app.css`, `vite.config.js`; Livewire supplies Alpine |
 | Database | SQLite; database sessions/cache/queue; baseline user/cache/job migrations plus MFA, fake execution and task/audit migrations |
 | Administrator bootstrap | `app/Console/Commands/BootstrapAdministrator.php`; `hostnur:admin:bootstrap` |
@@ -1199,19 +1242,20 @@ before relying on them):
 | Agent contract | `app/Agent/` DTOs, `OperationCatalog`, `OperationRequestValidator`, `AgentClient` interface, `UnavailableAgentClient`, `AgentModeGuard`, fixture-driven `FakeAgentClient` and durable `FakeExecutionSimulator` over `fake_agent_executions`; `../contracts/v1/` schemas/catalog/fixtures/notes; `tests/Support` fixture + JSON Schema runner |
 | Panel UI | `layouts.panel` shell, `components/panel/nav`, `components/ui/*` (button/panel/badge/task-status/empty-state/stat/confirm), dashboard adapter states, filtered task/audit screens with cursor polling |
 | Tasks/queue/audit | `app/Services/TaskService` + `AuditRecorder`, `app/Jobs/RunTask`, `hostnur:tasks:reconcile` (scheduled), `tasks`/`task_events`/`audit_events`, `App\Listeners\AuthenticationEventSubscriber`, `/panel/tasks`, `/panel/tasks/{id}`, `/panel/audit`, `/panel/audit/{id}` |
-| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment, 13 MFA-challenge, 17 security-settings, 8 recovery, 8 agent-contract, 8 agent-availability, 12 fake-agent, 4 task-status, 7 task-request, 11 task-execution, 8 task-audit/UI, 5 panel-shell, 5 task-visibility, 3 dashboard, 4 accessibility and 2 scaffold tests; 161 tests / 765 assertions at handoff |
+| Applications | `applications`/`application_revisions`/`source_credentials`/`application_secrets`/`application_domains`, `App\Services\ApplicationService` + `ApplicationPolicy`, `App\Support\{GitRepositoryUrl,Hostname}`, `/panel/applications` + `/{id}` (config/source/credential/secret/domain/archive) |
+| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment, 13 MFA-challenge, 17 security-settings, 8 recovery, 8 agent-contract, 8 agent-availability, 12 fake-agent, 4 task-status, 7 task-request, 11 task-execution, 8 task-audit/UI, 5 panel-shell, 5 task-visibility, 3 dashboard, 4 accessibility, 20 Git-URL, 15 hostname, 14 application-inventory and 2 scaffold tests; 211 tests / 861 assertions at handoff |
 | CI | `.github/workflows/web-panel.yml`; PHP 8.3/8.4, Node 24, actual runtime/static/build/migration/test gates; watches `panel/**` and `contracts/**` |
-| Last application CI | Session 018 code passed: <https://github.com/maelzx/hostnur/actions/runs/38335015107>, code commit `9deae38` |
+| Last application CI | Session 019 code passed: <https://github.com/maelzx/hostnur/actions/runs/38335876307>, code commit `7db8121` |
 | Current local URL | `http://127.0.0.1:9000`; committed example uses port 9000 |
-| Remaining work | Phase 6 app inventory/source/secrets, then deployment, server-management and integration phases |
+| Remaining work | Phase 7 deployment/operations, then server-management and integration phases |
 
 Do not scaffold again, regenerate the app key, reset the database, create test
 users in the real DB, reinstall Boost, or install Rust. The last inspection found
 zero real users, but the user may have subsequently run bootstrap. Inspect state
-read-only when necessary; never assume the account needs recreating. Phases 2–5
-(authentication, agent contract, durable tasks/queue/audit and the panel UI) are
-complete; application resources/secrets and server-management flows do not exist
-yet.
+read-only when necessary; never assume the account needs recreating. Phases 2–6
+(authentication, agent contract, durable tasks/queue/audit, the panel UI and
+application inventory/source/secrets) are complete; deployments and
+server-management flows do not exist yet.
 
 #### Low-cost session protocol
 
@@ -1756,6 +1800,11 @@ what was actually inspected; rendered HTML tests are not screenshot/accessibilit
 certification. Add charts only when they provide value and their data is bounded.
 
 ### 9.8 Phase 6 — Application inventory, source configuration and secret storage
+
+**Status: P6.1–P6.5 done; phase 6 complete.** Application inventory with immutable
+configuration revisions, encrypted Git credentials and environment secrets, and
+normalized domains/archive exist; host state remains unapplied. Phase 7
+(deployment intent/operations) is next.
 
 **Goal:** manage durable desired configuration safely, without source checkout,
 Linux user creation or privileged deployment. First provider is `php-laravel`.

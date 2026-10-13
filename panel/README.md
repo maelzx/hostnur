@@ -153,14 +153,15 @@ npm audit
 npm run build
 ```
 
-Sessions 004–019 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
+Sessions 004–020 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
 24.12.0 and npm 11.6.2. The suite contains 20 administrator-bootstrap tests, 14
 authentication tests, 12 MFA-enrollment tests, 13 MFA-challenge tests, 17
 security-settings tests, 8 administrator-recovery tests, 8 agent-contract tests,
 8 agent-availability tests, 12 fake-agent tests, 4 task-status tests, 7 task-request
 tests, 11 task-execution tests, 8 task-audit/UI tests, 5 panel-shell tests, 5
-task-visibility tests, 3 dashboard tests, 4 accessibility tests and two scaffold
-baseline tests. Run individual suites with:
+task-visibility tests, 3 dashboard tests, 4 accessibility tests, 20 Git-URL tests,
+15 hostname tests, 14 application-inventory tests and two scaffold baseline tests.
+Run individual suites with:
 
 ```bash
 php artisan test --compact tests/Feature/AuthenticationTest.php
@@ -180,6 +181,7 @@ php artisan test --compact tests/Feature/PanelShellTest.php
 php artisan test --compact tests/Feature/TaskVisibilityTest.php
 php artisan test --compact tests/Feature/DashboardTest.php
 php artisan test --compact tests/Feature/AccessibilityTest.php
+php artisan test --compact tests/Feature/ApplicationInventoryTest.php
 ```
 
 Authentication tests use isolated in-memory SQLite and cover guest redirects,
@@ -279,6 +281,32 @@ detail loads events in a bounded cursor and polls only while the task is active.
 Tables scroll horizontally on small screens, use captions and scoped headers, and
 status is conveyed by text as well as colour; destructive security actions use a
 keyboard-operable, labelled modal dialog.
+
+## Applications, source and secrets
+
+Applications are stored desire only; nothing is provisioned on the host in this
+phase. The inventory lives at `/panel/applications` (create) and
+`/panel/applications/{id}` (configuration, source, credentials, secrets, domains,
+archive). Identity is a UUID with a unique immutable lowercase slug. Configuration
+is versioned into immutable `application_revisions` rows, so a revision used by an
+active task cannot mutate; archiving keeps all history and is refused while the
+application has active tasks.
+
+Source URLs are normalized by a parser (HTTPS or `git@host:path`/`ssh://git@host`
+SSH); embedded credentials, `file:`/`ext:`, local paths, query/fragment tricks,
+custom ports and option-like paths are rejected, and saving never performs a
+network check (`not_checked`). Credentials and environment secrets are stored with
+Laravel encrypted casts, hidden from model JSON/serializers, listed as
+presence/version/rotation only, and never written to audit metadata or logs.
+Domains are normalized to bare ASCII/punycode hostnames with global uniqueness
+(wildcards and schemes/ports/paths rejected). The application service relies on
+the `ApplicationPolicy` and is the only write path.
+
+Application tests cover unique identity, policy denial, immutable revisions,
+bounded configuration validation, URL/hostname rejection tricks, encrypted/masked
+credentials and secrets with write failure preserving the old value, normalized
+domain conflicts, active-work archive refusal with retained history, ID tampering
+(404), and escaped rendering of stored values.
 
 Bootstrap tests use isolated in-memory SQLite, including interleaved setup writes,
 rollback and secret-output checks; they do not create your real administrator.
