@@ -452,6 +452,10 @@ ask only when the choice materially changes scope, cost, access, or product beha
   `composer check-platform-reqs`, `composer audit`, `npm audit` and `npm run build`
   all passed; the manifest and fixtures parse. The user's port 9000 server and
   database were not touched.
+- Feature commit `a691275` pushed; remote CI **passed** for PHP 8.3/Node 24 and
+  PHP 8.4/Node 24 (locked installs, static gates, asset build, migration,
+  template/queue and tests): <https://github.com/maelzx/hostnur/actions/runs/38333551101>,
+  verified with `gh run watch 38333551101 --exit-status`.
 - Next slice: **P4.1** (panel task persistence and lifecycle) from section 9.6.
 
 ### Session 016 — P3.4 durable fake execution (2026-10-12)
