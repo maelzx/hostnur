@@ -16,6 +16,7 @@ pub mod contract;
 pub mod error;
 pub mod logging;
 pub mod runtime;
+pub mod transport;
 
 /// Agent protocol version implemented by this build. Mirrors
 /// `contracts/v1/catalog.json` `protocol_versions`.

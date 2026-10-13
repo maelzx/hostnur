@@ -23,19 +23,28 @@ pub const DEFAULT_SHUTDOWN_GRACE_SECONDS: u64 = 10;
 pub const MIN_SHUTDOWN_GRACE_SECONDS: u64 = 1;
 pub const MAX_SHUTDOWN_GRACE_SECONDS: u64 = 300;
 
+/// Default Unix socket mode: owner and group read/write, no world access.
+pub const DEFAULT_SOCKET_MODE: u32 = 0o660;
+pub const DEFAULT_CONNECTION_READ_TIMEOUT_SECONDS: u64 = 5;
+pub const MIN_CONNECTION_READ_TIMEOUT_SECONDS: u64 = 1;
+pub const MAX_CONNECTION_READ_TIMEOUT_SECONDS: u64 = 120;
+
 /// Maximum length of a Unix socket path in bytes, leaving room for the NUL
 /// terminator in `sockaddr_un.sun_path` (108 on Linux).
 const MAX_SOCKET_PATH_BYTES: usize = 107;
 
 /// Top-level settings accepted by this schema version. Anything else is an
 /// unknown setting and is rejected.
-const KNOWN_KEYS: [&str; 6] = [
+const KNOWN_KEYS: [&str; 9] = [
     "version",
     "socket_path",
     "state_dir",
     "log_level",
     "max_message_bytes",
     "shutdown_grace_seconds",
+    "socket_mode",
+    "connection_read_timeout_seconds",
+    "allowed_peer_uids",
 ];
 
 /// Validated agent configuration.
@@ -47,6 +56,11 @@ pub struct AgentConfig {
     pub log_level: Level,
     pub max_message_bytes: usize,
     pub shutdown_grace_seconds: u64,
+    pub socket_mode: u32,
+    pub connection_read_timeout_seconds: u64,
+    /// OS UIDs permitted to connect. Empty means no peer is authorized (fail
+    /// closed); the panel/worker identity must be listed explicitly.
+    pub allowed_peer_uids: Vec<u32>,
 }
 
 impl AgentConfig {
@@ -89,6 +103,13 @@ impl AgentConfig {
             "shutdown_grace_seconds",
             DEFAULT_SHUTDOWN_GRACE_SECONDS,
         )?;
+        let socket_mode = optional_bounded_u32(table, "socket_mode", DEFAULT_SOCKET_MODE)?;
+        let connection_read_timeout_seconds = optional_bounded_u64(
+            table,
+            "connection_read_timeout_seconds",
+            DEFAULT_CONNECTION_READ_TIMEOUT_SECONDS,
+        )?;
+        let allowed_peer_uids = optional_u32_array(table, "allowed_peer_uids")?;
 
         let config = AgentConfig {
             version: u32::try_from(version)
@@ -98,6 +119,9 @@ impl AgentConfig {
             log_level,
             max_message_bytes,
             shutdown_grace_seconds,
+            socket_mode,
+            connection_read_timeout_seconds,
+            allowed_peer_uids,
         };
         config.validate()?;
         Ok(config)
@@ -136,6 +160,23 @@ impl AgentConfig {
         {
             return Err(invalid(format!(
                 "`shutdown_grace_seconds` must be between {MIN_SHUTDOWN_GRACE_SECONDS} and {MAX_SHUTDOWN_GRACE_SECONDS}"
+            )));
+        }
+
+        if self.socket_mode > 0o777 {
+            return Err(invalid(
+                "`socket_mode` must be a permission mask (0..=0o777)",
+            ));
+        }
+        if self.socket_mode & 0o002 != 0 {
+            return Err(invalid("`socket_mode` must not be world-writable"));
+        }
+
+        if self.connection_read_timeout_seconds < MIN_CONNECTION_READ_TIMEOUT_SECONDS
+            || self.connection_read_timeout_seconds > MAX_CONNECTION_READ_TIMEOUT_SECONDS
+        {
+            return Err(invalid(format!(
+                "`connection_read_timeout_seconds` must be between {MIN_CONNECTION_READ_TIMEOUT_SECONDS} and {MAX_CONNECTION_READ_TIMEOUT_SECONDS}"
             )));
         }
 
@@ -220,6 +261,49 @@ fn optional_bounded_u64(
     }
 }
 
+fn optional_bounded_u32(
+    table: &toml::map::Map<String, toml::Value>,
+    key: &str,
+    default: u32,
+) -> Result<u32, AgentError> {
+    match table.get(key) {
+        None => Ok(default),
+        Some(value) => {
+            let raw = value
+                .as_integer()
+                .ok_or_else(|| invalid(format!("setting `{key}` must be an integer")))?;
+            u32::try_from(raw)
+                .map_err(|_| invalid(format!("setting `{key}` must be a non-negative integer")))
+        }
+    }
+}
+
+fn optional_u32_array(
+    table: &toml::map::Map<String, toml::Value>,
+    key: &str,
+) -> Result<Vec<u32>, AgentError> {
+    match table.get(key) {
+        None => Ok(Vec::new()),
+        Some(value) => {
+            let items = value
+                .as_array()
+                .ok_or_else(|| invalid(format!("setting `{key}` must be an array of integers")))?;
+            let mut result = Vec::with_capacity(items.len());
+            for item in items {
+                let raw = item.as_integer().ok_or_else(|| {
+                    invalid(format!("setting `{key}` must be an array of integers"))
+                })?;
+                result.push(u32::try_from(raw).map_err(|_| {
+                    invalid(format!(
+                        "setting `{key}` must contain non-negative integers"
+                    ))
+                })?);
+            }
+            Ok(result)
+        }
+    }
+}
+
 /// Reject relative paths, `..` traversal and the filesystem root. The agent
 /// never accepts a caller-supplied path for privileged work; configuration is
 /// operator-owned, and this is the first line of defence.
@@ -255,6 +339,9 @@ mod tests {
             log_level = "debug"
             max_message_bytes = 65536
             shutdown_grace_seconds = 5
+            socket_mode = 432
+            connection_read_timeout_seconds = 7
+            allowed_peer_uids = [1001, 1002]
         "#
         .to_string()
     }
@@ -268,6 +355,34 @@ mod tests {
         assert_eq!(config.log_level, Level::Debug);
         assert_eq!(config.max_message_bytes, 65536);
         assert_eq!(config.shutdown_grace_seconds, 5);
+        assert_eq!(config.socket_mode, 0o660);
+        assert_eq!(config.connection_read_timeout_seconds, 7);
+        assert_eq!(config.allowed_peer_uids, vec![1001, 1002]);
+    }
+
+    #[test]
+    fn defaults_peer_allowlist_to_empty_and_mode_to_0660() {
+        let text = r#"
+            version = 1
+            socket_path = "/run/hostnur/agent.sock"
+            state_dir = "/var/lib/hostnur/agent"
+        "#;
+        let config = AgentConfig::parse(text).expect("valid config");
+        assert_eq!(config.socket_mode, DEFAULT_SOCKET_MODE);
+        assert!(config.allowed_peer_uids.is_empty());
+        assert_eq!(
+            config.connection_read_timeout_seconds,
+            DEFAULT_CONNECTION_READ_TIMEOUT_SECONDS
+        );
+    }
+
+    #[test]
+    fn rejects_world_writable_socket_mode() {
+        let text = "version = 1\nsocket_path = \"/run/hostnur/agent.sock\"\nstate_dir = \"/var/lib/hostnur/agent\"\nsocket_mode = 438";
+        // 438 == 0o666 (world-writable)
+        let err = AgentConfig::parse(text).expect_err("must fail");
+        assert_eq!(err.code(), ErrorCode::ConfigInvalid);
+        assert!(err.message().contains("world-writable"));
     }
 
     #[test]

@@ -25,6 +25,8 @@ pub enum ErrorCode {
     Io,
     /// Signal registration or process lifecycle setup failed.
     Lifecycle,
+    /// The local transport boundary failed (bind, peer check).
+    Transport,
 }
 
 impl ErrorCode {
@@ -36,6 +38,7 @@ impl ErrorCode {
             ErrorCode::ConfigInvalid => "config_invalid",
             ErrorCode::Io => "io",
             ErrorCode::Lifecycle => "lifecycle",
+            ErrorCode::Transport => "transport",
         }
     }
 }

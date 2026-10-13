@@ -68,6 +68,7 @@ below has no native build step and does not raise the MSRV beyond the pin.
 | `signal-hook` | 0.4.5 | SIGTERM/SIGINT flag registration | MIT OR Apache-2.0 |
 | `serde` | 1.0.229 | derive-based (de)serialization for contract DTOs (phase 11.1) | MIT OR Apache-2.0 |
 | `serde_json` | 1.0.154 | strict JSON request parsing and response serialization (phase 11.1) | MIT OR Apache-2.0 |
+| `nix` | 0.31.3 | safe `SO_PEERCRED` peer-credential wrapper (phase 11.2) | MIT |
 | `tempfile` (dev) | 3.27.0 | temporary config directories in tests | MIT OR Apache-2.0 |
 
 `Cargo.lock` is committed. An async runtime (socket concurrency) and

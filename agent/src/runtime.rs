@@ -1,9 +1,9 @@
 //! Process lifecycle: startup, signal handling and controlled shutdown.
 //!
-//! Phase 10 has no socket or privileged work. `run` starts an idle process,
-//! installs SIGTERM/SIGINT handlers and waits for a shutdown request before
-//! exiting cleanly. The wait loop is factored out so lifecycle behaviour can be
-//! tested without launching a daemon or sending real signals.
+//! `run` binds the local socket, installs SIGTERM/SIGINT handlers and serves
+//! bounded connections until shutdown. The wait loop is factored out so
+//! lifecycle behaviour can be tested without launching a daemon or sending real
+//! signals. No privileged operation handlers are enabled in this build.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -14,8 +14,10 @@ use signal_hook::flag;
 
 use crate::VERSION;
 use crate::config::AgentConfig;
+use crate::contract::Catalog;
 use crate::error::{AgentError, ErrorCode};
 use crate::logging::{self, Level};
+use crate::transport::{self, Listener, NoopHandler, ServerContext};
 
 /// Poll interval for the shutdown flag.
 pub const TICK: Duration = Duration::from_millis(100);
@@ -53,10 +55,10 @@ pub fn wait_for_shutdown(shutdown: &AtomicBool, max: Option<Duration>) -> bool {
 
 /// Run the agent process until a shutdown signal is received.
 ///
-/// Phase 10 performs no mutation: it initializes logging, reports readiness and
-/// waits. The shutdown grace deadline bounds how long a future drain step may
-/// take (see `shutdown_grace_seconds`); this scaffold exits as soon as the flag
-/// is set.
+/// Binds the local socket (refusing symlink substitution, restrictive mode),
+/// then serves peer-checked, framed, bounded connections. Operation handlers are
+/// still placeholders, so a valid request is accepted and closed without a
+/// mutation.
 pub fn run(config: &AgentConfig) -> Result<(), AgentError> {
     logging::init(config.log_level);
     logging::log(
@@ -69,16 +71,30 @@ pub fn run(config: &AgentConfig) -> Result<(), AgentError> {
     );
 
     let shutdown = install_shutdown_signals()?;
+
+    let listener = Listener::bind(&config.socket_path, config.socket_mode)
+        .map_err(|err| AgentError::new(ErrorCode::Transport, format!("binding socket: {err}")))?;
+
     logging::log(
         Level::Info,
         "startup",
         "agent.ready",
-        "agent ready; no privileged operations are enabled in this build",
+        "agent listening; no privileged operations are enabled in this build",
         None,
         None,
     );
 
-    wait_for_shutdown(&shutdown, None);
+    let catalog = Catalog::embedded();
+    let handler = NoopHandler;
+    let context = ServerContext {
+        catalog: &catalog,
+        handler: &handler,
+        max_message_bytes: config.max_message_bytes,
+        read_timeout: Duration::from_secs(config.connection_read_timeout_seconds),
+        allowed_peer_uids: &config.allowed_peer_uids,
+    };
+    transport::serve(&listener, &context, &shutdown)
+        .map_err(|err| AgentError::new(ErrorCode::Transport, format!("serving: {err}")))?;
 
     logging::log(
         Level::Info,
