@@ -352,7 +352,9 @@ checks pass in the prepared environment and CI; exact blocked host checks and th
 first P11 slice are documented. No privileged operation support is advertised.
 
 ### Phase 11 — Real protocol, transport and execution boundary
-- Status: planned; no real transport or privileged boundary verified in this phase yet.
+- Status: **in progress** — P11.1–P11.4 complete and committed (session 026). P11.5
+  blocked on a contract decision (control operations for capabilities/inspect/cancel);
+  P11.6 (VM systemd/socket integration) pending.
 - Depends on: 3, 10.
 
 #### Objective and contract migration
@@ -1394,6 +1396,44 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ## 8. Current handoff
 
+### Session 026 — Phase 11 transport/execution boundary, part 1 (P11.1–P11.4) (2026-10-13)
+
+- Implemented **P11.1–P11.4** of phase 11 in the `agent/` crate. P11.1: Rust mirror
+  of the `contracts/v1` request envelope and response DTOs with strict
+  (`deny_unknown_fields`) parsing, a canonical UUID type, the embedded operation
+  catalog, and 4-byte big-endian length-prefixed UTF-8 JSON framing (zero/oversized/
+  truncated frames rejected before allocation). Cross-language fixture test in
+  `agent/tests/contract_fixtures.rs` proves Rust agrees with the PHP-validated
+  valid/invalid fixtures and their manifest error codes. P11.2: Unix socket
+  endpoint (refuses symlink substitution, restrictive mode, stale-socket rebind) and
+  kernel `SO_PEERCRED` peer-UID allowlist checked *before* any message is read;
+  `agent/tests/transport_boundary.rs` proves unauthorized peers, substituted sockets,
+  partial frames and invalid requests never reach dispatch. P11.3: SQLite-backed
+  agent-owned execution journal (acceptance-before-execution, idempotency dedupe,
+  same-key/different-intent `conflict`, durable events with cursors, restart
+  survival) plus a managed-resource registry; `agent/tests/journal.rs`. P11.4:
+  bounded process primitive (absolute program + argv array, `env_clear`, working
+  dir, deadline, capped output, process-group SIGKILL on timeout) with a fixed
+  program allowlist; `agent/tests/process_runner.rs`.
+- Dependencies added (all MIT OR Apache-2.0 unless noted; no MSRV impact beyond the
+  pin): `serde` 1.0.229, `serde_json` 1.0.154, `nix` 0.31.3 (MIT), `rusqlite` 0.40.2
+  (`bundled` SQLite, C toolchain) and `getrandom` 0.4.3. Recorded in
+  `docs/agent-development.md`.
+- Checks (Lima Ubuntu 24.04 arm64 VM): `cargo fmt --all -- --check`,
+  `cargo clippy --locked --all-targets -- -D warnings`, `cargo build --locked` and
+  `cargo test --locked` — **92 tests passed** (54 unit + 8 CLI + 7 contract + 7
+  journal + 7 process + 9 transport). Manual e2e: agent bound a `0660` UDS, accepted
+  a peer-authorized framed request, and shut down cleanly on SIGTERM.
+- Blocked (material decision, not implemented): the frozen `contracts/v1` catalog has
+  no wire operations for the `AgentClient` control methods `capabilities()`,
+  `inspect()` and `cancel()`. P11.5 needs new control operations (or another defined
+  channel) so the PHP real adapter and the Rust dispatcher can agree; adding v1
+  catalog operations is an additive contract change. This is recorded for the user
+  to confirm before P11.5 proceeds.
+- Next slice: **P11.5** (PHP real adapter) after the control-operation decision, then
+  **P11.6** (VM systemd/socket integration). Commits this session: `f3a7cf4`,
+  `f792506`, `3daba42`, `40fa8e8` (local only).
+
 ### Session 025 — Phase 10 Rust foundation (P10.1–P10.5) (2026-10-13)
 
 - Completed **all of phase 10** in the prepared agent environment: a dedicated
@@ -2328,12 +2368,15 @@ The panel is independently runnable and tested; the agent crate builds, tests an
 runs unprivileged in the Lima VM. See `docs/web-milestone.md` and
 `docs/agent-development.md` for passed gates, blocked checks and acceptance maps.
 
-The next work is **phase 11, slice P11.1 (cross-language contract)**: Rust
-DTOs/parser, transport framing/version decisions and shared fixtures that agree
-with `contracts/v1` and `docs/agent-integration.md`. Work in the prepared Lima
-Ubuntu 24.04 VM (`agent/`); do not treat the PHP schema as the root trust boundary
-and do not run privileged host operations outside a disposable amd64 VM. Local web
-work continues to use port 9000 with `HOSTNUR_AGENT_MODE=fake`.
+Phase 11 is **in progress**: P11.1–P11.4 are complete (session 026). The next work
+is **P11.5 (PHP real adapter)**, which first needs a decision on control
+operations: the frozen `contracts/v1` catalog cannot express the `AgentClient`
+control methods `capabilities()`/`inspect()`/`cancel()`. Additive control
+operations (e.g. `agent.capabilities`, `agent.inspect`, `agent.cancel`) are proposed
+so the PHP adapter and Rust dispatcher agree; confirm before implementing. Then
+**P11.6** (VM systemd/socket integration). Work in the Lima Ubuntu 24.04 VM
+(`agent/`); the PHP side runs on the host (PHP 8.4/Composer 2.9). Local web work
+continues on port 9000 with `HOSTNUR_AGENT_MODE=fake`.
 
 Push the phase-10 commit to observe the agent CI workflow; a real CI run is still
 outstanding. The remaining genuine web gates (real browser keyboard/screen-reader
@@ -2353,6 +2396,9 @@ isolation) are unchanged and recorded in `docs/web-milestone.md`.
 - Disposable Ubuntu 24.04 **amd64** VM access is still required for real
   install/systemd/socket/TLS/upgrade/restore/isolation gates (phase 11+); those
   remain unverified until supplied.
+- P11.5 awaits a contract decision: `contracts/v1` has no wire operations for the
+  `AgentClient` control methods `capabilities()`/`inspect()`/`cancel()`. Additive
+  `agent.*` control operations are proposed; confirm before implementing.
 - Official domain, Git authentication details, database engine, release signing,
   and license await the decision checkpoints listed in section 6.
 
