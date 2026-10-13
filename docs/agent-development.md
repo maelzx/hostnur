@@ -315,6 +315,28 @@ Deferred/recorded: the socket-driven `application.deploy` execution (needs async
 `submit`/`inspect` semantics), blue/green routing, per-app `public/` ACLs, and
 full crash/cancel reconciliation wiring.
 
+## TLS lifecycle (phase 16)
+
+`agent/src/tls/` implements the real Let's Encrypt HTTP-01 path using a fixed,
+allowlisted `certbot` (staging first) and the fixed `openssl` binary:
+
+- `certbot.rs`: validates domains (provider hostname policy) and contact email,
+  then runs `certbot certonly --webroot` (with `--staging`) or `renew`.
+- `certificate.rs`: validates the issued certificate/key (key match,
+  not-expired, hostname coverage) and installs root-owned material with bounded
+  modes (`0644` chain, `0600` key) under `/etc/hostnur/tls/<site>`.
+- `provider/nginx.rs`: `render_http_challenge_site` (pre-issuance HTTP-01) and
+  `render_tls_site` (challenge + `:80` redirect + `:443` TLS), applied through the
+  phase-14 validate/reload/rollback manager.
+
+Renewal is delegated to certbot's own systemd timer (installed by certbot); a
+standing renewal policy and expiry surfacing are recorded for follow-up.
+
+Verified on a public DigitalOcean Ubuntu 24.04 **amd64** host
+(`hostnur-p16.kom.my`) with a cross-compiled amd64 binary: HTTP-01 staging
+issuance succeeded, the certificate was validated and installed root-owned, and
+the managed TLS site served a real `https://` handshake (`tests/tls_vm.rs`).
+
 ## Blocked / deferred checks
 
 Recorded, not claimed:

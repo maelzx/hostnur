@@ -929,7 +929,11 @@ entirely through the real panel/agent on the VM. Persistent data survives, healt
 is evidenced and partial failures have tested recovery, not cosmetic success states.
 
 ### Phase 16 — Real TLS lifecycle
-- Status: planned; requires a test domain/DNS and publicly reachable disposable VM.
+- Status: **substantially complete** (P16.1–P16.3, and P16.4 via certbot's own
+  timer) in session 031. Verified on a public DigitalOcean Ubuntu 24.04 **amd64**
+  host with a real (staging) Let's Encrypt certificate and an HTTPS handshake.
+  Supplied-certificate install (P16.5), expiry UI, and the panel install on the
+  host remain.
 - Depends on: 8, 15.
 
 #### Approach and prerequisites
@@ -1408,6 +1412,30 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 031 — Phase 16 TLS on a real public host (2026-10-13)
+
+- User provided a DigitalOcean Ubuntu 24.04 **amd64** droplet (`178.128.220.132`)
+  and test domain `hostnur-p16.kom.my` (unproxied A record). Baseline set up over
+  SSH: 2 GB swap (1 GB RAM), UFW (22/80/443), nginx 1.24, PHP 8.3, composer, git,
+  certbot. External `:80` reachability confirmed; a cross-compiled amd64 agent
+  binary (built on the arm64 dev VM) runs on the host.
+- Implemented `agent/src/tls/`: `certbot.rs` (fixed allowlisted certbot, staging
+  first), `certificate.rs` (openssl key-match/expiry/hostname validation + root
+  owned install with bounded modes), and `provider/nginx.rs`
+  `render_http_challenge_site` / `render_tls_site` (challenge + `:80` redirect +
+  `:443`), applied through the phase-14 validate/reload manager.
+- Verified on the real host via a cross-compiled root-run `tests/tls_vm.rs`: HTTP-01
+  **staging** issuance succeeded, the certificate validated and installed
+  root-owned under `/etc/hostnur/tls`, and the managed TLS site served a real
+  `https://` handshake. Rust suite (local): `fmt`/`clippy -D warnings`/`test` —
+  **147 tests passed**.
+- Deferred: P16.5 supplied certificates, renewal/expiry surfacing, and installing
+  the panel on the host for the full panel↔agent end-to-end (needs composer
+  `--no-dev` + prebuilt assets). The scratch manual nginx/certbot config used to
+  prove reachability has been superseded by the agent-managed site.
+- Next slice: phase-16 finish (P16.5 + renewal surfacing + panel install) or the
+  remaining phase-15 socket-driven deploy execution.
 
 ### Session 030 — Phase 15 deployment orchestration (2026-10-13)
 
