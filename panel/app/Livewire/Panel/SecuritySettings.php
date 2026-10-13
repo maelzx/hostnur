@@ -2,7 +2,10 @@
 
 namespace App\Livewire\Panel;
 
+use App\Enums\AuditAction;
+use App\Enums\AuditOutcome;
 use App\Models\User;
+use App\Services\AuditRecorder;
 use App\Services\RecentAuthentication;
 use Closure;
 use Illuminate\Contracts\View\View;
@@ -41,6 +44,8 @@ class SecuritySettings extends Component
         ]);
 
         $user->forceFill(['password' => $this->password])->save();
+
+        app(AuditRecorder::class)->record($user, AuditAction::AuthPasswordChanged, AuditOutcome::Success);
 
         $this->reset('password', 'password_confirmation');
 

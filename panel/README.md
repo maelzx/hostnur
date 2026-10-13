@@ -153,12 +153,13 @@ npm audit
 npm run build
 ```
 
-Sessions 004–017 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
+Sessions 004–018 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
 24.12.0 and npm 11.6.2. The suite contains 20 administrator-bootstrap tests, 14
 authentication tests, 12 MFA-enrollment tests, 13 MFA-challenge tests, 17
 security-settings tests, 8 administrator-recovery tests, 8 agent-contract tests,
-8 agent-availability tests, 12 fake-agent tests and two scaffold baseline tests.
-Run individual suites with:
+8 agent-availability tests, 12 fake-agent tests, 4 task-status tests, 7 task-request
+tests, 11 task-execution tests, 8 task-audit/UI tests and two scaffold baseline
+tests. Run individual suites with:
 
 ```bash
 php artisan test --compact tests/Feature/AuthenticationTest.php
@@ -170,6 +171,10 @@ php artisan test --compact tests/Feature/RecoverAdministratorTest.php
 php artisan test --compact tests/Unit/AgentContractTest.php
 php artisan test --compact tests/Unit/AgentAvailabilityTest.php
 php artisan test --compact tests/Unit/FakeAgentTest.php
+php artisan test --compact tests/Unit/TaskStatusTest.php
+php artisan test --compact tests/Feature/TaskRequestTest.php
+php artisan test --compact tests/Feature/TaskExecutionTest.php
+php artisan test --compact tests/Feature/TaskAuditUiTest.php
 ```
 
 Authentication tests use isolated in-memory SQLite and cover guest redirects,
@@ -225,6 +230,31 @@ binding, fail-closed mutations, the production fake guard, unknown modes, the fa
 capabilities/snapshot fixture shape and freshness, idempotent submission, the
 success/failure/timeout scenarios, cancellation states, unknown executions and
 conflicting idempotency keys. They make no network or host calls.
+
+## Tasks, queue and audit
+
+Panel operations are persisted as durable tasks in `tasks`, `task_events` and
+`audit_events`, all managed by the single `App\Services\TaskService` path (UI and
+later AI requests must never call `AgentClient` directly). Requests are deduplicated
+by actor + idempotency key and fingerprinted; consequential (non-read-only)
+operations require recent password confirmation and an explicit approval bound to
+the payload fingerprint and MFA generation. `queued`/`running` tasks are claimed
+with a short conditional lease; duplicate or concurrent jobs cannot double-submit.
+Task events are bounded and redacted, and authentication/MFA activity is recorded
+append-only without secrets.
+
+Progress is derived from the fake adapter plus a controlled clock, so a later
+process sees the same state. `php artisan hostnur:tasks:reconcile` (scheduled every
+minute) redispatches queued intent (outbox), polls running tasks and recovers
+expired leases. Read-only history is available at `/panel/tasks`, `/panel/tasks/{id}`
+and `/panel/audit` for MFA-verified administrators. Approval validity defaults to
+10 minutes and leases to 60 seconds in `config/hostnur.php`.
+
+Task tests cover state transitions and terminal rejection, request dedupe/
+fingerprint/conflict, recent-auth and approval gating, durable execution,
+failure/timeout/unknown outcomes, cancellation, retry, revoked actors, expired
+approvals, lease safety, reconciliation, audit redaction and the paginated
+read-only history gates.
 
 Bootstrap tests use isolated in-memory SQLite, including interleaved setup writes,
 rollback and secret-output checks; they do not create your real administrator.

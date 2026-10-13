@@ -2,7 +2,10 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\AuditAction;
+use App\Enums\AuditOutcome;
 use App\Models\User;
+use App\Services\AuditRecorder;
 use Closure;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -128,6 +131,8 @@ class BootstrapAdministrator extends Command
             if (! $administrator->save()) {
                 throw new RuntimeException('Administrator creation was cancelled.');
             }
+
+            app(AuditRecorder::class)->record($administrator, AuditAction::AuthAdminBootstrapped, AuditOutcome::Success);
         });
     }
 }

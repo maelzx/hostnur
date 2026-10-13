@@ -8,6 +8,8 @@ use App\Contracts\AgentClient;
 use App\Http\Middleware\EnsureAdministrator;
 use App\Http\Middleware\EnsureMfaVerified;
 use App\Http\Middleware\EnsureRecentAuthentication;
+use App\Listeners\AuthenticationEventSubscriber;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use Livewire\Livewire;
 
@@ -38,5 +40,7 @@ class AppServiceProvider extends ServiceProvider
             EnsureMfaVerified::class,
             EnsureRecentAuthentication::class,
         ]);
+
+        Event::subscribe(AuthenticationEventSubscriber::class);
     }
 }

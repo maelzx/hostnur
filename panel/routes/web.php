@@ -4,9 +4,12 @@ use App\Http\Controllers\HomeController;
 use App\Livewire\Auth\Login;
 use App\Livewire\Auth\MfaChallenge;
 use App\Livewire\Auth\MfaEnrollment;
+use App\Livewire\Panel\AuditIndex;
 use App\Livewire\Panel\ConfirmPassword;
 use App\Livewire\Panel\Dashboard;
 use App\Livewire\Panel\SecuritySettings;
+use App\Livewire\Panel\TaskIndex;
+use App\Livewire\Panel\TaskShow;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', HomeController::class)->name('home');
@@ -26,6 +29,9 @@ Route::middleware(['auth:web', 'administrator'])->group(function (): void {
 
 Route::middleware(['auth:web', 'administrator', 'mfa'])->group(function (): void {
     Route::get('/panel', Dashboard::class)->name('panel.dashboard');
+    Route::get('/panel/tasks', TaskIndex::class)->name('panel.tasks.index');
+    Route::get('/panel/tasks/{task}', TaskShow::class)->name('panel.tasks.show');
+    Route::get('/panel/audit', AuditIndex::class)->name('panel.audit.index');
 });
 
 Route::middleware(['auth:web', 'administrator', 'mfa', 'recent-auth'])->group(function (): void {

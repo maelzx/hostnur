@@ -27,7 +27,9 @@
   the record plus a controlled clock. A shared fixture runner
   (`tests/Support/ContractFixtures` + `JsonSchemaValidator`) keeps schemas, fixtures
   and DTOs aligned; compatibility notes are in `../contracts/v1/README.md`. Phase 3
-  is complete; phase 4 (tasks, queue and audit) comes next.
+  and phase 4 (durable tasks/queue/audit via `App\Services\TaskService`,
+  `tasks`/`task_events`/`audit_events`, `hostnur:tasks:reconcile` and the read-only
+  `/panel/tasks` + `/panel/audit` pages) are complete. Phase 5 is next.
 - Bootstrap uses `panel_setup` as durable one-time state, claimed in the same DB
   transaction as user creation. Do not turn deletion or repeat bootstrap into a
   reset mechanism. `is_admin` defaults false and is not mass assignable.

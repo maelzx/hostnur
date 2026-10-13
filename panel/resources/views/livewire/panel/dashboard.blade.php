@@ -33,8 +33,13 @@
             </div>
         </dl>
         <p class="mt-6 text-sm leading-6 text-slate-600">
-            Operation history and server management arrive in later slices. No
-            privileged actions are available yet.
+            <a href="{{ route('panel.tasks.index') }}" class="font-medium text-indigo-700 hover:underline">Task history</a>
+            ·
+            <a href="{{ route('panel.audit.index') }}" class="font-medium text-indigo-700 hover:underline">Audit history</a>
+        </p>
+        <p class="mt-3 text-sm leading-6 text-slate-600">
+            Server management operations arrive in later slices. No privileged
+            actions are available from this panel yet.
         </p>
     </section>
 

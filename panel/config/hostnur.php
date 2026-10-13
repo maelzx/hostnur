@@ -68,4 +68,22 @@ return [
         'timeout_seconds' => 3,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Tasks, Queue and Audit
+    |--------------------------------------------------------------------------
+    |
+    | Approvals are short-lived and bound to the approved payload fingerprint and
+    | MFA generation. Leases bound how long a worker claim is valid so a crashed
+    | worker is recovered by reconciliation. Task events are bounded and redacted.
+    |
+    */
+
+    'tasks' => [
+        'approval_ttl_minutes' => 10,
+        'lease_seconds' => 60,
+        'max_events_per_task' => 200,
+        'max_output_characters' => 2000,
+    ],
+
 ];

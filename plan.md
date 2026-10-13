@@ -214,15 +214,17 @@ session's numbering. All phases after 1 are pending unless explicitly noted.
   phase 11.
 
 ### Phase 4 — Panel tasks, database queue and audit
-- Status: pending; next. Begins at P4.1 in section 9.6.
+- Status: complete. P4.1 (schema/models/states), P4.2 (authorized intent/approval),
+  P4.3 (worker/outbox/leases), P4.4 (progress/log persistence), P4.5
+  (failure/cancel/retry) and P4.6 (audit UI + auth integration) all passed local
+  checks and real PHP 8.3/8.4 CI.
 - Depends on: 2, 3.
-- Slices: persisted intent, state transitions, dedicated DB worker, bounded/redacted
-  output, actor attribution, progress views, leases/idempotency and interruption
-  tests using deterministic fake operations.
-- Exit: refresh/disconnect preserves task history; authorization and redaction
-  pass. Real agent crash/reconciliation evidence is deferred to phases 11 and 15.
+- Exit: met — refresh/disconnect preserves task history; authorization and
+  redaction pass. Real agent crash/reconciliation evidence is deferred to phases 11
+  and 15.
 
 ### Phase 5 — Panel shell, dashboard and agent availability
+- Status: pending; next. Begins at P5.1 in section 9.7.
 - Depends on: 2, 3, 4.
 - Slices: responsive/accessibility baseline, navigation, overview cards, task/audit
   history, CPU/RAM/disk/uptime and service views with simulated/stale/offline states.
@@ -426,6 +428,52 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 018 — Phase 4 tasks/queue/audit (P4.1–P4.6) (2026-10-13)
+
+- Completed **all of phase 4** (P4.1–P4.6) over the existing agent contract.
+  P4.1: added `TaskStatus` (central transition rules), `TaskEventLevel`,
+  `AuditAction`, `AuditOutcome` enums; `Task`/`TaskEvent`/`AuditEvent` models and
+  the `tasks`/`task_events`/`audit_events` migration (applied locally as batch 6),
+  with history-preserving nullable FKs and append-only audit.
+- P4.2: `App\Services\TaskService::request/approve/deny` plus `App\Services\
+  AuditRecorder`; dedupe on actor + idempotency key with payload fingerprint
+  conflict detection, recent-auth and approval gating for non-read-only operations.
+  P4.3: `App\Jobs\RunTask` (carries only the task UUID), short conditional lease
+  claim/release, dispatch-after-commit and `hostnur:tasks:reconcile` (scheduled
+  every minute) for the pending outbox and expired leases.
+- P4.4: `TaskService::poll` inspects the adapter, `TaskStatus::fromOperation()` maps
+  adapter statuses, events are deduplicated by sequence, bounded by
+  `hostnur.tasks.max_events_per_task` and redacted/truncated by `App\Support\
+  Redactor` (structured allowlist + secret patterns). P4.5: cancel (local vs
+  agent-acknowledged), retry as a new linked task, unknown/timeout/failed
+  outcomes, expired-approval return to `awaiting_approval`, and revoked-role
+  submissions failing closed with `permission_denied`.
+- P4.6: `App\Listeners\AuthenticationEventSubscriber` records Laravel/Fortify
+  login/MFA/recovery events (never secrets); explicit audits added for password
+  change, bootstrap and CLI recovery; read-only paginated history at
+  `/panel/tasks`, `/panel/tasks/{id}` and `/panel/audit` behind
+  auth + administrator + MFA.
+- Files: `app/Enums/{TaskStatus,TaskEventLevel,AuditAction,AuditOutcome}.php`,
+  `app/Models/{Task,TaskEvent,AuditEvent}.php`, the task/audit migration,
+  `app/Services/{TaskService,AuditRecorder}.php`, `app/Support/Redactor.php`,
+  `app/Jobs/RunTask.php`, `app/Console/Commands/ReconcileTasks.php`,
+  `app/Listeners/AuthenticationEventSubscriber.php`, `app/Exceptions/*`,
+  `app/Livewire/Panel/{TaskIndex,TaskShow,AuditIndex}.php` + views, routes,
+  `routes/console.php`, `config/hostnur.php`, `app/Providers/AppServiceProvider.php`
+  and the security/bootstrap/recovery commands; tests in `tests/Unit/
+  TaskStatusTest.php` and `tests/Feature/{TaskRequestTest,TaskExecutionTest,
+  TaskAuditUiTest}.php`; updated both READMEs and `AGENTS.md`.
+- Checks: full `php artisan test --compact` — **144 tests / 687 assertions
+  passed** (30 new phase-4 tests). `vendor/bin/pint`, `composer check:syntax`,
+  `composer check:style`, `composer validate` (known license warning),
+  `composer check-platform-reqs`, `composer audit`, `npm audit`, `npm run build`,
+  `php artisan migrate`, `route:list`, `view:cache` and
+  `hostnur:tasks:reconcile` (0 dispatched, 0 leases) all passed; a real guest HTTP
+  smoke redirected `/panel/tasks` and `/panel/audit` to `/login`. The user's port
+  9000 server was not started; the local DB gained only the additive task/audit
+  tables. No Rust.
+- Next slice: **P5.1** (panel shell and dashboard) from section 9.7.
 
 ### Session 017 — P3.5 contract regression (2026-10-12)
 
@@ -1036,30 +1084,29 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ### Next session's single slice
 
-Use the **DeepSeek starter prompt in section 9.1** and implement **P4.1** from
-section 9.6 (task schema/models/states; phases 1–3 are complete, including the
-agent contract and fake adapter). Finish one slice, record exact checks and the
-next slice ID, commit/push and stop. Real PHP 8.3/8.4 CI is green through session
-017. Port 9000 is the selected local panel port; Rust remains deferred to phase 10.
+Use the **DeepSeek starter prompt in section 9.1** and implement **P5.1** from
+section 9.7 (protected app shell and reusable Blade components; phases 1–4 are
+complete including durable tasks/queue/audit and the read-only history pages).
+Finish one slice, record exact checks and the next slice ID, commit/push and stop.
+Real PHP 8.3/8.4 CI is green through session 018. Port 9000 is the selected local
+panel port; Rust remains deferred to phase 10.
 
-Concrete P4.1 starting notes from session 017 (verify against the installed code
+Concrete P5.1 starting notes from session 018 (verify against the installed code
 before relying on them):
 
-- Add migrations + Eloquent models for `tasks`, `task_events` and `audit_events`
-  per section 9.6 (UUID PK, actor, operation, resource kind/UUID, config revision,
-  mode, status, idempotency key, non-secret parameters, payload fingerprint,
-  requested/queued/started/finished times, deadline, execution ID, lease token/
-  expiry, cancellation-requested time, safe error). Store only secret references,
-  never secrets; queue jobs will carry task UUIDs only.
-- Define task states centrally as a backed enum (`pending`, `awaiting_approval`,
-  `queued`, `running`, `succeeded`, `failed`, `cancelled`, `unknown`) with allowed
-  transitions; terminal states are immutable against late polls, and
-  `cancel_requested_at` is an intent, not a status. History must survive actor/
-  resource changes (FK null/archive; append-only audit in application code).
-- P4.1 is schema/models/states only (relationships/history preserved; illegal/
-  terminal transitions rejected). The request action, queue/outbox/leases, worker,
-  progress/log persistence, failure/cancel/retry and audit UI are P4.2–P4.6. Do not
-  call `AgentClient::submit()` outside the task service, and do not add Rust.
+- Build an authenticated app layout/shell with navigation groups (Overview,
+  Applications, Tasks, Server, Security/Settings) and shared Blade components for
+  buttons, form fields/errors, status badges, panels, tables, pagination and
+  confirmation dialogs. Reuse the existing system-font / neutral-slate / indigo
+  direction. Link only routes that exist; unsupported areas show an explanatory
+  state, not a dead button.
+- Server-side gates must hold on both route requests and Livewire update requests
+  (the `administrator`/`mfa`/`recent-auth` middleware are already registered as
+  persistent Livewire middleware). Keep guest/login views separate.
+- P5.1 is shell/navigation/components only. Task/audit filters + active polling are
+  P5.2; dashboard adapter states are P5.3; the responsive/accessibility pass is
+  P5.4. Do not add charts or real metrics; use `—`/explanations for unavailable
+  data. No Rust.
 
 ### Current blockers
 
@@ -1084,27 +1131,27 @@ before relying on them):
 | Item | Existing implementation / evidence |
 |---|---|
 | Web foundation | `panel/`; Laravel 13.35.0, Livewire 4.4.7, Tailwind 4.3.3, Vite 8.3.4 |
-| Current browser entry | `routes/web.php`: `/` redirects guests to `login` and admins to `/panel`; Livewire pages under `App\Livewire\Auth` (Login, MfaChallenge, MfaEnrollment) and `App\Livewire\Panel` (Dashboard, ConfirmPassword, SecuritySettings) |
+| Current browser entry | `routes/web.php`: `/` redirects guests to `login` and admins to `/panel`; Livewire pages under `App\Livewire\Auth` and `App\Livewire\Panel` (Dashboard, ConfirmPassword, SecuritySettings, TaskIndex, TaskShow, AuditIndex) |
 | Layout/assets | `resources/views/layouts/app.blade.php`, `resources/css/app.css`, `vite.config.js`; Livewire supplies Alpine |
-| Database | SQLite; database sessions/cache/queue; baseline user/cache/job migrations |
+| Database | SQLite; database sessions/cache/queue; baseline user/cache/job migrations plus MFA, fake execution and task/audit migrations |
 | Administrator bootstrap | `app/Console/Commands/BootstrapAdministrator.php`; `hostnur:admin:bootstrap` |
 | Bootstrap state | `2026_10_11_131611_add_administrator_bootstrap_state.php`; `users.is_admin` defaults false; `panel_setup` row 1 records completion |
 | Authentication | `laravel/fortify` v1.41.0; admin-only login/logout, `EnsureAdministrator`, MFA enrollment (`/panel/security/mfa`), generation-bound challenge (`/two-factor-challenge`), `EnsureMfaVerified` gate on `/panel`, recent-auth (`/panel/security`, `EnsureRecentAuthentication`) and CLI recovery (`hostnur:admin:recover`) |
 | User model | `app/Models/User.php`; hashed password cast, boolean admin cast, Fortify two-factor trait, hidden secret/recovery, integer `mfa_version`; admin flag excluded from mass assignment |
 | Agent contract | `app/Agent/` DTOs, `OperationCatalog`, `OperationRequestValidator`, `AgentClient` interface, `UnavailableAgentClient`, `AgentModeGuard`, fixture-driven `FakeAgentClient` and durable `FakeExecutionSimulator` over `fake_agent_executions`; `../contracts/v1/` schemas/catalog/fixtures/notes; `tests/Support` fixture + JSON Schema runner |
-| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment, 13 MFA-challenge, 17 security-settings, 8 recovery, 8 agent-contract, 8 agent-availability, 12 fake-agent and 2 scaffold tests; 114 tests / 598 assertions at handoff |
+| Tasks/queue/audit | `app/Services/TaskService` + `AuditRecorder`, `app/Jobs/RunTask`, `hostnur:tasks:reconcile` (scheduled), `tasks`/`task_events`/`audit_events`, `App\Listeners\AuthenticationEventSubscriber`, `/panel/tasks`, `/panel/tasks/{id}` and `/panel/audit` |
+| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment, 13 MFA-challenge, 17 security-settings, 8 recovery, 8 agent-contract, 8 agent-availability, 12 fake-agent, 4 task-status, 7 task-request, 11 task-execution, 8 task-audit/UI and 2 scaffold tests; 144 tests / 687 assertions at handoff |
 | CI | `.github/workflows/web-panel.yml`; PHP 8.3/8.4, Node 24, actual runtime/static/build/migration/test gates; watches `panel/**` and `contracts/**` |
-| Last application CI | Session 016 code passed: <https://github.com/maelzx/hostnur/actions/runs/38332243837>, code commit `2ee01a5` |
+| Last application CI | Session 017 code passed: <https://github.com/maelzx/hostnur/actions/runs/38333551101>, code commit `a691275` |
 | Current local URL | `http://127.0.0.1:9000`; committed example uses port 9000 |
-| Remaining work | Panel tasks/queue/audit (P4.1–P4.6), dashboard and app/server-management flows |
+| Remaining work | Phase 5 shell/dashboard/task-visibility, then application/server-management flows |
 
 Do not scaffold again, regenerate the app key, reset the database, create test
 users in the real DB, reinstall Boost, or install Rust. The last inspection found
 zero real users, but the user may have subsequently run bootstrap. Inspect state
-read-only when necessary; never assume the account needs recreating. Phases 2–3
-authentication and the agent contract (including the unavailable adapter, mode
-guard, deterministic fake adapter and contract-regression runner) are complete;
-panel tasks/queue/audit and the application-management schema do not exist yet.
+read-only when necessary; never assume the account needs recreating. Phases 2–4
+authentication, the agent contract and durable tasks/queue/audit are complete;
+the application-management schema and dashboard/operation UI do not exist yet.
 
 #### Low-cost session protocol
 
@@ -1501,6 +1548,11 @@ production has no functioning privileged path. Actual socket/framing/Rust contra
 proof belongs to phase 11, not this phase's mocked checks.
 
 ### 9.6 Phase 4 — Durable tasks, approvals, audit and queue reconciliation
+
+**Status: P4.1–P4.6 done; phase 4 complete.** Tasks/events/audit persistence,
+`TaskService` (request/approve/deny/cancel/retry/run/poll), `RunTask` leases,
+`hostnur:tasks:reconcile`, redaction/limits, the auth audit subscriber and the
+read-only history UI exist. Phase 5 (panel shell/dashboard) is next.
 
 **Goal:** persist intent and history independently of the HTTP request. Use one
 task service/action path for all UI mutations and later AI requests. A component

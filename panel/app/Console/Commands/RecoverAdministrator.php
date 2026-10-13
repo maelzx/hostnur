@@ -2,7 +2,10 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\AuditAction;
+use App\Enums\AuditOutcome;
 use App\Models\User;
+use App\Services\AuditRecorder;
 use Closure;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -111,6 +114,8 @@ class RecoverAdministrator extends Command
             if (Schema::hasTable('sessions') && Schema::hasColumn('sessions', 'user_id')) {
                 DB::table('sessions')->where('user_id', $fresh->getKey())->delete();
             }
+
+            app(AuditRecorder::class)->record($fresh, AuditAction::AuthAdminRecovered, AuditOutcome::Success);
         });
     }
 }
