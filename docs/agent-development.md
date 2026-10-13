@@ -66,11 +66,15 @@ below has no native build step and does not raise the MSRV beyond the pin.
 |---|---|---|---|
 | `toml` | 1.1.8 | typed configuration parsing (`toml::Value`) | MIT OR Apache-2.0 |
 | `signal-hook` | 0.4.5 | SIGTERM/SIGINT flag registration | MIT OR Apache-2.0 |
+| `serde` | 1.0.229 | derive-based (de)serialization for contract DTOs (phase 11.1) | MIT OR Apache-2.0 |
+| `serde_json` | 1.0.154 | strict JSON request parsing and response serialization (phase 11.1) | MIT OR Apache-2.0 |
 | `tempfile` (dev) | 3.27.0 | temporary config directories in tests | MIT OR Apache-2.0 |
 
-`Cargo.lock` is committed. `serde`/`serde_json` (contracts), an async runtime
-(socket/process concurrency) and process-control crates are introduced only when
-phase 11 uses them.
+`Cargo.lock` is committed. An async runtime (socket concurrency) and
+process-control crates are introduced only when their phase uses them. The
+contract DTOs/parser and length-prefixed framing live in `agent/src/contract/`
+and are checked against `contracts/v1` fixtures in
+`agent/tests/contract_fixtures.rs`.
 
 The crate has no `license` field yet: the project-wide license is an open
 decision (see `plan.md` section 6) that must be resolved before publication.
