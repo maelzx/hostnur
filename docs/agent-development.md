@@ -290,9 +290,14 @@ Verified on the arm64 Lima VM (root-run `tests/deploy_vm.rs`): deploy v1 served
 `marker-v1`, redeploy v2 served `marker-v2`, rollback to v1 served `marker-v1`,
 and a migration-requested deploy was refused.
 
-Deferred/recorded: the unprivileged Composer build (P14.2), queue workers/
-scheduler, blue/green routing, and full journaled crash/cancel reconciliation and
-panel/task integration (part of P15.6/P15.7).
+The unprivileged Composer build now runs when `composer.json` is present
+(`composer install --no-dev --no-scripts --optimize-autoloader` as the app user),
+and each release state is recorded in the journal `deployments` table
+(`staged`/`active`/`superseded`/`rolled_back`) for restart reconciliation.
+
+Deferred/recorded: queue workers/scheduler, blue/green routing, per-app `public/`
+ACLs, full crash/cancel reconciliation wiring, and panel/task integration (part of
+P15.6/P15.7).
 
 ## Blocked / deferred checks
 

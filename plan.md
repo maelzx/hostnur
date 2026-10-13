@@ -1430,11 +1430,16 @@ ask only when the choice materially changes scope, cost, access, or product beha
   and a migration-requested deploy was refused. (A discovered issue — the app-owned
   release dir blocked the web worker from `public/` — was fixed by making the
   release tree traversable while keeping `.env`/secrets private.)
-- Deferred: P14.2 unprivileged Composer build, queue workers/scheduler,
-  blue/green routing, journaled crash/cancel reconciliation, per-app `public/`
-  ACLs, and panel/task integration (P15.6/P15.7).
-- Next slice: **phase 16** (real TLS lifecycle) — needs a test domain/DNS and a
-  publicly reachable VM.
+- Follow-up added in the same session: P14.2 unprivileged Composer build (runs
+  `composer install --no-dev --no-scripts --optimize-autoloader` as the app user
+  when `composer.json` is present; verified app-owned `vendor/autoload.php` on the
+  VM) and a `deployments` journal table recording each release's state
+  (`staged`/`active`/`superseded`/`rolled_back`) for restart reconciliation.
+- Deferred still: queue workers/scheduler, blue/green routing, per-app `public/`
+  ACLs, full crash/cancel reconciliation wiring, and panel/task integration
+  (P15.6/P15.7).
+- Next slice: remaining phase-15 items (workers/scheduler, panel integration) or
+  **phase 16** (real TLS) once a public VM + test domain are available.
 
 ### Session 029 — Phase 14 PHP/Laravel provider and Nginx routing (2026-10-13)
 
