@@ -1,13 +1,13 @@
 # Hostnur — implementation plan and session handoff
 
-Last updated: 2026-10-11.
+Last updated: 2026-10-13.
 
-**DeepSeek handoff:** start with section **9.1**, then read only the selected
-phase's detailed subsection in **9.3–9.11**, plus `panel/AGENTS.md`. Phase 1 and
-phase 2 slice `P2.1` are implemented. The next work item is **P2.2**. Section 9 is
-the detailed web-only implementation playbook; its proposed files/features are
-not claims that those features already exist. Stop development at phase 9 until
-the user resumes Rust work in the prepared environment.
+**Development handoff:** this plan records phases **1–9 complete**, with blocked
+manual/VM checks retained in session 023. The next implementation slice is **P10.1**,
+deferred until the prepared agent environment is available. Detailed phases 10–20
+are expanded directly under their headings in section 5. Section 9 remains the
+web implementation playbook. New Rust/host/package file names and designs below
+are proposed work, not implemented features or verified host behavior.
 
 ## 1. Purpose and planning authority
 
@@ -167,11 +167,11 @@ do not assume the last attempted operation completed.
 
 ## 5. Phased roadmap
 
-Status values: **pending**, **in progress**, **deferred**, **blocked**, **complete**. A phase is
-complete only when its exit checks pass. Phase 1 is complete and phase 2 is in
-progress; subsequent phases are pending. Dependencies reference phase numbers;
-partial scaffolding can happen
-earlier, but dependencies must pass before declaring the dependent phase complete.
+Status values: **pending**, **in progress**, **deferred**, **blocked**, **complete**.
+Phases 1–9 are recorded complete, with the outstanding manual/VM checks retained
+in session 023. Phases 10 onward are planned/deferred unless explicitly noted.
+Writing a detailed plan does not complete an implementation phase. Dependencies
+must pass before declaring a dependent phase complete.
 
 ### Phase 0 — Requirements, decisions, and session protocol
 - Scope: review the source, clarify priorities, record this phased plan and handoff.
@@ -181,7 +181,7 @@ earlier, but dependencies must pass before declaring the dependent phase complet
 Roadmap reordered in session 003: phases 1–9 deliver the independent web panel;
 phases 10–11 begin Rust development in the prepared environment; phases 12–21
 integrate and validate real host operations. Phase numbers below replace the prior
-session's numbering. All phases after 1 are pending unless explicitly noted.
+session's numbering. Phases 10 onward remain planned/deferred unless explicitly noted.
 
 ### Phase 1 — Web-only foundation
 - Status: complete; scaffold, local checks and actual PHP 8.3/8.4 CI passed.
@@ -265,85 +265,1049 @@ Detailed implementation, file maps, slice IDs, schemas and test requirements for
 phases 1–9 are in **section 9** below. Use that playbook to continue development.
 
 ### Phase 10 — Rust foundation in the prepared environment
-- Status: deferred until web milestone and user-provided agent environment.
+- Status: implementation deferred until the prepared agent environment is supplied.
 - Depends on: 9.
-- Slices: recheck Rust pin/MSRV/dependencies, scaffold `agent/`, build/test,
-  rustfmt/Clippy, agent-specific CI and environment handoff.
-- Exit: agent independently builds/checks in that environment; web development
-  remains independent of local Rust installation.
+
+#### Objective and entry gate
+
+Create an independently buildable Rust service foundation in the same monorepo.
+Reuse the web milestone's existing operation catalog, DTO responsibilities and
+fixtures; do not re-scaffold the panel or replace its task/authentication layers.
+Phase 9 is recorded complete, but its blocked browser review and later VM gates
+remain outstanding. Rust builds alone do not satisfy those gates.
+
+Before implementation, identify the user-approved development environment, target
+Linux architecture, available compiler/linker and disposable-test VM access. Do
+not install Rust or system packages in the current web environment. A prepared
+Rust workstation is sufficient for this phase's unit/build checks; root/systemd
+and installation tests require separate disposable Ubuntu 24.04 amd64 VMs later.
+
+#### Proposed crate and dependency approach
+
+```text
+agent/Cargo.toml              Package metadata, edition, MSRV and minimal dependencies
+agent/Cargo.lock              Committed dependency resolution for the agent executable
+agent/src/main.rs             CLI/process entry point and orderly startup/shutdown
+agent/src/lib.rs              Testable core, independent of daemon process startup
+agent/src/config.rs           Typed agent-owned configuration and validation
+agent/src/error.rs            Stable internal errors mapped to contract codes later
+agent/tests/                 Integration tests that do not require root by default
+.github/workflows/agent.yml   Separate agent build/lint/test checks
+docs/agent-development.md     Environment, commands, targets and blocked host checks
+```
+
+Create transport/registry/operations modules when phase 11 uses them, not empty
+handler trees for every future runtime. Start with safe Rust and reject unnecessary
+`unsafe` in project code; use established safe syscall wrappers when later needed.
+Suggested dependencies, introduced only when used: serde/serde_json for contracts,
+an error library, structured logging, and a bounded async runtime if socket/process
+concurrency justifies it. Select storage and process-control crates in phase 11.
+Record each dependency's role, license, native build requirements and MSRV impact.
+
+The existing Rust 1.99.0 / edition 2024 / MSRV 1.99 direction is a stored proposal,
+not proof that the prepared environment has it. Recheck the pin and crate support;
+choose one compatible stable toolchain, record the decision and use it in CI.
+Changing MSRV requires a tested reason, not merely choosing whatever is newest.
+Retain the Ubuntu 24.04 amd64 deployment target; a successful build against a newer
+host's glibc does not automatically run on that target. Release-target compatibility
+and deterministic packaging are finalized in phase 20.
+
+#### Startup and configuration behavior
+
+- Provide `--version`, help and a configuration-check/diagnostic mode with safe
+  output. Configuration check must not provision users, write Nginx, install
+  packages, contact Git or start hosted applications.
+- Parse a documented, typed TOML configuration; reject unknown/invalid settings,
+  unsupported limits and unsafe state/socket paths rather than use permissive
+  defaults. Agent configuration is distinct from hosted apps' environment variables.
+- Development checks use temporary directories and explicit non-root configuration.
+  No production root socket or mutation handler is activated by this scaffold.
+- Structured logs include service version, safe error code and correlation IDs.
+  Never dump configuration, environment, future request bodies or credentials.
+- Define signal handling and shutdown deadlines. A clean shutdown stops accepting
+  new work; later phases decide how accepted work is drained or journaled.
+- Keep executable startup thin so validation and lifecycle behavior can be tested
+  without launching a root daemon or manipulating the development host.
+
+#### Small implementation slices
+
+| Slice | Deliverable | Acceptance evidence |
+|---|---|---|
+| P10.1 Environment/compatibility baseline | Prepared-environment inventory, Rust pin/MSRV and target decision | Exact versions/commands recorded; no current-host installation |
+| P10.2 Minimal crate/CLI | Independent binary/library, lockfile, help/version | Locked build/test works; panel needs no Rust to run |
+| P10.3 Typed configuration/errors | Config parser, safe diagnostics and startup checks | Missing/malformed/unknown/unsafe config fails without side effects |
+| P10.4 Lifecycle/logging | Signals, shutdown and bounded safe logging | Controlled shutdown and invalid startup are observable/testable |
+| P10.5 Agent-only CI/handoff | Format/Clippy/tests and target build documentation | Real CI run passes; root/VM-dependent checks explicitly separated |
+
+Suggested checks once code exists: `cargo build --locked`, `cargo test --locked`,
+`cargo fmt --all -- --check`, and `cargo clippy --locked --all-targets -- -D warnings`.
+Check the declared MSRV in CI if a newer compiler is used as the main development
+toolchain. Web CI remains independently runnable; coordinated release gates come
+later. Use existing fixtures, not test files that only assert scaffold strings.
+
+**Exit gate:** independently reproducible Rust build/tests/style/config lifecycle
+checks pass in the prepared environment and CI; exact blocked host checks and the
+first P11 slice are documented. No privileged operation support is advertised.
 
 ### Phase 11 — Real protocol, transport and execution boundary
+- Status: planned; no real transport or privileged boundary verified in this phase yet.
 - Depends on: 3, 10.
-- Slices: final framing/version rules, cross-language fixture checks, Unix socket
-  peer/permission checks, PHP real adapter, agent resource registry, validated
-  dispatch, health/inventory, bounded subprocess runner and restart correlation.
-- Exit: PHP/Rust agree on envelopes/errors; unauthorized peers, unknown operations,
-  unsafe input/paths and oversized messages fail. No arbitrary root command API.
+
+#### Objective and contract migration
+
+Implement the real counterpart of the existing `AgentClient` responsibilities:
+capabilities/snapshot/submit/inspect/cancel. Preserve `TaskService`, `RunTask`,
+approval fingerprints, leases, event cursors and fake/unavailable modes. Future
+implementation must inspect the actual completed `app/Agent` DTOs and
+`contracts/v1` artifacts before selecting Rust types; this planning session only
+uses the responsibilities recorded in this file.
+
+Proposed transport: local Unix stream socket with a four-byte unsigned big-endian
+length prefix followed by UTF-8 JSON, capped at the agreed message limit before
+allocation. Finalize whether one request/response per connection or bounded
+multi-request connections is simplest; document correlation and error behavior.
+Reject zero/oversized frames, partial/time-out reads, malformed UTF-8/JSON, duplicate
+keys, unknown fields, invalid numeric bounds and unsupported protocol versions.
+Do not turn EOF midway through a message into an accepted operation.
+
+Capabilities report protocol/schema version, agent build, stable managed-host identity,
+boot identity, supported operations/runtime IDs, limits and retry/cancel semantics.
+Only tested handlers are advertised. A successful connection is not evidence that
+every web catalog operation exists. Unsupported versions fail before mutation;
+upgrade compatibility is explicit rather than silently interpreting another schema.
+
+#### Local process identity and service ownership
+
+Suggested packaging-independent locations to ratify before use:
+
+| Resource | Proposed location / owner |
+|---|---|
+| Socket | `/run/hostnur/agent.sock`; root-owned directory, restrictive socket group |
+| Agent config | `/etc/hostnur/agent.toml`; root-owned, not web writable |
+| Registry/journal | `/var/lib/hostnur/agent/`; root-only DB and sidecar files |
+| Application root | `/opt/hostnur/apps/`; managed UUID layout finalized in phase 12 |
+
+Use an explicit expected Unix peer UID allowlist and kernel peer credentials,
+not a JSON `user_id`, PID claim or group membership alone. Panel and queue-worker
+OS identities must be documented. A typical socket mode is 0660 with a dedicated
+panel-access group; do not add hosted app users to it. Authenticate the agent endpoint
+from the panel side as well, using trusted root-owned paths/ownership and expected
+server peer credentials where supported. Reject socket substitution/symlinks.
+No TCP listener, public HTTP admin endpoint or shared default token is needed.
+
+Develop handlers unprivileged against temporary roots. Root-running integration
+occurs only on the disposable VM. Select safe systemd service restrictions against
+the actual required capabilities: a hardening directive is useful only if it does
+not silently prevent UID switching, filesystem access or approved service control.
+Do not claim an arbitrary plugin manifest makes root code sandboxed.
+
+#### Registry, durable execution and dispatch
+
+- Separate agent-owned registry storage from panel SQLite. Record managed resource
+  UUID, kind, provider, owning UID/GID, approved paths/service IDs, revision and
+  lifecycle state. Caller-supplied paths/unit names are never authoritative.
+- Agent-owned execution journal records request/idempotency IDs, canonical payload
+  fingerprint, resource/revision, state/checkpoints, event sequence and safe result.
+  Use database constraints for identity conflicts. Same ID + same intent returns
+  the original receipt/state; same ID + different intent is a conflict.
+- Persist acceptance before returning a receipt or starting mutations. Work is owned
+  by the agent, not the socket connection. Browser, worker or client disconnect must
+  not implicitly cancel accepted execution.
+- Distinguish received/accepted/running/terminal/unknown. On restart, reconcile the
+  checkpoint against actual managed state. Never convert all interrupted work into
+  success or automatically repeat a possibly completed mutation.
+- Serialize conflicting operations by resource and global resources such as APT/
+  Nginx reload. Keep storage transactions short; leases/locks cannot span a long
+  child process while blocking all status inspection.
+- Mutation authorization in PHP remains required. The agent independently validates
+  the approved operation's safety, resource namespace, identity, revision and bounds;
+  it does not trust browser-provided actor metadata as root authorization.
+
+#### Sensitive inputs and subprocess boundary
+
+Task requests and failed-job payloads continue to contain secret references only.
+Design a documented sensitive-input delivery envelope on the authenticated local
+channel, separate from durable intent: exact execution/request ID, resource,
+reference/version, bounded material and expiry. Rust validates the binding and
+accepts only fields required by that operation. Keep plaintext out of journals,
+traces, errors, argv and environment diagnostics. Use dummy material in fixtures.
+
+Do not make the agent fetch arbitrary HTTP secret URLs or silently decrypt/read the
+panel database. For crash recovery, arrange controlled re-delivery of the approved
+version or an explicitly encrypted agent credential store; choose/document the key
+custody and paused-input state. Missing credentials must not trigger blind operation
+resubmission or substitution with a newer unapproved secret version.
+
+The subprocess runner takes an agent-selected executable and validated argument
+array, explicit UID/GID/group policy, working-directory handle, minimal environment,
+deadline, output cap and process-group termination policy. Root selects allowlisted
+tools/arguments; arbitrary build commands are allowed only in an app-user runner
+introduced later. Drain stdout/stderr without deadlock; redact before persistence.
+Timeout/cancel kills the process group, records the actual outcome and does not
+pretend package-manager/database effects were undone. No `sh -c` root executor.
+
+#### Slices and verification
+
+| Slice | Deliverable | Required proof |
+|---|---|---|
+| P11.1 Cross-language contract | Rust DTOs/parser, framing/version decisions, shared fixtures | PHP/Rust agree on all valid/invalid cases and limits |
+| P11.2 Socket/peer boundary | Endpoint ownership, UID checks, connection limits/timeouts | Unauthorized peers/substituted sockets/partial frames fail before dispatch |
+| P11.3 Registry/journal | Durable IDs, acceptance, dedupe, event cursor and restart state | Lost receipt/reconnect/restart cannot duplicate accepted work |
+| P11.4 Safe process primitive | Unprivileged runner tests and fixed privileged-tool policy | Timeout/output flood/process tree/argv/env cases stay bounded |
+| P11.5 PHP real adapter | Bind through existing task pipeline, capability/offline UI mapping | Auth/MFA/approval persist; production never falls back to fake |
+| P11.6 VM service integration | systemd/socket permissions, live metrics, read-only health | Real panel/worker connects; app users cannot; safe service restart works |
+
+Negative tests include cross-resource IDs, traversal/NUL/options, stale revisions,
+duplicate identity conflicts, mismatched sensitive inputs, unsupported capabilities,
+output floods, dropped receipts, crash windows and revocation before submission.
+After acceptance, system-owned read-only reconciliation continues even if the
+requesting user's approval expires; new mutations still require fresh authority.
+
+**Exit gate:** real PHP/Rust contract/socket/identity and durable execution tests pass,
+with privileged cases evidenced on the VM. The agent supports a narrow tested set
+of read-only operations and safe primitives; later handlers remain unsupported.
 
 ### Phase 12 — Linux application isolation and resource reconciliation
+- Status: planned; requires disposable Ubuntu VM access for isolation evidence.
 - Depends on: 6, 11.
-- Slices: app-owned users/directories, permissions, secret files, registry mapping,
-  safe retries, traversal/symlink handling and interrupted provisioning recovery.
-- Exit: identities reconcile reliably; cross-app secret access tests pass on VM.
+
+#### Objective and resource identity
+
+Turn an approved application UUID/revision into an isolated Linux identity and
+managed filesystem layout. The panel's configuration already exists; agent-observed
+provisioning state is a separate record. Do not assign a real Linux user or ready
+state because the earlier fake deployment succeeded.
+
+Use an agent-selected account namespace, for example a bounded `hn_<uuid-fragment>`
+name, with collision handling and persistent UUID -> username/UID/GID mapping.
+Application display name/slug is not an account name, path or privilege selector.
+Accounts have no interactive login/sudo and do not join the panel socket group.
+Existing unmanaged accounts/directories must not be silently adopted or overwritten.
+UID/GID mismatch or reuse after external deletion is drift requiring reconciliation,
+not permission to chown another owner's data into the app.
+
+Provisioning can be an internal step of `application.deploy`. If a separate public
+prepare operation is necessary, add a strictly typed schema/catalog/capability and
+approval path; do not expose generic `user.add` or root filesystem-write commands.
+
+#### Filesystem layout and permission matrix
+
+Proposed stable layout, finalized with phase 14's provider:
+
+```text
+/opt/hostnur/apps/<application-uuid>/
+  releases/<release-uuid>/       App-owned staged releases; published code policy explicit
+  shared/                       Persistent storage/uploads and app-owned writable data
+  shared/secrets/                Restricted app-specific runtime environment material
+  current                       Agent-controlled activation pointer, introduced in phase 15
+/var/lib/hostnur/agent/          Root-owned registry/journal, never app writable
+```
+
+Keep trusted namespace/activation/config parents agent/root-controlled. Writable
+release/shared descendants are untrusted because application code can change them.
+No hosted app can alter registry, agent config/socket, panel key/DB, another app's
+private tree, generated root service configs or activation ownership metadata.
+
+| Principal | Intended access |
+|---|---|
+| Agent | Validated management of registered resources; no unvalidated descendant traversal |
+| App A | Own runtime files/secrets/shared data only; no sudo, peer B secrets or socket |
+| App B | Equivalent own-app access; no app A private data |
+| Panel/worker | Own panel state and authenticated agent IPC; no direct root provisioning |
+| Nginx worker | Explicit public assets/traversal and FPM upstream socket only, not private app trees |
+
+Document concrete owner/group/mode/ACL choices per directory and file. Environment
+and credentials are typically 0600/0400 to the intended owner, not group/world
+readable. Do not add Nginx or every application to broad shared groups merely to
+make static routing work; grant the minimum public-subtree/socket access and test
+private storage remains inaccessible. Root-readable credentials remain outside
+app-owned staging unless that app specifically needs them.
+
+#### Safe filesystem and UID switching approach
+
+- Resolve root-managed IDs to paths internally. Validate relative identifiers,
+  reject traversal/control/NUL/absolute input and limit path/depth/count/bytes.
+- Use directory-file-descriptor-based operations and no-follow/beneath-resolution
+  primitives appropriate to Linux. `canonicalize()` followed by a later ordinary
+  open is not sufficient against app-controlled symlink/rename races.
+- Reject unexpected symlinks, devices, FIFOs, hard-link ownership surprises and
+  ancestor replacements during privileged writes/ownership changes. No recursive
+  root `chown` over an arbitrary app-supplied tree or tar extraction as root.
+- Root-generated files use staged writes in trusted parents, bounded permissions,
+  same-filesystem atomic replacement and durability synchronization when required.
+- Child-process identity setup clears supplementary groups before setting GID/UID,
+  drops unnecessary capabilities and uses an explicit minimal environment/working
+  directory. Test the resulting identity, not merely the command's requested UID.
+- Resource changes are journaled before/after side effects. A crash can leave a
+  user without directories; reconcile that exact managed user, not allocate a
+  second identity. Rollback removes only proven newly created empty resources.
+
+Suggested lifecycle: reserved -> account created -> layout prepared -> ready,
+with partial/failed/drifted states and recorded recovery actions. Keep Linux-user
+allocation/management serialized where needed. Panel archive does not automatically
+delete host data, kill unrelated processes or free an account while tasks use it.
+
+#### Slices and test matrix
+
+| Slice | Deliverable | Required proof |
+|---|---|---|
+| P12.1 Registry/namespace policy | UUID/account/path ownership rules and lifecycle | Invalid IDs/collisions/unmanaged resources are refused |
+| P12.2 Isolated account creation | No-login account/group and reliable UID switching | Children actually run as intended UID with no inherited extra groups |
+| P12.3 Directory/secret provisioning | Trusted parents, private data and bounded file writes | Modes/ACLs meet the access matrix; secret output stays redacted |
+| P12.4 Crash/drift reconciliation | Resume partial provisioning and detect identity changes | Repeated requests keep one identity and preserve existing data |
+| P12.5 Host isolation/race tests | Disposable-VM app A/B plus malicious path fixtures | Cross-app secret/socket/config access and symlink races fail |
+
+Run meaningful tests as the actual app UIDs, not just root checking mode bits.
+Include reused UID, unexpected pre-existing directory, missing registry row,
+concurrent provisioning, malicious symlink swaps, disk-full/write interruption,
+and cleanup after a partial failure. Preserve evidence of files/accounts created
+and removed in each VM scenario so cleanup cannot conceal leaked resources.
+
+**Exit gate:** two independently provisioned apps pass the full permission matrix;
+repeat/crash recovery preserves identity/data; no caller-controlled path crosses
+the managed root. Publish the layout/ownership contract for Git and PHP providers.
 
 ### Phase 13 — Real public/private Git source lifecycle
+- Status: planned; Git providers/authentication requirements need confirmation.
 - Depends on: 6, 12.
-- Slices: unprivileged checkout, HTTPS/scoped tokens and/or SSH deploy keys,
-  verified host keys, commit pinning, time/output limits, rotation and deletion.
-- Exit: public/private snapshots are reproducible as app user; logs and diagnostics
-  do not leak credentials. Confirm Git authentication modes before implementation.
+
+#### Objective and source authority
+
+Connect existing source/credential configuration to genuine bounded Git operations
+under the application's Linux identity. Retain the existing URL/ref validation,
+immutable app revision and secret-version references, then independently revalidate
+them in Rust. A previously simulated connectivity check is not source evidence.
+
+Confirm the required providers and supported authentication before implementing:
+public HTTPS, private HTTPS with scoped token, and/or SSH with per-repository deploy
+key. Prefer read-only repository scope. No personal all-repository credential is a
+default requirement. Custom/private Git hosts require an explicit host/port/network
+policy; do not assume all URLs or all internal network targets are approved.
+
+#### Checkout pipeline
+
+1. Resolve app/revision and the approved repository identity, ref and credential
+   version. Verify the app identity/layout from phase 12 and acquire its source lock.
+2. Resolve host/port through an outbound policy: public defaults exclude loopback,
+   link-local/cloud metadata and other forbidden destinations. Explicit operator
+   policy can allow a legitimate private Git host. Validate redirects/DNS changes
+   against the same policy rather than validating only the original string.
+3. Create a unique bounded staging checkout. Run the fixed Git binary as the app
+   user with no root privilege, inherited SSH agent, panel environment or global
+   credentials/config. Do not reuse an untrusted working tree's executable config.
+4. Fetch the approved ref with strict transport settings, deadline and output/disk
+   limits. Reject option-like refs and revision-expression tricks; branch, tag and
+   full commit forms are distinguished and validated before argument construction.
+5. Resolve and persist the full commit ID/repository identity before build handoff.
+   Check an expected commit if supplied. Once resolved, retries of that accepted
+   source intent use the same commit; they cannot silently move to a newer branch tip.
+6. Export/stage release contents with documented symlink/file-type policy. Preserve
+   provenance without runtime access to deployment credentials or unsafe `.git`
+   configuration. A checked-out symlink is never authority for later root writes.
+7. Remove transient credential material and failed staging artifacts according to
+   retention rules. Record source success/failure and a safe diagnostic in the task.
+
+A request approving a branch approves resolving that branch at execution time unless
+the UI supplies an expected commit. Display that distinction; do not claim a moving
+ref is immutable before resolution. Define behavior for unreachable/deleted refs,
+unsupported Git object formats, force-pushed branches and annotated tags explicitly.
+Shallow fetch is an optimization only if it preserves the required pinned commit.
+
+#### Credential and transport handling
+
+- HTTPS authentication uses a tightly scoped helper/channel, not token-in-URL,
+  command-line headers or persisted global `.gitconfig`. Validate TLS and bound
+  credential use to the approved host/repository. Reject insecure redirects.
+- SSH uses strict known-host verification with an independently obtained approved
+  host key/fingerprint. No `StrictHostKeyChecking=no`, first-seen silent trust or
+  inheritance of the host operator's private keys/SSH configuration.
+- Private keys/tokens arrive via phase 11's sensitive channel. Use restricted
+  temporary descriptors/files only if the Git/SSH tool requires them; clear them
+  after checkout and on error/cancel. Never persist plaintext in journal, source
+  metadata, task payloads, process diagnostics or final release directories.
+- Rotation/deletion is versioned. An accepted task cannot automatically consume a
+  newly rotated credential without its defined approval/re-delivery policy. Report
+  revoked/missing credentials safely and require a fresh request when appropriate.
+- Application code is untrusted. Do not run dependency/build scripts while source
+  credentials remain available. Read-only per-app credentials limit exposure from
+  same-UID app processes; stricter separate deployment identity is a documented
+  future option, not an unproven isolation claim.
+- Disable unapproved external Git protocols, hooks, credential helpers, filters,
+  fsmonitor, submodules and LFS execution. Support submodules/LFS only as explicit
+  provider features with independent URL/credential/bounds validation.
+
+#### Artifacts, progress and failure recovery
+
+Proposed source manifest: app/revision/source IDs, sanitized repository identity,
+requested ref, resolved commit/object format, staging/release ID, completion time,
+mode=real and content/provenance checksum where practical. Credentials are references
+only. Retain enough trusted metadata to resume fetch/export without re-running an
+arbitrary app-owned Git command or confusing a partial tree with a ready source.
+
+On network/auth failure, preserve the active app and discard/quarantine incomplete
+staging only. Retry bounded read/fetch operations if they are known safe; do not
+restart an entire deployment or delete a known-good release. Stream bounded redacted
+progress, escaping server-supplied error text. Cancellation stops Git/SSH children
+and their process group; a partial checkout never becomes deployable.
+
+| Slice | Deliverable | Required proof |
+|---|---|---|
+| P13.1 Git/source policy | Provider/auth matrix, URL/ref/network restrictions | Unsupported protocols/options/private targets are refused correctly |
+| P13.2 Public checkout/provenance | App-user fetch, commit pin, staging manifest | Actual UID, deterministic commit and failure cleanup verified |
+| P13.3 Private HTTPS credentials | Scoped secret helper, TLS/redirect checks | Private clone works; no URL/argv/log/release credential leakage |
+| P13.4 SSH deploy keys/host trust | Pinned host keys and versioned key delivery | Wrong/rotated host key fails; unrelated host keys cannot be used |
+| P13.5 Recovery/rotation/cancel | Journaled partial fetch, revoke/rotate and limits | Interrupted/resumed source does not move commits or expose old keys |
+| P13.6 Panel integration | Real source result and safe errors through existing tasks | Real/fake/not-checked remain distinct; no direct PHP Git executor |
+
+Tests use controlled Git HTTP/SSH endpoints and disposable resources, not production
+repositories or credentials. Cover auth failure, redirect/rebinding policy, malicious
+refs/config/hooks/submodules, large repositories/output, wrong ownership, disk-full,
+timeout, process interruption and credential cleanup. Limit claims to tested modes.
+
+**Exit gate:** supported public/private repositories yield reproducible source
+snapshots as the intended non-root identity, with pinned commits and verified
+transport trust. Secrets do not survive in artifacts, history or diagnostics.
 
 ### Phase 14 — PHP/Laravel provider and transactional Nginx routing
+- Status: planned; approved runtime/package and web-server policies must be ratified.
 - Depends on: 12, 13.
-- Slices: approved PHP packages/extensions, isolated FPM pools, provider interface,
-  Composer/build/Artisan as app user, shared storage, worker/scheduler services,
-  domains, Nginx templates, staged validation/reload/recovery and static sites.
-- Exit: sample Laravel app runs via its FPM pool and HTTP site; failed Nginx/FPM
-  changes preserve/recover working config; build scripts receive no root privilege.
+
+#### Objective and provider contract
+
+Implement the first real `php-laravel` provider against approved revision/source
+manifests. Provider responsibilities: detect prerequisites, declare supported OS/
+runtime/package versions, prepare dependencies, render bounded configuration,
+stage a release, expose service/health/log references and describe supported rollback.
+Keep this interface reusable for later modules without building the marketplace now.
+
+Ubuntu 24.04's native PHP 8.3/PHP-FPM is the initial deployment baseline. The panel's
+development PHP version is not a managed-app support promise. Additional versions
+or external repositories need explicit support/installation policy and tested
+compatibility; no automatic PPA addition or claims that any PHP version works.
+
+Phase 14 needs an internal approved package-install primitive for PHP-FPM/extensions,
+Nginx and required helpers. Introduce its allowlist, APT-lock coordination and safe
+failure handling here; phase 17 later exposes broader catalog/UI operations. This
+avoids a dependency cycle from phase 14 to the later server-administration phase.
+
+#### App-user build and Laravel preparation
+
+1. Verify source is ready/pinned, app UID/layout valid, runtime/extensions supported,
+   and disk/memory budget sufficient. Record installed versions and prerequisites.
+2. Run Composer with a trusted executable as the app user, preferably from committed
+   lockfile with deterministic production flags. Never run app scripts/plugins as
+   root, use panel credentials, ignore platform requirements or silently update the
+   dependency lock. Unsupported source prerequisites produce a useful failure.
+3. Treat Composer scripts/plugins and optional frontend builds as untrusted app
+   execution. Enforce process/user/network/resource limits and approved dependency
+   credential delivery; Git checkout credentials are already removed. Node-based
+   app builds require a supported runtime/build policy, not a runtime install on the
+   current web development environment.
+4. Prepare app-specific environment/secrets with a tested serializer. Do not inject
+   raw values into systemd/Nginx/FPM directives. Preserve an existing app `APP_KEY`;
+   generate it only once when requested and store it as that application's secret,
+   never copy or regenerate the panel key on each deployment.
+5. Link approved persistent storage and writable caches; keep uploads/shared data
+   outside ephemeral release directories. Run only provider-approved Artisan/cache
+   preparation as the app user. Build artifacts contain no deployment tokens.
+6. Migrations are explicitly opt-in and belong to the deployment checkpoint policy
+   in phase 15. Do not run them accidentally through a privileged lifecycle script.
+
+Document dependency credential scope separately from source Git credentials when
+private Composer/npm packages are required. A missing package token is not a reason
+to give every application the agent's or operator's global credentials.
+
+#### FPM, service and static routing ownership
+
+- Generate an isolated PHP-FPM pool/instance policy per application: actual UID/GID,
+  registered socket, document root, working directories, process limits/timeouts,
+  environment filtering and bounded error logs. Confirm the pool worker's identity.
+- Keep FPM runtime socket parents and root-loaded pool definitions agent-owned.
+  Grant Nginx only the registered upstream socket/public asset access; app A cannot
+  connect to B's upstream or alter B's definitions. Shared root FPM management does
+  not mean shared app workers or shared writable config.
+- PHP/Laravel uses `public/` as the document root, front-controller routing and
+  deny rules for `.env`, VCS/private files and unauthorized PHP paths. Prevent an
+  uploaded `.php` under public storage becoming executable through a broad regex.
+- Workers use root-owned systemd templates with `User`/`Group` set to the app,
+  approved working directory, restart policy and resource limits. Arbitrary start
+  commands remain app-user commands, never interpolated into a root shell unit.
+- Laravel scheduler execution is app scoped, single-instance/overlap-aware and
+  separate from the panel's own task-maintenance scheduler. Detailed schedule
+  lifecycle is finalized in phase 17.
+- Add static-site routing only through the same managed domain/path boundary.
+  Nginx access to public assets must not imply access to private secrets/storage.
+
+#### Transactional configuration workflow
+
+Use versioned agent-selected templates for Nginx and FPM, not caller-uploaded root
+configuration. Domain conflicts, port/socket collisions, directive escaping and
+path resolution are independently validated against the registry. Preserve panel
+routing and unmanaged host configuration; beta clean-host policy is not permission
+to delete an unrelated site on an existing development VM.
+
+For each config change: acquire the relevant per-resource/global lock -> render to
+trusted staging -> retain known-good files -> validate candidate FPM and complete
+Nginx configuration -> publish controlled files -> reload -> verify service/HTTP
+health -> journal commit or restore. Define multi-file generation identity so a
+crash cannot leave half of one version mixed with half of another.
+
+`nginx -t` validates the global configuration, not just the new file. Unmanaged
+syntax errors can block a managed change: report that dependency without editing
+unmanaged files. Reload failure does not justify force-restarting a working server.
+Restore the previous managed generation, revalidate, recover/reload as appropriate
+and record whether old traffic actually remains healthy. Apply equivalent FPM
+failure/recovery behavior, including a partial pool reload and socket mismatch.
+
+Health requests use registered app endpoints/paths and deadlines, not arbitrary
+caller URLs. HTTPS, renewal and certificate activation are phase 16; initial
+component tests use explicitly HTTP test domains without pretending TLS is ready.
+Full release activation and user-facing deploy/rollback orchestration are phase 15.
+
+#### Proposed modules and slices
+
+Rust modules may include `providers/php_laravel`, `operations/approved_packages`,
+`config/nginx`, `config/php_fpm` and `services/systemd`, created only when needed.
+Their outputs are typed configuration manifests, managed IDs and health evidence;
+PHP services consume these through the existing task/real-adapter pipeline.
+
+| Slice | Deliverable | Required proof |
+|---|---|---|
+| P14.1 Provider/runtime policy | Lifecycle types, native PHP matrix and package primitive | Only approved packages/repos/versions selectable; APT conflicts handled |
+| P14.2 Unprivileged build | Composer/source checks, app env/storage and optional build policy | Scripts run as app UID; key/data persist; failures do not touch active app |
+| P14.3 FPM/worker isolation | Pool/socket and root-owned app-user service templates | App A/B socket/code/secret isolation and process identities verified |
+| P14.4 Nginx/domain templates | Managed public routing, conflict checks and escaped inputs | `.env`/VCS/uploads-PHP/root-path injection cannot bypass policy |
+| P14.5 Config transaction/recovery | Validation, generation publish, reload/health rollback | Invalid global/FPM config, failed reload and crash retain/recover old service |
+| P14.6 VM provider integration | Real sample Laravel/static site plus observed results | Actual reachable HTTP app and safe service/log evidence on Ubuntu VM |
+
+Tests cover incompatible PHP/extensions/lockfile, failed dependency scripts, missing
+DB config, malicious template values, key persistence, read-only storage, domain
+duplication, Nginx/FPM permission failures, global invalid includes and reload crashes.
+Use test apps with no production data. Boundary tests inspect actual process UIDs,
+public/private access and service state, not just rendered configuration strings.
+
+**Exit gate:** a sample Laravel release runs through its isolated FPM pool and
+managed HTTP site; config validation/recovery and build isolation pass on the VM.
+The provider records exact supported prerequisites and leaves traffic/release
+promotion to the orchestration designed next.
 
 ### Phase 15 — Real deployment orchestration, logs, health and rollback
+- Status: planned; first genuine end-to-end native deployment milestone.
 - Depends on: 4, 7, 11, 14.
-- Slices: release directories, health gates, symlink/traffic switch, retention,
-  migrations policy, worker handling, restart/logs, code rollback and partial-failure
-  reconciliation including actual worker/agent interruption.
-- Exit: UI deploy/redeploy/restart/logs/rollback pass on disposable Ubuntu VM;
-  persistent data survives. No automatic database rollback claim.
-- Milestone: first complete native Laravel deployment vertical slice.
+
+#### Objective and admission rules
+
+Join the tested account/source/provider/config primitives into one durable operation
+requested by the existing Laravel deployment/task UI. Preserve current approvals,
+immutable revisions, idempotency and progress/event types; extend them only where
+the real boundary needs additional observable states.
+
+Before agent submission, the panel rechecks admin/MFA/recent approval, app ownership,
+revision/secret versions, capability, archive state and resource conflicts. The
+agent independently validates that approved plan against its registry. Accepted
+work continues journaled reconciliation after browser/worker disconnection; no
+later poll may accidentally submit another deployment.
+
+Switching from fake to real mode must not convert fake releases, certificates or
+services into registry evidence. Existing desired configuration may be used, but
+the first real deployment provisions/observes actual resources. Pin task mode,
+managed-host identity, app/release IDs and configuration fingerprint; reject mixed
+mode/host/revision operation state rather than silently reinterpret it.
+
+#### Release manifest and checkpoint sequence
+
+Every release has an agent-generated ID and manifest containing app/revision,
+provider/runtime, pinned source commit, secret-version references, build result,
+health policy, migration decision, service/config generation and previous release.
+Track staged, built, prepared, health-checked, activated and verified checkpoints.
+Keep shared uploads/data outside releases. Materialize a per-release environment
+snapshot of approved values so staging does not overwrite the live release's
+environment; app keys remain stable unless explicitly rotated.
+
+Recommended sequence:
+
+1. Persist acceptance/plan and acquire the application deployment lock. Reject or
+   queue another conflicting deploy/restart/rollback according to explicit policy.
+2. Create a unique staging release, prepare source and dependencies as the app user,
+   and journal ready artifacts. Failure here leaves active release/traffic unchanged.
+3. Prepare runtime/services and validate candidate managed config without exposing
+   unvalidated code publicly. Bound resource use so staging cannot exhaust the VPS.
+4. Apply the approved migration policy at its documented irreversible checkpoint.
+   Coordinate app workers/scheduler and maintenance mode when old/new code cannot
+   safely share the same schema. Record DB impact even if later health fails.
+5. Check candidate health through a private/registered route or provider probe.
+   Health GETs are bounded, targeted and do not intentionally mutate user data.
+6. Atomically change the agent-controlled activation pointer on its filesystem and
+   publish any necessary managed config generation. Reload/restart FPM/workers and
+   routing using phase 14's recovery protocol; journal each side effect.
+7. Verify actual public routing and app/worker readiness, then mark the release
+   active and the task successful. An accepted request, running process or symlink
+   update alone is not success.
+8. Retain the last known-good supported release and bounded history. Clean only
+   eligible managed, inactive releases; never shared storage, active/pinned releases
+   or artifacts still referenced by a running recovery/rollback task.
+
+Do not promise zero downtime by default. Choose and test the first Laravel activation
+strategy (such as controlled FPM/worker reload with brief maintenance when necessary).
+Blue/green routing is a later optimization if resource/health requirements justify it.
+Document OPcache/realpath cache and worker-version behavior: changing `current` does
+not automatically guarantee old PHP workers execute the new code.
+
+#### Migrations, rollback and cancellation semantics
+
+- `run_migrations` is explicit in approved intent. Execute only as the app user with
+  approved app database credentials, not the database administrator or root.
+- A backup requirement can precede consequential migrations; until managed backups
+  exist, require an explicit administrator-supplied recovery prerequisite or refuse
+  that policy. Do not label a fake backup as satisfying it.
+- A crash during migration can leave non-transactional DDL/data changes. Reconcile
+  evidence and mark recovery-required/unknown where necessary; do not blindly run
+  the migration command again because the execution receipt was lost.
+- Supported rollback selects a real, same-app/same-host known release with compatible
+  runtime/config/environment and acceptable DB schema. No arbitrary release path,
+  fake release ID or automatic `migrate:rollback` reversal.
+- Persistent uploads/database changes remain after code rollback. If old code is
+  incompatible, retain a clear recovery-required state and operator runbook rather
+  than falsely report restored health.
+- Cancel before activation can stop/clean staging if safe. During package/migration/
+  config activation, cancellation may be unsupported or delayed to a safe checkpoint.
+  Never acknowledge full rollback solely because the child process was terminated.
+
+#### Durable recovery and observability
+
+Journal before/after irreversible actions and inspect actual pointer/config/service/
+DB evidence on restart. Reconcile panel task/deployment and agent execution/release
+records; the observed active release comes from the agent, not UI optimism. Unknown
+execution never updates the active-release pointer in panel state.
+
+Expose safe phase progress, elapsed time, bounded redacted stdout/stderr, structured
+health/error codes and recovery notes through existing task events. Artifact IDs,
+commit IDs and provider versions are safe metadata; decrypted env/build credentials
+and database dumps are not logs. Inspect accepted work even after actor revocation;
+new mutations/retries/cancel authority are independently validated.
+
+Restart uses the registered app's services with health verification. Log inspection
+is bounded by app/resource/file identity and retention, not a generic root file-reader.
+Keep service/worker observations distinct from successful application HTTP health.
+
+| Slice | Deliverable | Required proof |
+|---|---|---|
+| P15.1 Deployment admission/manifest | Real mode/host/revision binding and app lock | Fake/cross-app/stale/duplicate intents cannot activate resources |
+| P15.2 Staging/build checkpoints | Repeatable release staging and per-release env | Failed build preserves live app, key and persistent data |
+| P15.3 Migration/worker policy | Opt-in migrations, maintenance/worker coordination | DB-impact and interruption cases never claim automatic data rollback |
+| P15.4 Health-gated activation | Pointer/config publish, FPM/worker update and final checks | No traffic to failed candidate; actual new release is healthy |
+| P15.5 Rollback/retention/restart | Supported real-release rollback and safe cleanup | Old code restoration verified; active/shared/pinned data retained |
+| P15.6 Crash/cancel reconciliation | Lost receipt, process kill and ambiguous checkpoints | One intent remains inspectable; no unsafe duplicate mutation |
+| P15.7 Web-to-VM vertical slice | Real UI deploy/redeploy/log/restart/rollback | Browser reconnect and agent/worker restart preserve truthful state |
+
+Failure-injection matrix: source/build failure, unhealthy candidate, global config
+failure, failed FPM/worker reload, migration failure/unknown completion, disk-full,
+crash before/after pointer switch, duplicate submit, role/revision change before
+acceptance, cancel races, and cleanup while a release is referenced. Run at least
+two releases of an app with persistent uploads and a database-backed feature.
+
+**Exit gate / milestone:** an authenticated administrator can deploy a reachable
+Laravel app, redeploy, inspect logs, restart and perform a supported code rollback
+entirely through the real panel/agent on the VM. Persistent data survives, health
+is evidenced and partial failures have tested recovery, not cosmetic success states.
 
 ### Phase 16 — Real TLS lifecycle
+- Status: planned; requires a test domain/DNS and publicly reachable disposable VM.
 - Depends on: 8, 15.
-- Slices: provider abstraction, Let's Encrypt staging/HTTP-01, renewal/expiry,
-  uploaded certificate/key validation, transactional activation and key storage.
-- Exit: real-DNS HTTPS/renewal pass; failure preserves working certificates.
+
+#### Approach and prerequisites
+
+Connect existing certificate/domain intent to a bounded ACME provider and managed
+certificate installation. Initial provider is Let's Encrypt HTTP-01; exercise its
+staging service first. Confirm DNS, HTTP reachability, supported domain names,
+operator contact, outbound access and ACME client/library before issuing real certs.
+No wildcard/DNS-01 support or automatic DNS-account provisioning is claimed here.
+
+Keep ACME account identity/key, certificate orders and private-key references in
+restricted agent-owned state. The panel stores metadata and encrypted supplied
+material, never public key-file URLs. Issuance/renewal executes as durable agent
+work through the same approved task interface, not inline PHP shell commands.
+
+#### Issuance, installation and renewal flow
+
+1. Resolve the managed domain/app and approved provider; check conflicts, hostname,
+   DNS/reachability evidence, existing certificate state and expiry policy.
+2. Provision an agent-controlled HTTP-01 challenge location that cannot execute
+   app PHP or allow the application to forge another domain's challenge. Preserve
+   panel/app routing and serve only bounded challenge tokens for active orders.
+3. Create/resume the ACME order with provider-aware backoff and rate-limit handling.
+   Record authorization/order IDs and deadlines; reconnect never creates endless
+   new orders or consumes provider limits unnecessarily.
+4. Validate returned/supplied leaf and chain: private-key match, hostname coverage,
+   validity, supported algorithm/strength and appropriate server-certificate use.
+   Uploaded files are untrusted/bounded; error messages contain no key/passphrase.
+5. Stage root-owned restricted cert/key files and a candidate Nginx generation;
+   validate before activation, reload, and verify the served certificate via an
+   actual TLS handshake. Persist success only after observed HTTPS health.
+6. Schedule renewal early enough for retry/alerting, with one active order per
+   domain/certificate scope. Renewals are system maintenance under a documented
+   standing policy; changing domain/provider/key policy requires fresh approval.
+7. Retain the working generation on failure, remove stale challenge material, and
+   show real expiry/last attempt/next retry/error in the panel. Failed renewal is
+   not permission to replace HTTPS with a broken certificate or silently enable HTTP.
+
+Do not enable HSTS or irreversible redirect policies before actual HTTPS succeeds;
+introduce them deliberately with recovery implications. Certificate removal/rotation
+requires explicit intent. Account/key recovery and backup dependencies feed phase 19.
+
+| Slice | Deliverable | Required evidence |
+|---|---|---|
+| P16.1 Provider/order state | ACME adapter, account policy, durable bounded orders | Staging issuance/resume and rate-limit errors are handled |
+| P16.2 Challenge ownership | Managed HTTP-01 routing/token cleanup | Another app/domain cannot supply or read challenge secrets |
+| P16.3 Certificate activation | Key/chain validation, file modes, transactional reload | Wrong key/name/expired chain denied; failed reload retains old HTTPS |
+| P16.4 Renewal/alerts | Maintenance policy, scheduling, backoff and expiry UI | Renewal survives disconnect/restart; failure is visible before expiry |
+| P16.5 Supplied certificates/VM proof | Integrate current upload model with real install | Supplied/encrypted-key paths and actual TLS handshake pass |
+
+Test wrong DNS/port, challenge collision, revoked authorization, provider outage,
+rate limit, bad/mismatched supplied material, expiry, permissions, crash between
+issuance/activation, renewal duplicates and failed Nginx reload. Inspect private-key
+access as panel/app users and ensure logs/journals contain references only.
+
+**Exit gate:** actual domain HTTPS, staged-to-production issuance, supplied certs,
+renewal and failure recovery pass on the VM; observed certificate identity/expiry
+is accurate and the previous healthy configuration survives failed changes.
 
 ### Phase 17 — Real services, packages and scheduled jobs
+- Status: planned; extends the internal package/service primitives from phase 14.
 - Depends on: 8, 12, 15.
-- Slices: allowlisted packages with package-manager locking, managed services,
-  app-user timers/jobs and logs, read-only firewall status, safe failure/retry.
-- Exit: app-scoped jobs and managed actions execute correctly; package operations
-  coordinate; unmanaged services and arbitrary root commands are rejected.
+
+#### Service and package controls
+
+Expose real observations/actions through the existing server UI and task pipeline.
+Service IDs resolve to agent-owned unit definitions and app identity. Only explicitly
+managed services support approved start/stop/restart; do not accept arbitrary unit
+names or grant control over SSH, firewall, the host init system or unrelated services.
+Panel/agent maintenance services use a separate upgrade/recovery policy in phase 20.
+
+Package requests select an approved catalog ID/version policy, not APT arguments or
+repository URLs. Reuse the phase-14 package primitive, serialize package-manager
+access, respect external APT/dpkg locks and never delete lock files to force progress.
+Record actual installed version, configured repository and completion evidence.
+Installation failure can leave partial dpkg state: report/reconcile it and offer a
+bounded approved repair procedure, not blind retry or a generic root terminal.
+
+Review consequential package maintainer scripts, dependency removals, service restart
+effects and disk/network/time limits before advertising catalog entries. Use configured
+trusted Ubuntu repositories and normal authenticity verification; no unsigned package
+downloads, implicit external repository addition or broad OS upgrade endpoint.
+
+#### Hosted scheduled-job lifecycle
+
+Map existing schedule UUID/revision to agent-owned systemd service/timer definitions
+(preferred initial backend) or a deliberately selected cron backend. Each command
+runs as its app UID with registered working directory and environment references.
+No root owner option, panel-maintenance credentials or unbounded executable/path.
+
+Validate expression/timezone and define conversion limits. Reject unsupported cron
+semantics instead of approximating them silently. Specify missed-run behavior,
+daylight-saving changes, overlap policy, execution deadline, output retention and
+whether a manual run uses the same job identity/policy. Saving desired state alone
+does not mean the timer has been installed or enabled.
+
+Apply/update using staged unit validation, atomic root-owned files, daemon-reload,
+enable/start and observed-state verification. Removal disables the registered timer
+and handles any running job through its cancellation policy; retain history/data.
+On app archive/decommission, identify schedules by registry association, not filename
+patterns that may delete another app's jobs.
+
+Firewall remains read-only: show supported backend/status with sampled time. No
+automatic destructive rule changes or SSH access removal before a separate tested
+network-recovery design. Metrics/log/service inspection uses bounded managed IDs.
+
+| Slice | Deliverable | Required evidence |
+|---|---|---|
+| P17.1 Managed service observation/control | Real status/health and allowlisted lifecycle tasks | Cross-app/raw-unit targets denied; observed outcome matches systemd |
+| P17.2 Approved package UI execution | Catalog mapping, lock coordination and installed state | Duplicate/concurrent requests do not fight APT or claim partial success |
+| P17.3 Schedule rendering/installation | App-user unit/timer backend and expression policy | Real execution UID, timezone/overlap and safe root-owned config verified |
+| P17.4 Schedule history/update/remove | Run IDs, bounded logs, disable/cancel and retention | Crash/update/missed-run behavior preserves history and ownership |
+| P17.5 Firewall/status integration | Read-only backend adapter and error states | Offline/unsupported/stale status is accurate; no mutation path |
+
+VM tests cover unrelated service targets, bad unit/command injection, blocked APT
+locks, interrupted installation, failed reload/restart, app A/B schedule isolation,
+DST/overlap, runaway jobs, log floods, archive/removal races and worker reconnect.
+
+**Exit gate:** genuine managed actions, approved installs and app-owned schedules
+work through the panel with bounded failure/recovery. Unmanaged/root commands and
+firewall mutations remain unavailable; resulting state is observed, not assumed.
 
 ### Phase 18 — Application database provisioning
+- Status: planned; user must choose the first managed engine before implementation.
 - Depends on: 8, 12, 15; engine decision required.
-- Slices: first engine module, isolated app databases/users, credentials/rotation,
-  connection checks, import/export constraints and explicit deletion semantics.
-- Exit: Laravel app uses a provisioned database; cross-app database access fails.
+
+#### Engine scope and privilege model
+
+MariaDB is the proposed first Laravel-oriented engine, not a confirmed decision.
+Implement/test one engine and version family on the supported OS before adding
+PostgreSQL or multiple versions. Reuse the existing database-request model and
+approved package/service primitives; hosted databases remain separate from panel
+SQLite. Initial provisioning manages a local engine, not arbitrary remote DBA access.
+
+An engine-admin connection belongs only to the agent and uses controlled local
+socket/authentication or root-protected credentials. It is never an app secret,
+task parameter, browser field or log. Application principals receive only their
+registered database/schema privileges; no global administration, grant option,
+server filesystem access or command/program-execution privileges.
+
+Generate actual DB/user identifiers from managed resource IDs using engine-specific
+length/quoting rules. Display labels are not interpolated SQL. Parameterize values
+and use safe identifier construction for DDL that cannot bind identifiers. Reject
+protected/system DB names regardless of input or a corrupted association.
+
+#### Provision, rotate and remove workflow
+
+1. Validate request UUID/app/engine/revision and provision policy; check engine
+   readiness, disk/capacity and registered resource ownership. Existing unmanaged
+   databases/users are conflicts, not candidates for silent adoption.
+2. Journal allocation; create the managed DB/schema and application principal with
+   a cryptographically generated, bounded credential. Grant only required app
+   access, including approved migration DDL within that database where necessary.
+3. Bind generated or pre-approved credential versions through the protected
+   secret channel/storage. Perform a real connection check as the app principal.
+   Record instance/DB/user IDs and actual readiness before panel reports success.
+4. Deliver app environment references into a new deployment revision, not a live
+   plaintext overwrite. Deploy/check the Laravel DB-backed feature with that role.
+5. Rotation uses a tested engine-specific overlap/new-principal/maintenance policy;
+   update app revision, verify connections and only then retire the old credential.
+   Do not assume both engines support dual passwords or that existing pooled
+   connections prove the next connection will succeed.
+6. Delete/disable is a separate consequential approved operation. Check active
+   deployment/schedule/backup references and recovery prerequisites. Drop only the
+   exact registered DB/principal, retain audit/history, and never couple panel app
+   archive to automatic database destruction.
+
+Partial failures are journaled because DDL may commit independently of the operation.
+Reconcile created DB/user/grants before retry; remove only proven newly created empty
+resources. A failure after data is written requires recovery rather than destructive
+cleanup. Passwords remain encrypted/write-only and absent from client argv/errors.
+
+#### Data movement and isolation
+
+Define the supported logical export/import format, engine/version compatibility,
+size/deadline and consistency limits. Dumps are sensitive artifacts, not task logs.
+Import app data as a restricted app role into an approved target/staging database;
+never execute an untrusted dump using engine-admin privilege. Do not accept arbitrary
+SQL, server filesystem paths or a generic database-console endpoint. Real scheduled
+backup/restore consistency and encrypted retention are finalized in phase 19.
+
+MariaDB testing must deny cross-database/global/FILE-like access. PostgreSQL testing,
+if selected, must cover database/schema ownership, PUBLIC/default grants, connect
+permissions and non-superuser/non-role-creation/non-server-file execution. Inspect
+actual grants and query as app A/B; successful connections alone are not isolation.
+
+| Slice | Deliverable | Required evidence |
+|---|---|---|
+| P18.1 Engine/policy selection | Confirmed engine/version, local admin auth, identifier/grant rules | Protected names and unsupported targets fail without SQL side effects |
+| P18.2 Journaled provisioning | Registered database/user/grants and connection check | Partial/duplicate requests create one resource without adopting unrelated DBs |
+| P18.3 App integration/rotation | Encrypted credential references and deploy/health cutover | Laravel data works; no credential leak or silent loss during rotation |
+| P18.4 Bounded data movement/deletion | Supported import/export and explicit destructive policy | Dumps remain private; unknown/referenced/system resources cannot be dropped |
+| P18.5 VM isolation/recovery | Two apps plus interrupted DDL/rotation scenarios | Cross-app/global privileges denied; recovery preserves existing data |
+
+**Exit gate:** the selected engine provisions an isolated database used by a real
+Laravel app; actual grants, secret handling, rotation and partial-failure behavior
+pass on the VM. Only tested engine/version/data-movement capabilities are advertised.
 
 ### Phase 19 — Backup, restore and recovery
+- Status: planned; requires a separate disposable restore VM and key-custody decision.
 - Depends on: 15, 16, 17; include 18 for managed databases.
-- Slices: panel DB/config, agent registry, keys, app metadata/data and databases;
-  consistency/retention, encrypted backup/key custody, disk-full handling and runbook.
-- Exit: separate-VM restore verifies access, identities, secrets and app health.
+
+#### Backup scope and trust
+
+Extend the existing backup-policy/history UI with real backup artifacts and verified
+restore evidence. A simulated backup never satisfies retention, migration recovery
+or upgrade safety. Define separate panel/control-state, application-data and database
+scopes, plus a coordinated full-hostnur recovery set; this is not a promise to image
+every operating-system file on the VPS.
+
+Required recovery inventory: panel SQLite/config and APP_KEY; admin/MFA/setup state;
+agent registry/execution journal and any credential encryption keys; app/revision/
+deployment identity manifests; persistent uploads; supported DB dumps; source/DB
+credential versions; certificates/ACME account keys; generated-service/template
+versions. Derived config can be rebuilt from verified metadata where documented.
+
+Agree encryption/key custody and the first destination (restricted local storage
+plus an operator-controlled off-host copy/provider). Use established authenticated
+encryption and an independently recoverable key/password, never custom crypto.
+Do not place the only decryption key inside the encrypted backup it unlocks or rely
+solely on a panel APP_KEY that was lost with the server. Record rotation/recovery
+procedure without committing live keys. Backups are never public web downloads.
+
+#### Consistent backup workflow
+
+1. Validate policy/resource scope, approvals, destination access, capacity, retention
+   and declared consistency level. Serialize conflicting backup/restore/upgrade work.
+2. Establish a short consistent control-state checkpoint and prevent deployments/
+   secret rotations from mixing revisions during capture. Use SQLite online-backup
+   or a tested coordinated checkpoint, not blind copying of a live DB/WAL file.
+3. Capture app data with its documented quiescence/snapshot policy; use engine-native
+   consistent dumps for managed databases. Hot-copying mutable uploads plus a later
+   DB dump does not automatically give cross-resource application consistency.
+4. Write a versioned manifest: scope, resource IDs/revisions, OS/engine/provider/
+   schema versions, capture times, consistency policy, sizes and integrity hashes.
+5. Stream bounded content into protected staging, encrypt/authenticate, finalize
+   atomically and transfer to the approved destination. Redact progress and keep
+   dump/key material out of ordinary task events and failed-job payloads.
+6. Verify artifact integrity/authentication and destination durability before
+   marking the backup completed. Mark restore-tested separately: successful upload
+   or checksum alone is not proof that recovery works.
+7. Prune only eligible verified backups under the policy. Preserve a last known-good
+   recovery set and backups pinned by upgrades/restores. A failed new backup must
+   not delete the last useful one.
+
+Handle disk-full, permission/network loss, cancellation, incomplete manifests,
+checksum failure and process interruption with explicit partial/failed states.
+Unverified temporary data is cleaned safely without deleting completed artifacts.
+Retry uploads using the same artifact identity; do not recapture silently under
+the same identity with different content.
+
+#### Restore and operator recovery
+
+Restore begins on a separate supported clean VM. Verify artifact/key, compatibility,
+expected scope and destructive target approval before stopping services or extracting.
+Bound archive entries/size and reject traversal, absolute paths, unsafe links/devices
+and unexpected owners. Never extract arbitrary archive paths as root.
+
+Put the target panel/worker/agent in maintenance; recreate managed OS identities
+without UID conflicts; restore control state and keys consistently; reconcile logical
+host/resource identity with the new machine/boot identity. Handle old journal entries
+as recovered/needs-reconciliation, not pending work to execute automatically.
+Restore shared data/DBs/secret versions, regenerate managed configs and validate them,
+then verify administrator access/MFA, app health, TLS, workers and schedules before
+enabling normal traffic. Do not duplicate the live source host's schedules or outbound
+jobs during a restore drill; use isolated DNS/network/test destinations.
+
+The runbook states what is recoverable, data-loss window, required keys/artifacts,
+version limitations, expected downtime, how to recover without a functioning web
+panel, and how to safely fail a restore before/after partial data replacement.
+
+| Slice | Deliverable | Required evidence |
+|---|---|---|
+| P19.1 Recovery inventory/policy | Scope/consistency/retention and key-custody decision | Every secret/identity needed for recovery has a documented recoverable source |
+| P19.2 Real artifact creation | Consistent DB/data capture, manifest and authenticated encryption | Live WAL/mutable-data cases and key-loss errors handled correctly |
+| P19.3 Destination/retention | Verified transfer, pinning, prune and failure cleanup | Network/disk failure preserves previous recovery sets |
+| P19.4 Restore orchestration | Safe extraction, identity/schema/config reconciliation | No root path escape, unexpected replay or host identity confusion |
+| P19.5 Separate-VM drill/runbook | Full restore plus scoped restore examples | Real admin/MFA, data, app, TLS and service health recovered |
+
+**Exit gate:** a separately provisioned VM restores a genuine encrypted recovery set
+and passes the documented checks. Evidence includes artifact ID, versions, key access
+method, consistency limits and observed recovery outcome; no fake/untested backup
+can be represented as restore-ready.
 
 ### Phase 20 — Packages, installer, signed releases and upgrades
+- Status: planned; domain, license, signing identity and distribution hosting need decisions.
 - Depends on: 2, 16, 19; signing/domain/hosting decisions required.
-- Slices: `hostnur`/`hostnur-agent` Debian packages, systemd units/permissions,
-  idempotent clean-host installation, verified bootstrap, secure local onboarding,
-  release CI/artifacts/signatures, version compatibility, pre-upgrade backups,
-  migration/health recovery and signed APT hosting before wider distribution.
-- Exit: clean Ubuntu installation, verified artifacts, data-preserving upgrade
-  and failed-upgrade recovery pass. Each substantial package/release task is a
-  separate session; no unauthenticated public setup page.
+
+#### Packaging scope and release inputs
+
+Produce two coordinated Debian packages, `hostnur` and `hostnur-agent`, for the
+validated Ubuntu 24.04 amd64 platform. The panel package declares a compatible
+agent range and supported PHP dependencies. Database/runtime modules have explicit
+optional dependencies; installing the panel must not install every hosted stack.
+Include phase 18's backup/provisioning gates if managed databases are advertised.
+
+Resolve official domain, repository visibility/licensing, release-signing method,
+verification identity and first package host before publishing. Current GitHub
+hosting does not imply public installer assets are already available. Never publish
+placeholder installation commands as a working service.
+
+Proposed packaging files: `packaging/debian/{hostnur,hostnur-agent}/`, service/socket
+units, reviewed maintainer scripts, bootstrap installer, release manifest/verification
+instructions, and separate CI jobs for build/sign/install/upgrade VM tests. Use
+versioned templates and map release versions to Debian ordering deliberately.
+
+#### Build artifacts and installed ownership
+
+- Build Rust against the actual target ABI, not an arbitrary newer build host.
+  Validate shared-library requirements on Ubuntu 24.04. Commit dependency locks
+  and record build toolchain/source commit, artifact hashes and dependencies.
+- Package the panel with production Composer dependencies and prebuilt Vite assets.
+  Node/npm/Rust/Composer development tooling and dev-only Boost/test packages are
+  not required to run an installed panel. Test the production-only package boot.
+- Exclude development `.env`, app keys, SQLite data, credentials, caches, logs and
+  fixture-only writable state. Templates/examples are not live secrets.
+- Agent config/registry/journal and root-loaded templates remain protected; panel
+  PHP-FPM/worker runs under its dedicated unprivileged identity. Hosted users and
+  Nginx do not gain agent-socket access through a broad shared group.
+- Use production PHP-FPM/Nginx/systemd services, not `artisan serve` as a public
+  production web server. Document package locations, state dirs, owners/modes,
+  ports/socket access, queue worker and scheduler separately from local port 9000.
+- Keep generated encryption keys with preserved runtime state, not an expendable
+  packaged default. If existing encrypted state has lost its key, require recovery;
+  do not regenerate a replacement and silently make stored secrets unusable.
+
+#### Installer and secure onboarding
+
+The bootstrap detects OS/architecture, privilege and existing-host conflicts;
+installs verified versioned packages; creates service identities/state with correct
+permissions; initializes keys/schema once; checks agent/panel readiness; and prints
+local/SSH-tunnel setup instructions. Default beta target is a clean supported VPS.
+Existing unmanaged services/configuration cause an explained refusal or explicitly
+agreed migration path, not silent adoption or overwriting.
+
+Use a small reviewable HTTPS bootstrap and trusted signature/package metadata,
+with pinned verification identity/key and documented trust bootstrap. Hashes alone
+do not authenticate artifacts. No cloning/executing the latest development branch
+as root or putting private-download tokens in URLs/command output.
+
+First-run administration uses the existing local bootstrap command under the panel
+identity. No default password, public registration or unauthenticated internet setup
+page. Initial panel access is loopback/tunnel until the operator deliberately
+configures domain/TLS/access policy. Package scripts must not assume piped stdin
+can securely provide interactive passwords or print generated login credentials.
+
+Maintainer scripts are idempotent and narrowly scoped. Test first install, rerun,
+interrupted configuration and missing prerequisites. Remove/purge behavior must
+document and preserve app data/recovery keys unless a separate explicit destructive
+decommission action is approved; package uninstall is not permission to drop DBs.
+
+#### Coordinated upgrade and recovery
+
+1. Preflight panel/agent/protocol/schema compatibility, state/key access, disk space
+   and an actual verified recovery set. Block unsupported version jumps/downgrades.
+2. Stop accepting new mutations, drain or journal active operations, pause worker/
+   scheduler and take a consistent control-state backup. Keep hosted apps running
+   where the upgrade does not require their interruption.
+3. Install the coordinated packages, preserve config/secrets and migrate panel/
+   registry schema under documented locks. Do not rewrite live app data as a side
+   effect of a panel upgrade or rotate keys implicitly.
+4. Start agent, verify protocol/registry readiness, then panel/worker, routing and
+   scheduler. Check authenticated access/MFA and representative app/task health.
+   Resume pending intents only through reconciliation, not automatic journal replay.
+5. On failure, keep the system in a truthful maintenance/recovery state. A schema
+   downgrade is not necessarily reversible by installing an old binary; use the
+   tested restore path and state the data-loss/downtime boundary. Never run a blind
+   destructive migration rollback to make an upgrade appear successful.
+
+#### Signing, publication and release validation
+
+Pipeline: version tag -> component/contract checks -> build once -> production
+packages/assets -> checksums and authenticated signatures -> test exact candidate
+artifacts on clean/upgrade/restore VMs -> approved release publication. Do not rebuild
+different artifacts after the version that passed tests. Keep signing credentials
+or workload identity outside untrusted PR jobs; specify issuer/repository/workflow/
+tag identity or pinned key that users must verify and define rotation/revocation.
+
+GitHub Releases can host initial artifacts; use signed APT repository metadata
+for routine updates before wider adoption. CI passing is not an automatic decision
+to publish a public beta; phase 21's complete release gate still applies.
+
+| Slice | Deliverable | Required evidence |
+|---|---|---|
+| P20.1 Distribution/ownership decisions | Package layout, versions/dependencies, domain/signing/license | Supported matrix and verification trust are explicit |
+| P20.2 Production package builds | Compiled agent, no-dev panel/assets and units | Installed packages boot without build tools or development secrets |
+| P20.3 Bootstrap/onboarding | Verified installer, OS checks, local admin setup and idempotency | Clean VM install/rerun/interruption keeps correct permissions and no public setup |
+| P20.4 Signing/release CI | Exact artifact manifest, signatures and candidate publication | Tampered/wrong-identity artifacts are rejected; tested bytes equal released bytes |
+| P20.5 Upgrade/recovery | Drain, backup, compatible migrations and failure handling | Existing app/data/key/MFA state survives; failed upgrade recovers on VM |
+| P20.6 APT/update/uninstall lifecycle | Signed metadata, update/version policy and safe removal | Routine upgrade and removal do not silently destroy hosted resources |
+
+**Exit gate:** verified packages install on a clean supported VM, upgrade a previous
+supported version and recover from injected failure without losing panel/app/key
+state. Ownership/socket isolation, real TLS and restore checks still hold. Published
+verification/update/operator instructions match the exact tested artifacts.
 
 ### Phase 21 — Integrated beta validation and release gate
 - Depends on: 1–20 and disposable VM access.
@@ -427,6 +1391,22 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 024 — Detailed planning for phases 10–20 (2026-10-13)
+
+- User requested reading only `plan.md`, expanding each phase separately and
+  saving it before continuing, with planning only and no implementation.
+- Read the current plan's completed web milestone, contracts, task semantics and
+  phase dependencies. Preserve their implementation history and blocked checks.
+- Expanded and saved each phase separately in order: 10, 11, 12, 13, 14, 15, 16,
+  17, 18, 19 and 20. Each includes approach, boundaries, resource/state handling,
+  small implementation slices, failure tests and exit evidence requirements.
+- Proposed files/commands remain future implementation guidance, not executed work.
+- This session changes only `plan.md`; no application, agent, environment, VM,
+  dependency or package changes and no application test/CI reruns are required.
+- Verified all eleven expanded phase headings, numbered slices and exit gates;
+  `git diff --check` passed and only `plan.md` is modified. Publish this planning
+  checkpoint; implementation still starts at P10.1 in the prepared environment.
 
 ### Session 023 — Phase 9 web milestone verification (P9.1–P9.5) (2026-10-13)
 
