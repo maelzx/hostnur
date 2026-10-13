@@ -24,7 +24,10 @@
   contracts there, never scatter payload shapes in UI. Fake mode stays
   local/testing-only, is labelled `mode=fake`, and must fail closed in production.
   Durable fake execution is persisted in `fake_agent_executions` and derived from
-  the record plus a controlled clock; P3.5 contract regression remains.
+  the record plus a controlled clock. A shared fixture runner
+  (`tests/Support/ContractFixtures` + `JsonSchemaValidator`) keeps schemas, fixtures
+  and DTOs aligned; compatibility notes are in `../contracts/v1/README.md`. Phase 3
+  is complete; phase 4 (tasks, queue and audit) comes next.
 - Bootstrap uses `panel_setup` as durable one-time state, claimed in the same DB
   transaction as user creation. Do not turn deletion or repeat bootstrap into a
   reset mechanism. `is_admin` defaults false and is not mass assignable.

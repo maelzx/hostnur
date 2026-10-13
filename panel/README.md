@@ -153,10 +153,10 @@ npm audit
 npm run build
 ```
 
-Sessions 004–016 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
+Sessions 004–017 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
 24.12.0 and npm 11.6.2. The suite contains 20 administrator-bootstrap tests, 14
 authentication tests, 12 MFA-enrollment tests, 13 MFA-challenge tests, 17
-security-settings tests, 8 administrator-recovery tests, 16 agent-contract tests,
+security-settings tests, 8 administrator-recovery tests, 8 agent-contract tests,
 8 agent-availability tests, 12 fake-agent tests and two scaffold baseline tests.
 Run individual suites with:
 
@@ -198,13 +198,16 @@ invalidated sessions, unknown/non-admin targets, non-interactive refusal,
 cancellation, short/mismatched passwords, write-failure rollback and hidden,
 fallback-free password prompts. They never touch your real administrator.
 
-Agent-contract tests cover the operation catalog, valid request fixtures parsing
-into typed DTOs, request envelope round-tripping, invalid/excess/unknown/oversized
-input rejection with the expected error codes, and typed receipt/snapshot/
-capability parsing. They are pure contract tests with no network or host calls.
+Agent-contract tests drive the checked-in fixtures through a shared runner: every
+valid fixture is checked against its JSON Schema and parsed into the typed DTOs,
+and every invalid request/response fixture must fail with the machine error code
+recorded in `fixtures/invalid/manifest.json`. They also cover the operation
+catalog, envelope round-tripping and oversized-message rejection. They are pure
+contract tests with no network or host calls.
 
 The versioned agent contract lives outside the app at `../contracts/v1/`
-(JSON Schemas, operation catalog and valid/invalid fixtures); `HOSTNUR_CONTRACTS_PATH`
+(JSON Schemas, operation catalog, fixtures and compatibility notes in
+[`../contracts/v1/README.md`](../contracts/v1/README.md)); `HOSTNUR_CONTRACTS_PATH`
 overrides its location and `HOSTNUR_AGENT_MODE` selects the agent mode. The default
 `unavailable` mode binds `UnavailableAgentClient`, which reports no capabilities
 and no observations and fails every mutation closed. `real` also reports

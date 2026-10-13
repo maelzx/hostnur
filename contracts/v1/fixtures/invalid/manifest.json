@@ -1,0 +1,16 @@
+{
+    "requests": {
+        "request-extra-key.json": "invalid_parameters",
+        "request-unsupported-protocol.json": "unsupported_protocol",
+        "request-unknown-operation.json": "unsupported_operation",
+        "request-bad-uuid.json": "invalid_parameters",
+        "request-wrong-type.json": "invalid_parameters",
+        "request-unknown-parameter.json": "invalid_parameters",
+        "request-wrong-resource-kind.json": "invalid_parameters",
+        "request-missing-required-parameter.json": "invalid_parameters",
+        "request-list-parameters.json": "invalid_parameters"
+    },
+    "responses": {
+        "receipt-extra-key.json": "invalid_parameters"
+    }
+}

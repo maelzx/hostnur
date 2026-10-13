@@ -23,13 +23,12 @@ LTS on amd64, with PHP/Laravel as the first hosted application workflow.
 SQLite and database-backed queues. Local setup/run instructions are in
 [`panel/README.md`](panel/README.md); the selected local port is **9000**.
 Web-only GitHub Actions and syntax/style gates pass on PHP 8.3/8.4 and Node 24.
-Phase 1 and the phase 2 authentication milestone (administrator bootstrap,
-deliberate CLI recovery, login/logout, MFA enrollment and challenge,
-recent-password security settings) are complete. Phase 3 has started the typed
-agent contract: DTOs, strict request validation, the default
+Phase 1, phase 2 (authentication) and phase 3 (agent contract) are complete. The
+typed agent contract provides DTOs, strict request validation, the default
 `UnavailableAgentClient` with a production-safe mode guard, and a fixture-driven
 `FakeAgentClient` with durable simulated execution for local/testing, backed by the
-versioned JSON Schemas, operation catalog and fixtures in
+versioned JSON Schemas, operation catalog, fixtures and
+[compatibility notes](contracts/v1/README.md) in
 [`contracts/v1/`](contracts/v1/). See [`panel/README.md`](panel/README.md) for
 setup instructions. Run outcomes and the session handoff are recorded in
 `plan.md`.
