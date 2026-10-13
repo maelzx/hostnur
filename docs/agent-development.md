@@ -139,19 +139,50 @@ separate from hosted applications' environment variables.
   handler or systemd unit exists in this phase.
 - Development checks use temporary directories; tests do not mutate the host.
 
+## Host integration (phase 11.6)
+
+`packaging/systemd/hostnur-agent.service` runs the agent as a dedicated
+`hostnur` system user with a hardened unit (`ProtectSystem=strict`,
+`NoNewPrivileges`, empty capability set, `RuntimeDirectory=hostnur`,
+`StateDirectory=hostnur/agent`). An example config is
+`packaging/systemd/agent.toml.example`; `allowed_peer_uids` must list the panel
+identity.
+
+Verified in the Lima Ubuntu 24.04 VM (session 026):
+
+```bash
+sudo groupadd -f hostnur
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin --gid hostnur hostnur
+sudo install -m 0644 packaging/systemd/hostnur-agent.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now hostnur-agent
+```
+
+Observed: `/run/hostnur/agent.sock` is `mode=660 owner=hostnur:hostnur`; a user in
+the `hostnur` group receives `agent.capabilities` (`mode=real`, available, the four
+supported operations); an unrelated user is denied at `connect()`; and
+`systemctl restart` recreates the socket and serves again. `server.snapshot`
+returns live read-only metrics (load, memory, uptime, root-disk usage, CPU count),
+hostname and OS from `/proc`/`statvfs` — no writable operation and no shell.
+
 ## Blocked / deferred checks
 
 Recorded, not claimed:
 
 - Real GitHub Actions run: the workflow exists but cannot be observed until the
-  branch is pushed to `origin` (this session committed locally only).
-- Privileged host operations, socket/peer identity, systemd hardening and
-  installation tests require a disposable Ubuntu 24.04 amd64 VM (phase 11+).
+  branch is pushed to `origin` (these sessions committed locally only).
+- The host integration above ran on the **arm64** Lima VM. amd64 systemd/socket
+  behavior is covered by the CI build target but not yet run on an amd64 VM.
+- Cross-language end-to-end (PHP panel → live Rust agent over the socket) was not
+  run locally: PHP is not installed inside the VM. Both sides are tested against
+  the shared contract and their own framing; a live PHP↔Rust test is a follow-up
+  (CI or amd64 VM).
+- Privileged mutation handlers (users, packages, services, Nginx, TLS) remain
+  unimplemented and return `unsupported_operation`; they arrive in phases 12+.
 - Release-target (x86_64) binary execution and packaging are validated in
   phase 20.
 
 ## Next slice
 
-**P11.1** — cross-language contract: Rust DTOs/parser, framing/version
-decisions and shared fixtures agreeing with `contracts/v1` and
-`docs/agent-integration.md`.
+Phase 11 is complete. The next work is **phase 12** (Linux application isolation
+and resource reconciliation), which needs a disposable Ubuntu 24.04 amd64 VM for
+isolation evidence.

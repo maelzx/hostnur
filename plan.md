@@ -352,9 +352,11 @@ checks pass in the prepared environment and CI; exact blocked host checks and th
 first P11 slice are documented. No privileged operation support is advertised.
 
 ### Phase 11 — Real protocol, transport and execution boundary
-- Status: **in progress** — P11.1–P11.4 complete and committed (session 026). P11.5
-  blocked on a contract decision (control operations for capabilities/inspect/cancel);
-  P11.6 (VM systemd/socket integration) pending.
+- Status: **complete (P11.1–P11.6)** in session 026. The Rust agent builds/serves the
+  real framed, peer-checked transport with a durable journal and bounded process
+  primitive; the panel has the `RealAgentClient`. Real systemd/socket integration
+  verified on the arm64 Lima VM (amd64 is CI-only for now). Privileged mutation
+  handlers remain unimplemented by design (phases 12+).
 - Depends on: 3, 10.
 
 #### Objective and contract migration
@@ -1424,15 +1426,34 @@ ask only when the choice materially changes scope, cost, access, or product beha
   `cargo test --locked` — **92 tests passed** (54 unit + 8 CLI + 7 contract + 7
   journal + 7 process + 9 transport). Manual e2e: agent bound a `0660` UDS, accepted
   a peer-authorized framed request, and shut down cleanly on SIGTERM.
-- Blocked (material decision, not implemented): the frozen `contracts/v1` catalog has
-  no wire operations for the `AgentClient` control methods `capabilities()`,
-  `inspect()` and `cancel()`. P11.5 needs new control operations (or another defined
-  channel) so the PHP real adapter and the Rust dispatcher can agree; adding v1
-  catalog operations is an additive contract change. This is recorded for the user
-  to confirm before P11.5 proceeds.
-- Next slice: **P11.5** (PHP real adapter) after the control-operation decision, then
-  **P11.6** (VM systemd/socket integration). Commits this session: `f3a7cf4`,
-  `f792506`, `3daba42`, `40fa8e8` (local only).
+- P11.5 (user approved additive `agent.*` control operations): added
+  `agent.capabilities`, `agent.inspect` (`execution_id`), `agent.cancel`
+  (`execution_id`) to `contracts/v1/catalog.json` with fixtures; implemented the
+  Rust `AgentHandler` dispatch (control ops + read-only `server.snapshot`; mutations
+  return `unsupported_operation`) and the PHP `RealAgentClient` +
+  `UnixSocketAgentTransport` (length-prefixed, bounds-checked, fail-closed) wired
+  through `AgentClientFactory` so `real` mode never falls back to fake, plus
+  `hostnur.agent.socket_path`/timeout config and a `config/hostnur.php` agent block.
+- P11.6: added live read-only observation (`observe.rs`: load, memory, uptime,
+  root-disk usage, CPU count from `/proc`/`statvfs`) and systemd packaging
+  (`packaging/systemd/hostnur-agent.service`, `agent.toml.example`). Verified on the
+  Lima Ubuntu 24.04 VM: service active as a dedicated `hostnur` user, socket
+  `mode=660 owner=hostnur:hostnur`; a group member receives `mode=real` capabilities;
+  an unrelated user is denied; `systemctl restart` recreates the socket and serves.
+- Checks: Rust `fmt`/`clippy -D warnings`/`build --locked`/`test --locked` — **100
+  tests passed** (56 unit + 8 CLI + 7 contract + 6 dispatch + 7 journal + 7 process +
+  9 transport). PHP (host, PHP 8.4/Composer 2.9.5): `php artisan test --compact` —
+  **254 tests / 1042 assertions passed**; `vendor/bin/pint`, `composer check:syntax`,
+  `composer validate` (known license warning) passed. Local panel setup used
+  project-local `composer install` + `npm ci`/`npm run build` (assets are required
+  for HTTP tests).
+- Blocked/deferred: real GitHub Actions run still pending (local-only commits);
+  host integration ran on arm64 (amd64 is CI-only); a live PHP↔Rust end-to-end test
+  was not run (PHP is not installed in the VM) — both sides are covered by the
+  shared contract/fixtures and their own framing tests.
+- All committed locally: `f3a7cf4`, `f792506`, `3daba42`, `40fa8e8`, `ec8d695`
+  (P11.5), plus the P11.6 commit. Next slice: **phase 12** (Linux application
+  isolation), which needs a disposable amd64 VM.
 
 ### Session 025 — Phase 10 Rust foundation (P10.1–P10.5) (2026-10-13)
 
@@ -2368,15 +2389,12 @@ The panel is independently runnable and tested; the agent crate builds, tests an
 runs unprivileged in the Lima VM. See `docs/web-milestone.md` and
 `docs/agent-development.md` for passed gates, blocked checks and acceptance maps.
 
-Phase 11 is **in progress**: P11.1–P11.4 are complete (session 026). The next work
-is **P11.5 (PHP real adapter)**, which first needs a decision on control
-operations: the frozen `contracts/v1` catalog cannot express the `AgentClient`
-control methods `capabilities()`/`inspect()`/`cancel()`. Additive control
-operations (e.g. `agent.capabilities`, `agent.inspect`, `agent.cancel`) are proposed
-so the PHP adapter and Rust dispatcher agree; confirm before implementing. Then
-**P11.6** (VM systemd/socket integration). Work in the Lima Ubuntu 24.04 VM
-(`agent/`); the PHP side runs on the host (PHP 8.4/Composer 2.9). Local web work
-continues on port 9000 with `HOSTNUR_AGENT_MODE=fake`.
+**Phase 11 is complete** (P11.1–P11.6, session 026). The next work is **phase 12
+(Linux application isolation and resource reconciliation)**, which needs a
+disposable Ubuntu 24.04 **amd64** VM for isolation evidence. Continue the agent in
+the Lima VM (`agent/`); the PHP panel runs on the host (PHP 8.4/Composer 2.9).
+Local web work continues on port 9000 with `HOSTNUR_AGENT_MODE=fake`. A live
+PHP↔Rust end-to-end test remains a recorded follow-up.
 
 Push the phase-10 commit to observe the agent CI workflow; a real CI run is still
 outstanding. The remaining genuine web gates (real browser keyboard/screen-reader
@@ -2391,14 +2409,13 @@ isolation) are unchanged and recorded in `docs/web-milestone.md`.
 - Strict Composer validation awaits a project license decision; the normal
   metadata check passes with that warning. PHP 8.3/8.4 CI now passes.
 - Rust is available in the prepared Lima Ubuntu 24.04 **arm64** VM; the pinned
-  1.99.0 toolchain was verified there. Phase 10 is complete locally. The agent CI
-  workflow's real run is pending a push (this session committed locally only).
-- Disposable Ubuntu 24.04 **amd64** VM access is still required for real
-  install/systemd/socket/TLS/upgrade/restore/isolation gates (phase 11+); those
-  remain unverified until supplied.
-- P11.5 awaits a contract decision: `contracts/v1` has no wire operations for the
-  `AgentClient` control methods `capabilities()`/`inspect()`/`cancel()`. Additive
-  `agent.*` control operations are proposed; confirm before implementing.
+  1.99.0 toolchain was verified there. Phases 10 and 11 are complete locally. The
+  agent CI workflow's real run is pending a push (sessions committed locally only).
+- Disposable Ubuntu 24.04 **amd64** VM access is still required for genuine amd64
+  install/systemd/TLS/upgrade/restore/isolation gates (phase 12+); those remain
+  unverified until supplied.
+- A live PHP↔Rust cross-language end-to-end test (panel over the socket to the real
+  agent) is a recorded follow-up; PHP is not installed in the VM.
 - Official domain, Git authentication details, database engine, release signing,
   and license await the decision checkpoints listed in section 6.
 

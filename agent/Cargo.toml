@@ -9,7 +9,7 @@ publish = false
 
 [dependencies]
 getrandom = "0.4.3"
-nix = { version = "0.31.3", features = ["socket", "user", "fs", "signal", "process"] }
+nix = { version = "0.31.3", features = ["socket", "user", "fs", "signal", "process", "hostname"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"

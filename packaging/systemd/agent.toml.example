@@ -1,0 +1,13 @@
+# Example Hostnur agent configuration (install as /etc/hostnur/agent.toml,
+# root-owned and not web-writable).
+#
+# allowed_peer_uids must list the OS UID(s) of the panel/queue-worker identity
+# that is permitted to connect. An empty list denies every peer.
+
+version = 1
+socket_path = "/run/hostnur/agent.sock"
+state_dir = "/var/lib/hostnur/agent"
+log_level = "info"
+socket_mode = 432                 # 0o660, owner hostnur:hostnur
+connection_read_timeout_seconds = 5
+allowed_peer_uids = []

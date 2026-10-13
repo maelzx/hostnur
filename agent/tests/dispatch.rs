@@ -77,7 +77,9 @@ fn server_snapshot_is_read_only_real_mode() {
         .unwrap();
     assert_eq!(body["mode"], "real");
     assert_eq!(body["available"], true);
-    assert!(body["metrics"].as_array().unwrap().is_empty());
+    // Metrics are read live from the host; the exact count is host-dependent.
+    assert!(body["metrics"].is_array());
+    assert!(body["metrics"].as_array().unwrap().len() <= 100);
 }
 
 #[test]

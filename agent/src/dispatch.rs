@@ -11,9 +11,10 @@ use serde_json::{Value, json};
 use crate::clock;
 use crate::contract::{
     AgentMode, CapabilitySnapshot, ContractErrorCode, OperationReceipt, OperationRequest,
-    OperationSnapshot, OperationStatus, ServerSnapshot, Uuid,
+    OperationSnapshot, OperationStatus, Uuid,
 };
 use crate::journal::Journal;
+use crate::observe;
 use crate::transport::RequestHandler;
 
 /// Operations this build actually advertises and can serve.
@@ -49,18 +50,7 @@ impl<'a> AgentHandler<'a> {
     }
 
     fn server_snapshot(&self) -> Value {
-        to_value(ServerSnapshot {
-            protocol_version: 1,
-            mode: AgentMode::Real,
-            available: true,
-            sampled_at: clock::now_rfc3339(),
-            metrics: Vec::new(),
-            services: Vec::new(),
-            reason: None,
-            hostname: None,
-            os: None,
-            firewall: None,
-        })
+        to_value(observe::server_snapshot())
     }
 
     fn inspect(&self, request: &OperationRequest) -> Value {

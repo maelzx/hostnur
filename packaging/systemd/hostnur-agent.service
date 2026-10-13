@@ -1,0 +1,38 @@
+[Unit]
+Description=Hostnur privileged operations agent
+Documentation=https://github.com/maelzx/hostnur
+After=network.target
+ConditionPathExists=/etc/hostnur/agent.toml
+
+[Service]
+Type=simple
+User=hostnur
+Group=hostnur
+RuntimeDirectory=hostnur
+RuntimeDirectoryMode=0750
+StateDirectory=hostnur/agent
+StateDirectoryMode=0750
+ExecStart=/usr/local/bin/hostnur-agent run --config /etc/hostnur/agent.toml
+Restart=on-failure
+RestartSec=2
+
+# Hardening. The phase-11 agent performs read-only observation only; this set is
+# revisited when privileged handlers (UID switching, package/service control)
+# land, so that a directive never silently blocks a required capability.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/var/lib/hostnur
+
+[Install]
+WantedBy=multi-user.target
