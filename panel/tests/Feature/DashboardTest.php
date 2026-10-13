@@ -57,6 +57,24 @@ class DashboardTest extends TestCase
             ->assertDontSee('12.4');
     }
 
+    public function test_the_dashboard_caches_plain_data_on_the_database_store(): void
+    {
+        config(['hostnur.agent_mode' => 'fake', 'cache.default' => 'database']);
+        $admin = $this->confirmedAdmin();
+
+        $this->actingAs($admin)
+            ->withSession($this->mfaProof($admin))
+            ->get('/panel')
+            ->assertOk()
+            ->assertSee('Simulated data (fake agent mode)');
+
+        $this->actingAs($admin)
+            ->withSession($this->mfaProof($admin))
+            ->get('/panel')
+            ->assertOk()
+            ->assertSee('Ubuntu 24.04 LTS');
+    }
+
     public function test_the_dashboard_reports_active_tasks_and_recent_failures(): void
     {
         config(['hostnur.agent_mode' => 'unavailable']);

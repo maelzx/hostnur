@@ -40,10 +40,12 @@ class Dashboard extends Component
     {
         $seconds = (int) config('hostnur.dashboard.cache_seconds', 15);
 
-        return Cache::remember(
+        $sample = Cache::remember(
             'hostnur.dashboard.snapshot.'.config('hostnur.agent_mode'),
             now()->addSeconds($seconds),
-            fn (): ServerSnapshot => app(AgentClient::class)->snapshot(),
+            fn (): array => app(AgentClient::class)->snapshot()->toArray(),
         );
+
+        return ServerSnapshot::fromArray($sample);
     }
 }
