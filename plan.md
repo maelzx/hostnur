@@ -576,7 +576,10 @@ repeat/crash recovery preserves identity/data; no caller-controlled path crosses
 the managed root. Publish the layout/ownership contract for Git and PHP providers.
 
 ### Phase 13 — Real public/private Git source lifecycle
-- Status: planned; Git providers/authentication requirements need confirmation.
+- Status: **complete for the chosen scope** (public HTTPS + private HTTPS scoped
+  token) in session 028, verified with a root-run harness on the arm64 Lima VM.
+  SSH deploy keys (P13.4) deferred by decision; panel/task integration of real
+  source results (P13.6) deferred to phase 15.
 - Depends on: 6, 12.
 
 #### Objective and source authority
@@ -1399,6 +1402,33 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 028 — Phase 13 Git source lifecycle, public + private HTTPS (2026-10-13)
+
+- Implemented **P13.1–P13.3** (and the failure-cleanup part of P13.5) for the
+  chosen auth scope. P13.1: `agent/src/git/policy.rs` — HTTPS-only URLs, no
+  credentials in URL, loopback/link-local/metadata (and default RFC1918) refused,
+  optional host allowlist + custom port, and `git check-ref-format`-style ref
+  validation distinguishing full-commit ids from branch/tag names and rejecting
+  option-like/revision expressions. P13.2: `checkout.rs` runs a fixed `git` as the
+  application UID/GID with a hardened, minimal environment (`GIT_CONFIG_NOSYSTEM`,
+  `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_TERMINAL_PROMPT=0`, disabled SSH/askpass,
+  `GIT_ALLOW_PROTOCOL=https`), a deadline and capped output; it fetches with
+  `--depth 1`, resolves `FETCH_HEAD` to a full commit, detaches, and removes only
+  the incomplete staging tree on failure. P13.3: `credentials.rs` delivers a token
+  via a transient app-owned `GIT_ASKPASS` helper + `0600` token file removed on
+  drop; the value never enters the URL/argv/config/errors.
+- SSH deploy keys (P13.4) deferred per the user's auth decision. P13.6 (real source
+  results through panel tasks) deferred to phase 15.
+- Checks (Lima Ubuntu 24.04 arm64 VM): `cargo fmt`, `cargo clippy --locked
+  --all-targets -- -D warnings`, `cargo build --locked`, `cargo test --locked` —
+  **131 tests passed**. Root-only `tests/git_vm.rs` (ignored by default) passed:
+  checkout as the app user produced an app-owned tree, pinned a 40-hex commit, and
+  cleaned up a failed staging tree.
+- Blocked/deferred: no live private-repo clone (offline VM); amd64/CI remains the
+  only amd64 signal; panel integration is phase 15.
+- Next slice: **phase 14** (PHP/Laravel provider and transactional Nginx routing),
+  which needs the approved runtime/package and web-server policies ratified.
 
 ### Session 027 — Phase 12 application isolation (P12.1–P12.5) (2026-10-13)
 
@@ -2425,13 +2455,15 @@ The panel is independently runnable and tested; the agent crate builds, tests an
 runs unprivileged in the Lima VM. See `docs/web-milestone.md` and
 `docs/agent-development.md` for passed gates, blocked checks and acceptance maps.
 
-**Phases 11 and 12 are complete** (sessions 026–027). The next work is **phase 13
-(real public/private Git source lifecycle)**, which first needs a decision on the
-supported providers/auth modes (public HTTPS, private HTTPS scoped token, and/or
-SSH deploy key). Continue the agent in the Lima VM (`agent/`) with the root-run
-harness for privileged slices; the PHP panel runs on the host. Local web work
-continues on port 9000 with `HOSTNUR_AGENT_MODE=fake`. Recorded follow-ups: a live
-PHP↔Rust end-to-end test, and amd64 VM evidence.
+**Phases 11–13 are complete for their chosen scopes** (sessions 026–028). The next
+work is **phase 14 (PHP/Laravel provider and transactional Nginx routing)**, which
+needs the approved runtime/package and web-server policies ratified first (native
+Ubuntu 24.04 PHP 8.3/PHP-FPM baseline, approved package-install primitive, and the
+managed Nginx/FPM template rules). Continue the agent in the Lima VM (`agent/`)
+with the root-run harness for privileged slices; the PHP panel runs on the host.
+Local web work continues on port 9000 with `HOSTNUR_AGENT_MODE=fake`. Recorded
+follow-ups: live PHP↔Rust end-to-end, amd64 VM evidence, and live private-repo
+clone.
 
 Push the phase-10 commit to observe the agent CI workflow; a real CI run is still
 outstanding. The remaining genuine web gates (real browser keyboard/screen-reader
@@ -2453,8 +2485,10 @@ isolation) are unchanged and recorded in `docs/web-milestone.md`.
   arm64 with amd64 covered only by the CI build target.
 - A live PHP↔Rust cross-language end-to-end test (panel over the socket to the real
   agent) is a recorded follow-up; PHP is not installed in the VM.
-- Phase 13 awaits a provider/auth decision: which Git providers and authentication
-  modes (public HTTPS, private HTTPS scoped token, SSH deploy key) to support first.
+- Phase 14 awaits ratification of the runtime/package and web-server policies:
+  the native Ubuntu 24.04 PHP 8.3/PHP-FPM baseline, the internal approved
+  package-install allowlist (Nginx/FPM/extensions), and the managed Nginx/FPM
+  template boundaries. SSH deploy keys (P13.4) remain deferred by decision.
 - Official domain, Git authentication details, database engine, release signing,
   and license await the decision checkpoints listed in section 6.
 

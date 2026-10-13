@@ -202,6 +202,37 @@ distinct UIDs, `shared` `0750` app-owned, `secrets` `0700`, `releases` root-owne
 `0755`; app A read its own secret and was denied app B's; a symlinked parent was
 refused; and a child ran as the target UID with no supplementary groups.
 
+## Git source lifecycle (phase 13)
+
+`agent/src/git/` implements the real public/private HTTPS source path:
+
+- **Policy** (`policy.rs`): only `https://` URLs; credentials rejected in the
+  URL; loopback/link-local/cloud-metadata and (by default) RFC1918 refused;
+  explicit host allowlist and optional custom port; refs validated against
+  `git check-ref-format` rules with option-like/revision-expression forms
+  rejected and full 40/64-hex commit ids recognized.
+- **Checkout** (`checkout.rs`): a fixed `git` binary runs as the application
+  UID/GID with a minimal environment (`GIT_CONFIG_NOSYSTEM=1`,
+  `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_TERMINAL_PROMPT=0`, `GIT_SSH_COMMAND` and
+  `GIT_ASKPASS` disabled unless supplied, `GIT_ALLOW_PROTOCOL=https`), a deadline
+  and capped output. It `init`/`remote add`/`fetch --depth 1`/`rev-parse`/
+  `checkout --detach`s and returns the pinned commit; a failure removes only the
+  incomplete staging tree.
+- **Credentials** (`credentials.rs`): a private token is delivered through a
+  transient, app-owned `GIT_ASKPASS` helper + `0600` token file that is removed
+  on drop; the value never appears in the URL, argv, config or error messages.
+
+Chosen auth for this phase: **public HTTPS + private HTTPS scoped token** (SSH
+deploy keys, P13.4, are deferred). Verified on the arm64 Lima VM with a root-run
+harness (`agent/tests/git_vm.rs`): checkout ran as the app user, produced an
+app-owned working tree, pinned a 40-hex commit, and cleaned up a failed staging
+tree.
+
+Deferred/recorded: live private-repository clone (offline VM) — the credential
+mechanism is unit-tested for permissions, cleanup and non-leakage; SSH host-key
+pinning (P13.4); and panel/task integration of real source results (P13.6), which
+belongs with the deployment orchestration in phase 15.
+
 ## Blocked / deferred checks
 
 Recorded, not claimed:
