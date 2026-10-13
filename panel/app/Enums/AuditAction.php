@@ -41,4 +41,8 @@ enum AuditAction: string
     case ApplicationDomainRemoved = 'application.domain_removed';
     case SourceCredentialStored = 'application.credential_stored';
     case SourceCredentialRotated = 'application.credential_rotated';
+
+    case ApplicationDeployRequested = 'application.deploy_requested';
+    case ApplicationRestartRequested = 'application.restart_requested';
+    case ApplicationRollbackRequested = 'application.rollback_requested';
 }

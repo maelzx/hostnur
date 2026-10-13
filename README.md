@@ -23,13 +23,13 @@ LTS on amd64, with PHP/Laravel as the first hosted application workflow.
 SQLite and database-backed queues. Local setup/run instructions are in
 [`panel/README.md`](panel/README.md); the selected local port is **9000**.
 Web-only GitHub Actions and syntax/style gates pass on PHP 8.3/8.4 and Node 24.
-Phase 1 through phase 6 are complete: authentication, the typed agent contract
+Phase 1 through phase 7 are complete: authentication, the typed agent contract
 (unavailable + deterministic fake adapters), durable panel tasks with a database
 queue/leases/approvals/audit, a protected operations shell with dashboard and
-task/audit history, and application inventory with immutable configuration
-revisions, encrypted Git credentials and environment secrets, and normalized
-domains. See [`panel/README.md`](panel/README.md) for setup instructions. Run
-outcomes and the session handoff are recorded in `plan.md`.
+task/audit history, application inventory with encrypted source/secrets and
+normalized domains, and deployment intent/preflight/wizard with task-derived
+progress, restart and rollback. See [`panel/README.md`](panel/README.md) for setup
+instructions. Run outcomes and the session handoff are recorded in `plan.md`.
 
 For DeepSeek continuation, start with **`plan.md` section 9.1**, then the selected
 phase's detailed slice. Section 9 provides the complete web-only implementation

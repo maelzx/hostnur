@@ -81,6 +81,15 @@
                             Applications
                         </a>
                     </li>
+                    <li>
+                        <a
+                            href="{{ route('panel.deployments.index') }}"
+                            @if (request()->routeIs('panel.deployments.*')) aria-current="page" @endif
+                            class="block rounded-lg px-2 py-1.5 font-medium {{ request()->routeIs('panel.deployments.*') ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700 hover:bg-slate-100' }}"
+                        >
+                            Deployments
+                        </a>
+                    </li>
                 </ul>
             </li>
 

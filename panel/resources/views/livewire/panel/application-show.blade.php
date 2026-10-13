@@ -14,6 +14,9 @@
             <span>provider {{ $application->provider }}</span>
             <span>revision {{ $application->current_revision }}</span>
         </p>
+        <p class="mt-4">
+            <a href="{{ route('panel.applications.operations', ['application' => $application->id]) }}" class="inline-flex rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800">Deploy &amp; operations</a>
+        </p>
     </header>
 
     <div class="grid gap-6 lg:grid-cols-2">

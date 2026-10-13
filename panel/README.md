@@ -153,15 +153,15 @@ npm audit
 npm run build
 ```
 
-Sessions 004–020 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
+Sessions 004–021 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
 24.12.0 and npm 11.6.2. The suite contains 20 administrator-bootstrap tests, 14
 authentication tests, 12 MFA-enrollment tests, 13 MFA-challenge tests, 17
 security-settings tests, 8 administrator-recovery tests, 8 agent-contract tests,
 8 agent-availability tests, 12 fake-agent tests, 4 task-status tests, 7 task-request
 tests, 11 task-execution tests, 8 task-audit/UI tests, 5 panel-shell tests, 5
 task-visibility tests, 3 dashboard tests, 4 accessibility tests, 20 Git-URL tests,
-15 hostname tests, 14 application-inventory tests and two scaffold baseline tests.
-Run individual suites with:
+15 hostname tests, 14 application-inventory tests, 10 deployment tests and two
+scaffold baseline tests. Run individual suites with:
 
 ```bash
 php artisan test --compact tests/Feature/AuthenticationTest.php
@@ -182,6 +182,7 @@ php artisan test --compact tests/Feature/TaskVisibilityTest.php
 php artisan test --compact tests/Feature/DashboardTest.php
 php artisan test --compact tests/Feature/AccessibilityTest.php
 php artisan test --compact tests/Feature/ApplicationInventoryTest.php
+php artisan test --compact tests/Feature/DeploymentTest.php
 ```
 
 Authentication tests use isolated in-memory SQLite and cover guest redirects,
@@ -307,6 +308,28 @@ bounded configuration validation, URL/hostname rejection tricks, encrypted/maske
 credentials and secrets with write failure preserving the old value, normalized
 domain conflicts, active-work archive refusal with retained history, ID tampering
 (404), and escaped rendering of stored values.
+
+## Deployments and operations
+
+Deployments reuse the task pipeline (no second queue): the operations page
+(`/panel/applications/{id}/operations`, requiring recent password confirmation)
+shows panel-only preflight checks, a non-secret plan preview and the actual mode,
+then persists an approved intent as a `deployments` record plus a task. The plan is
+fingerprinted and confirmation is invalidated when the intent changes; the
+idempotency key makes a double submit create one task. Deployment state is derived
+from its task (`requested`/`running`/`succeeded`/`failed`/`cancelled`/`unknown`)
+and labelled `simulated` in fake mode; unknown is never shown as success and a
+simulated success never writes a real active release. Restart and rollback create
+tasks through the same path, rollback only accepts a known successful release of
+the same application, and revoked authorization stops execution. The panel never
+runs Composer/Git/Artisan against hosted source; migrations are opt-in app intent
+and code rollback is explicitly not database rollback.
+
+Deployment tests cover preflight blocking (missing source/health/credential/
+capability), idempotent single-submit, edited-intent approval invalidation, task-
+derived state and simulation labels, unknown-not-success, restart/rollback with
+foreign/unknown release rejection, revoked-authorization failure, and the gated
+operations page with its policy wording.
 
 Bootstrap tests use isolated in-memory SQLite, including interleaved setup writes,
 rollback and secret-output checks; they do not create your real administrator.
