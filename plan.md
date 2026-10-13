@@ -456,6 +456,10 @@ ask only when the choice materially changes scope, cost, access, or product beha
   and `php artisan migrate`/`migrate:status` all passed. The user's port 9000
   server was not started; the local DB gained only the additive fake-execution
   table. No Rust.
+- Feature commit `2ee01a5` pushed; remote CI **passed** for PHP 8.3/Node 24 and
+  PHP 8.4/Node 24 (locked installs, static gates, asset build, migration,
+  template/queue and tests): <https://github.com/maelzx/hostnur/actions/runs/38332243837>,
+  verified with `gh run watch 38332243837 --exit-status`.
 - Next slice: **P3.5** (contract regression runner and compatibility notes), the
   final phase-3 item.
 
