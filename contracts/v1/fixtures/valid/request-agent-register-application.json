@@ -1,0 +1,14 @@
+{
+    "protocol_version": 1,
+    "request_id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+    "idempotency_key": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+    "operation": "agent.register_application",
+    "parameters": {
+        "application": "224065ac-4bc7-4ba4-a06d-8c8bca950c32",
+        "repository_url": "https://github.com/maelzx/hostnur.git",
+        "server_name": "app.example.com",
+        "provider": "php-laravel",
+        "runtime": "php",
+        "runtime_version": "8.3"
+    }
+}

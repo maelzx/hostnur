@@ -117,6 +117,36 @@ class RealAgentClientTest extends TestCase
         );
     }
 
+    public function test_register_application_forwards_the_envelope(): void
+    {
+        $transport = $this->transport([
+            'protocol_version' => 1,
+            'registered' => true,
+            'application' => '224065ac-4bc7-4ba4-a06d-8c8bca950c32',
+        ]);
+
+        $request = new OperationRequest(
+            protocolVersion: 1,
+            requestId: '6c9dc595-fc9c-4c13-8c72-ed9a489ab9e7',
+            idempotencyKey: 'cf36a770-2abf-42e6-83cf-a0f042bcfc3c',
+            operation: 'agent.register_application',
+            resource: null,
+            parameters: [
+                'application' => '224065ac-4bc7-4ba4-a06d-8c8bca950c32',
+                'repository_url' => 'https://github.com/maelzx/hostnur.git',
+                'server_name' => 'app.example.com',
+                'provider' => 'php-laravel',
+                'runtime' => 'php',
+                'runtime_version' => '8.3',
+            ],
+            timeoutSeconds: null,
+        );
+
+        (new RealAgentClient($transport))->registerApplication($request);
+
+        $this->assertSame('agent.register_application', $transport->requests[0]['operation']);
+    }
+
     public function test_remote_error_is_raised(): void
     {
         $client = $this->client([

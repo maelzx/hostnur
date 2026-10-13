@@ -24,6 +24,19 @@
             "read_only": false,
             "retry": "capability_declared"
         },
+        "agent.register_application": {
+            "resource": null,
+            "parameters": {
+                "application": { "type": "uuid", "required": true },
+                "repository_url": { "type": "string", "required": true, "max": 2048 },
+                "server_name": { "type": "string", "required": true, "max": 253 },
+                "provider": { "type": "string", "required": true, "max": 64 },
+                "runtime": { "type": "string", "required": true, "max": 32 },
+                "runtime_version": { "type": "string", "required": true, "max": 32 }
+            },
+            "read_only": false,
+            "retry": "capability_declared"
+        },
         "server.snapshot": {
             "resource": null,
             "parameters": {},

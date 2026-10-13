@@ -15,7 +15,7 @@ use crate::contract::{OperationRequest, OperationStatus, SnapshotEvent, Uuid};
 use crate::ids;
 
 /// Schema version recorded in `schema_meta`.
-pub const SCHEMA_VERSION: &str = "3";
+pub const SCHEMA_VERSION: &str = "4";
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -64,6 +64,16 @@ CREATE TABLE IF NOT EXISTS deployments (
     commit_id TEXT NOT NULL,
     state TEXT NOT NULL,
     created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS application_sources (
+    application_id TEXT PRIMARY KEY,
+    repository_url TEXT NOT NULL,
+    server_name TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    runtime TEXT NOT NULL,
+    runtime_version TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
 
@@ -167,6 +177,18 @@ pub struct DeploymentRecord {
     pub commit_id: String,
     /// `staged` | `active` | `superseded` | `failed` | `rolled_back`.
     pub state: String,
+}
+
+/// Registered source/domain for an application (phase 15.7), supplied by the
+/// panel through the `agent.register_application` control operation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApplicationSource {
+    pub application_id: Uuid,
+    pub repository_url: String,
+    pub server_name: String,
+    pub provider: String,
+    pub runtime: String,
+    pub runtime_version: String,
 }
 
 /// SQLite-backed journal. One connection; the transport is single-threaded.
@@ -616,6 +638,62 @@ impl Journal {
             records.push(row.map_err(|err| JournalError::Query(err.to_string()))?);
         }
         Ok(records)
+    }
+}
+
+impl Journal {
+    /// Register (or update) an application's source/domain, validated by the
+    /// caller before it reaches here.
+    pub fn set_application_source(&self, source: &ApplicationSource) -> Result<(), JournalError> {
+        self.connection
+            .execute(
+                "INSERT INTO application_sources (
+                    application_id, repository_url, server_name, provider, runtime, runtime_version, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 ON CONFLICT(application_id) DO UPDATE SET
+                    repository_url = excluded.repository_url,
+                    server_name = excluded.server_name,
+                    provider = excluded.provider,
+                    runtime = excluded.runtime,
+                    runtime_version = excluded.runtime_version,
+                    updated_at = excluded.updated_at",
+                params![
+                    source.application_id.as_str(),
+                    source.repository_url,
+                    source.server_name,
+                    source.provider,
+                    source.runtime,
+                    source.runtime_version,
+                    clock::now_rfc3339(),
+                ],
+            )
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+        Ok(())
+    }
+
+    pub fn application_source(
+        &self,
+        application_id: &Uuid,
+    ) -> Result<Option<ApplicationSource>, JournalError> {
+        self.connection
+            .query_row(
+                "SELECT application_id, repository_url, server_name, provider, runtime, runtime_version
+                 FROM application_sources WHERE application_id = ?1",
+                params![application_id.as_str()],
+                |row| {
+                    Ok(ApplicationSource {
+                        application_id: Uuid::parse(&row.get::<_, String>(0)?)
+                            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        repository_url: row.get(1)?,
+                        server_name: row.get(2)?,
+                        provider: row.get(3)?,
+                        runtime: row.get(4)?,
+                        runtime_version: row.get(5)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|err| JournalError::Query(err.to_string()))
     }
 }
 

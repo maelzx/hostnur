@@ -55,6 +55,11 @@ final class RealAgentClient implements AgentClient
         );
     }
 
+    public function registerApplication(OperationRequest $request): void
+    {
+        $this->send($request->toArray());
+    }
+
     /**
      * @param  array<string, mixed>  $parameters
      * @return array<string, mixed>

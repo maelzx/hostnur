@@ -13,15 +13,19 @@ use crate::contract::{
     AgentMode, CapabilitySnapshot, ContractErrorCode, OperationReceipt, OperationRequest,
     OperationSnapshot, OperationStatus, Uuid,
 };
-use crate::journal::Journal;
+use crate::git::policy::{NetworkPolicy, validate_repository_url};
+use crate::journal::{ApplicationSource, Journal};
 use crate::observe;
+use crate::provider::RuntimePolicy;
+use crate::provider::policy::validate_hostname;
 use crate::transport::RequestHandler;
 
 /// Operations this build actually advertises and can serve.
-pub const SUPPORTED_OPERATIONS: [&str; 4] = [
+pub const SUPPORTED_OPERATIONS: [&str; 5] = [
     "agent.capabilities",
     "agent.inspect",
     "agent.cancel",
+    "agent.register_application",
     "server.snapshot",
 ];
 
@@ -51,6 +55,71 @@ impl<'a> AgentHandler<'a> {
 
     fn server_snapshot(&self) -> Value {
         to_value(observe::server_snapshot())
+    }
+
+    fn register_application(&self, request: &OperationRequest) -> Value {
+        let parameter = |key: &str| request.parameters.get(key).and_then(Value::as_str);
+        let application = match parameter("application").and_then(|value| Uuid::parse(value).ok()) {
+            Some(id) => id,
+            None => {
+                return error_body(
+                    ContractErrorCode::InvalidParameters,
+                    "application must be a UUID",
+                );
+            }
+        };
+        let repository_url = match parameter("repository_url") {
+            Some(value) => value,
+            None => {
+                return error_body(
+                    ContractErrorCode::InvalidParameters,
+                    "repository_url is required",
+                );
+            }
+        };
+        if let Err(error) = validate_repository_url(repository_url, &NetworkPolicy::default()) {
+            return error_body(ContractErrorCode::InvalidParameters, &error.to_string());
+        }
+        let server_name = match parameter("server_name") {
+            Some(value) => value,
+            None => {
+                return error_body(
+                    ContractErrorCode::InvalidParameters,
+                    "server_name is required",
+                );
+            }
+        };
+        if let Err(error) = validate_hostname(server_name) {
+            return error_body(ContractErrorCode::InvalidParameters, &error.to_string());
+        }
+        let provider = match parameter("provider") {
+            Some(value) => value,
+            None => {
+                return error_body(ContractErrorCode::InvalidParameters, "provider is required");
+            }
+        };
+        let runtime = parameter("runtime").unwrap_or("php");
+        let runtime_version = parameter("runtime_version").unwrap_or("");
+        if let Err(error) = RuntimePolicy::default().validate(runtime, runtime_version) {
+            return error_body(ContractErrorCode::InvalidParameters, &error.to_string());
+        }
+
+        let source = ApplicationSource {
+            application_id: application.clone(),
+            repository_url: repository_url.to_string(),
+            server_name: server_name.to_string(),
+            provider: provider.to_string(),
+            runtime: runtime.to_string(),
+            runtime_version: runtime_version.to_string(),
+        };
+        match self.journal.set_application_source(&source) {
+            Ok(()) => json!({
+                "protocol_version": 1,
+                "registered": true,
+                "application": application.as_str(),
+            }),
+            Err(error) => error_body(ContractErrorCode::OperationFailed, &error.to_string()),
+        }
     }
 
     fn inspect(&self, request: &OperationRequest) -> Value {
@@ -126,6 +195,7 @@ impl RequestHandler for AgentHandler<'_> {
             "server.snapshot" => self.server_snapshot(),
             "agent.inspect" => self.inspect(request),
             "agent.cancel" => self.cancel(request),
+            "agent.register_application" => self.register_application(request),
             _ => error_body(
                 ContractErrorCode::UnsupportedOperation,
                 "the operation is not implemented by this agent build",

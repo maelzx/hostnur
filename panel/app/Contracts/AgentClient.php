@@ -35,4 +35,10 @@ interface AgentClient
      * Request cancellation of an accepted execution.
      */
     public function cancel(string $executionId): CancellationReceipt;
+
+    /**
+     * Register/refresh an application's source and domain in the agent registry
+     * before a real deployment. No-op for adapters without a durable registry.
+     */
+    public function registerApplication(OperationRequest $request): void;
 }

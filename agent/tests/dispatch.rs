@@ -139,3 +139,55 @@ fn unimplemented_mutation_returns_unsupported_operation() {
     let body = handler.handle(&parsed).unwrap();
     assert_eq!(body["error"]["code"], "unsupported_operation");
 }
+
+fn register_params(url: &str, host: &str) -> Map<String, Value> {
+    let mut parameters = Map::new();
+    parameters.insert(
+        "application".into(),
+        json!("224065ac-4bc7-4ba4-a06d-8c8bca950c32"),
+    );
+    parameters.insert("repository_url".into(), json!(url));
+    parameters.insert("server_name".into(), json!(host));
+    parameters.insert("provider".into(), json!("php-laravel"));
+    parameters.insert("runtime".into(), json!("php"));
+    parameters.insert("runtime_version".into(), json!("8.3"));
+    parameters
+}
+
+#[test]
+fn register_application_stores_and_rejects() {
+    let journal = Journal::open_in_memory().unwrap();
+    let handler = AgentHandler::new(&journal);
+
+    let body = handler
+        .handle(&request(
+            "agent.register_application",
+            register_params("https://github.com/maelzx/hostnur.git", "app.example.com"),
+        ))
+        .unwrap();
+    assert_eq!(body["registered"], true);
+
+    let stored = journal
+        .application_source(&Uuid::parse("224065ac-4bc7-4ba4-a06d-8c8bca950c32").unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.server_name, "app.example.com");
+
+    // Loopback URL refused.
+    let body = handler
+        .handle(&request(
+            "agent.register_application",
+            register_params("https://127.0.0.1/repo.git", "app.example.com"),
+        ))
+        .unwrap();
+    assert_eq!(body["error"]["code"], "invalid_parameters");
+
+    // Bad hostname refused.
+    let body = handler
+        .handle(&request(
+            "agent.register_application",
+            register_params("https://github.com/x/y.git", "bad host"),
+        ))
+        .unwrap();
+    assert_eq!(body["error"]["code"], "invalid_parameters");
+}
