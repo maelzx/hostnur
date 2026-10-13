@@ -929,11 +929,13 @@ entirely through the real panel/agent on the VM. Persistent data survives, healt
 is evidenced and partial failures have tested recovery, not cosmetic success states.
 
 ### Phase 16 — Real TLS lifecycle
-- Status: **substantially complete** (P16.1–P16.3, and P16.4 via certbot's own
-  timer) in session 031. Verified on a public DigitalOcean Ubuntu 24.04 **amd64**
-  host with a real (staging) Let's Encrypt certificate and an HTTPS handshake.
-  Supplied-certificate install (P16.5), expiry UI, and the panel install on the
-  host remain.
+- Status: **complete (P16.1–P16.5)** in session 031 on a public DigitalOcean
+  Ubuntu 24.04 **amd64** host: staging Let's Encrypt HTTP-01 issuance, validation,
+  root-owned install, managed TLS routing with a real HTTPS handshake, an agent
+  `renew`/`expires_within` helper, supplied-certificate validation/install, and
+  the panel installed on the host with a live panel↔agent (PHP↔Rust) link.
+  Renewal relies on certbot's own timer. Production (non-staging) issuance and
+  panel-side expiry/supplied-cert UI wiring remain as thin follow-ups.
 - Depends on: 8, 15.
 
 #### Approach and prerequisites
@@ -1430,12 +1432,17 @@ ask only when the choice materially changes scope, cost, access, or product beha
   root-owned under `/etc/hostnur/tls`, and the managed TLS site served a real
   `https://` handshake. Rust suite (local): `fmt`/`clippy -D warnings`/`test` —
   **147 tests passed**.
-- Deferred: P16.5 supplied certificates, renewal/expiry surfacing, and installing
-  the panel on the host for the full panel↔agent end-to-end (needs composer
-  `--no-dev` + prebuilt assets). The scratch manual nginx/certbot config used to
-  prove reachability has been superseded by the agent-managed site.
-- Next slice: phase-16 finish (P16.5 + renewal surfacing + panel install) or the
-  remaining phase-15 socket-driven deploy execution.
+- Also completed in the same session: P16.5 supplied-certificate install and an
+  `expires_within` helper (with tests), and installed the **panel on the host**
+  (rsync + composer `--no-dev` + prebuilt assets + sqlite migrate) running in
+  `real` agent mode. Verified the live **PHP↔Rust** link: the panel resolved
+  `mode=real`, `available=1`, the five operations, and a live 6-metric
+  `server.snapshot`; `/login` served 200 and `/` redirected (302). The scratch
+  manual nginx/certbot config was replaced by the agent-managed TLS site.
+- Remaining thin follow-ups: production (non-staging) issuance, panel-side UI for
+  expiry/supplied certs, a dedicated non-root panel identity (the VM ran the panel
+  as root for the test), and the socket-driven `application.deploy` (a phase-15
+  item). Next major work is **phase 17** (real services/packages/schedules).
 
 ### Session 030 — Phase 15 deployment orchestration (2026-10-13)
 

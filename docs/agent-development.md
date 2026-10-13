@@ -336,6 +336,11 @@ Verified on a public DigitalOcean Ubuntu 24.04 **amd64** host
 (`hostnur-p16.kom.my`) with a cross-compiled amd64 binary: HTTP-01 staging
 issuance succeeded, the certificate was validated and installed root-owned, and
 the managed TLS site served a real `https://` handshake (`tests/tls_vm.rs`).
+Supplied-certificate validate/install and expiry checks are covered by
+`tests/tls_cert.rs`. The **panel was installed on the same host** (rsync +
+composer `--no-dev` + prebuilt assets, sqlite) in `real` mode, and the live
+panel↔agent link was confirmed (`mode=real`, five operations, live
+`server.snapshot`), with `/login` serving 200.
 
 ## Blocked / deferred checks
 
