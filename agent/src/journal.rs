@@ -15,7 +15,7 @@ use crate::contract::{OperationRequest, OperationStatus, SnapshotEvent, Uuid};
 use crate::ids;
 
 /// Schema version recorded in `schema_meta`.
-pub const SCHEMA_VERSION: &str = "2";
+pub const SCHEMA_VERSION: &str = "3";
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -54,6 +54,15 @@ CREATE TABLE IF NOT EXISTS resources (
     owner_gid INTEGER,
     revision TEXT,
     lifecycle_state TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS deployments (
+    release_id TEXT PRIMARY KEY,
+    application_id TEXT NOT NULL,
+    commit_id TEXT NOT NULL,
+    state TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -148,6 +157,16 @@ pub struct ManagedApplication {
     pub revision: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+/// A recorded release deployment (phase 15), used for restart reconciliation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeploymentRecord {
+    pub release_id: Uuid,
+    pub application_id: Uuid,
+    pub commit_id: String,
+    /// `staged` | `active` | `superseded` | `failed` | `rolled_back`.
+    pub state: String,
 }
 
 /// SQLite-backed journal. One connection; the transport is single-threaded.
@@ -543,6 +562,72 @@ impl Journal {
             .map_err(|err| JournalError::Query(err.to_string()))?;
         Ok(())
     }
+}
+
+impl Journal {
+    /// Record (or update) a release deployment.
+    pub fn record_deployment(&self, record: &DeploymentRecord) -> Result<(), JournalError> {
+        let now = clock::now_rfc3339();
+        self.connection
+            .execute(
+                "INSERT INTO deployments (release_id, application_id, commit_id, state, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?5)
+                 ON CONFLICT(release_id) DO UPDATE SET
+                    state = excluded.state, commit_id = excluded.commit_id, updated_at = excluded.updated_at",
+                params![
+                    record.release_id.as_str(),
+                    record.application_id.as_str(),
+                    record.commit_id,
+                    record.state,
+                    now,
+                ],
+            )
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+        Ok(())
+    }
+
+    pub fn deployment(&self, release_id: &Uuid) -> Result<Option<DeploymentRecord>, JournalError> {
+        self.connection
+            .query_row(
+                "SELECT release_id, application_id, commit_id, state FROM deployments WHERE release_id = ?1",
+                params![release_id.as_str()],
+                row_to_deployment,
+            )
+            .optional()
+            .map_err(|err| JournalError::Query(err.to_string()))
+    }
+
+    pub fn deployments_for_application(
+        &self,
+        application_id: &Uuid,
+    ) -> Result<Vec<DeploymentRecord>, JournalError> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT release_id, application_id, commit_id, state FROM deployments
+                 WHERE application_id = ?1 ORDER BY created_at ASC",
+            )
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+        let rows = statement
+            .query_map(params![application_id.as_str()], row_to_deployment)
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+        let mut records = Vec::new();
+        for row in rows {
+            records.push(row.map_err(|err| JournalError::Query(err.to_string()))?);
+        }
+        Ok(records)
+    }
+}
+
+fn row_to_deployment(row: &rusqlite::Row<'_>) -> rusqlite::Result<DeploymentRecord> {
+    Ok(DeploymentRecord {
+        release_id: Uuid::parse(&row.get::<_, String>(0)?)
+            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+        application_id: Uuid::parse(&row.get::<_, String>(1)?)
+            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+        commit_id: row.get(2)?,
+        state: row.get(3)?,
+    })
 }
 
 fn row_to_managed_application(row: &rusqlite::Row<'_>) -> rusqlite::Result<ManagedApplication> {

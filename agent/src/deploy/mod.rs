@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use crate::contract::Uuid;
 use crate::git::{CheckoutRequest, GitRunner};
-use crate::journal::Journal;
+use crate::journal::{DeploymentRecord, Journal};
 use crate::process::{CommandSpec, run};
 use crate::provider::{
     FpmManager, ManagedPool, ManagedSite, NginxManager, SiteKind, render_pool, render_site,
@@ -225,6 +225,23 @@ impl<'a> Deployer<'a> {
             return Err(DeployError::Health(result));
         }
 
+        // Record the active release; mark the previous one superseded.
+        let record = |release_id: &Uuid, commit: String, state: &str| {
+            self.journal.record_deployment(&DeploymentRecord {
+                release_id: release_id.clone(),
+                application_id: input.application_id.clone(),
+                commit_id: commit,
+                state: state.to_string(),
+            })
+        };
+        record(&input.release_id, outcome.commit.clone(), "active")
+            .map_err(|error| DeployError::Io(error.to_string()))?;
+        if let Some(previous_path) = &previous
+            && let Some(previous_id) = release_id_from_path(previous_path)
+        {
+            let _ = record(&previous_id, String::new(), "superseded");
+        }
+
         Ok(DeploymentOutcome {
             release_id: input.release_id.clone(),
             commit: outcome.commit,
@@ -247,14 +264,28 @@ impl<'a> Deployer<'a> {
         if !release_dir.is_dir() {
             return Err(DeployError::MissingLayout);
         }
+        let previous = self.current_target(application_id);
         self.switch_current(application_id, &release_dir)?;
         self.reload_all()?;
         let result = HealthClient::new(server_name).probe();
-        if result.healthy {
-            Ok(result)
-        } else {
-            Err(DeployError::Health(result))
+        if !result.healthy {
+            return Err(DeployError::Health(result));
         }
+        let record = |release_id: &Uuid, state: &str| {
+            self.journal.record_deployment(&DeploymentRecord {
+                release_id: release_id.clone(),
+                application_id: application_id.clone(),
+                commit_id: String::new(),
+                state: state.to_string(),
+            })
+        };
+        record(release_id, "active").map_err(|error| DeployError::Io(error.to_string()))?;
+        if let Some(previous_path) = &previous
+            && let Some(previous_id) = release_id_from_path(previous_path)
+        {
+            let _ = record(&previous_id, "rolled_back");
+        }
+        Ok(result)
     }
 
     /// Run the Composer production build as the application user when a
@@ -361,4 +392,9 @@ impl<'a> Deployer<'a> {
 
 fn io(error: std::io::Error) -> DeployError {
     DeployError::Io(error.to_string())
+}
+
+/// Extract the release UUID from a `.../releases/<uuid>` path.
+fn release_id_from_path(path: &Path) -> Option<Uuid> {
+    Uuid::parse(path.file_name()?.to_str()?).ok()
 }

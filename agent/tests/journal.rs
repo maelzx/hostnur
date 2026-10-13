@@ -3,7 +3,7 @@
 use hostnur_agent::contract::{
     Catalog, OperationRequest, OperationStatus, Uuid, parse_request_str,
 };
-use hostnur_agent::journal::{Journal, JournalError, RegisteredResource};
+use hostnur_agent::journal::{DeploymentRecord, Journal, JournalError, RegisteredResource};
 use tempfile::TempDir;
 
 const REQUEST_ID: &str = "6c9dc595-fc9c-4c13-8c72-ed9a489ab9e7";
@@ -151,4 +151,38 @@ fn registry_refuses_to_adopt_an_existing_identity() {
 
     let unknown = Uuid::parse("d1e2f3a4-b5c6-4d7e-8f9a-0b1c2d3e4f5a").unwrap();
     assert!(journal.resource(&unknown).unwrap().is_none());
+}
+
+#[test]
+fn deployment_records_track_state_transitions() {
+    let journal = Journal::open_in_memory().unwrap();
+    let app = Uuid::parse("224065ac-4bc7-4ba4-a06d-8c8bca950c32").unwrap();
+    let release = Uuid::parse("11111111-1111-4111-8111-111111111111").unwrap();
+
+    journal
+        .record_deployment(&DeploymentRecord {
+            release_id: release.clone(),
+            application_id: app.clone(),
+            commit_id: "a".repeat(40),
+            state: "active".to_string(),
+        })
+        .unwrap();
+
+    let stored = journal.deployment(&release).unwrap().unwrap();
+    assert_eq!(stored.state, "active");
+    assert_eq!(stored.commit_id, "a".repeat(40));
+
+    journal
+        .record_deployment(&DeploymentRecord {
+            release_id: release.clone(),
+            application_id: app.clone(),
+            commit_id: "a".repeat(40),
+            state: "superseded".to_string(),
+        })
+        .unwrap();
+    assert_eq!(
+        journal.deployment(&release).unwrap().unwrap().state,
+        "superseded"
+    );
+    assert_eq!(journal.deployments_for_application(&app).unwrap().len(), 1);
 }
