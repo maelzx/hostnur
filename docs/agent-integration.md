@@ -21,6 +21,9 @@ boundary. Contract sources live in [`../contracts/v1/`](../contracts/v1/):
 
 | Operation | Resource (ID source) | Parameters | Fixture | Approval / privilege | Recovery |
 |---|---|---|---|---|---|
+| `agent.capabilities` | none | — | `valid/request-agent-capabilities.json` | read-only; MFA | bounded retry |
+| `agent.inspect` | none | `execution_id` uuid | `valid/request-agent-inspect.json` | read-only; MFA | bounded retry |
+| `agent.cancel` | none | `execution_id` uuid | `valid/request-agent-cancel.json` | recent auth + task approval | not rollback; `requested` until confirmed |
 | `server.snapshot` | none | — | `valid/request-server-snapshot.json` | read-only; MFA | bounded retry |
 | `application.deploy` | application (panel registry) | `revision` uuid, `ref` string, `run_migrations` bool | (see request schema) | recent auth + task approval | no blind replay; unknown ≠ success |
 | `application.restart` | application | — | `valid/request-application-restart.json` | recent auth + task approval | capability-declared retry |
@@ -75,8 +78,10 @@ reports unavailable until phase 11; `fake` is local/testing-only, labelled
 
 ## Known gaps (explicitly out of scope for this milestone)
 
-- No real transport, version negotiation or Rust compatibility validation yet
-  (phase 11).
+- The real transport now exists (phase 11, P11.1–P11.5): Rust framing, peer-checked
+  Unix socket, durable journal and the PHP `RealAgentClient`. Privileged operation
+  handlers beyond read-only `server.snapshot` are still unimplemented and return
+  `unsupported_operation`; systemd/socket VM gates (P11.6) remain.
 - Real consistency/restore, TLS issuance/renewal, package installation and OS
   provisioning happen only through the agent in later phases.
 - Some operations (`domain.apply`, `certificate.install`) are cataloged but not yet

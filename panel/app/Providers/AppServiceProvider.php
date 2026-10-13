@@ -4,6 +4,8 @@ namespace App\Providers;
 
 use App\Agent\AgentClientFactory;
 use App\Agent\OperationCatalog;
+use App\Agent\Transport\AgentTransport;
+use App\Agent\Transport\UnixSocketAgentTransport;
 use App\Contracts\AgentClient;
 use App\Http\Middleware\EnsureAdministrator;
 use App\Http\Middleware\EnsureMfaVerified;
@@ -21,6 +23,13 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(OperationCatalog::class);
+
+        $this->app->bind(AgentTransport::class, function (): AgentTransport {
+            return new UnixSocketAgentTransport(
+                (string) config('hostnur.agent.socket_path'),
+                (float) config('hostnur.agent.timeout_seconds', 5),
+            );
+        });
 
         $this->app->bind(AgentClient::class, function ($app): AgentClient {
             return $app->make(AgentClientFactory::class)->make();

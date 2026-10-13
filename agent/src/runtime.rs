@@ -15,9 +15,11 @@ use signal_hook::flag;
 use crate::VERSION;
 use crate::config::AgentConfig;
 use crate::contract::Catalog;
+use crate::dispatch::AgentHandler;
 use crate::error::{AgentError, ErrorCode};
+use crate::journal::Journal;
 use crate::logging::{self, Level};
-use crate::transport::{self, Listener, NoopHandler, ServerContext};
+use crate::transport::{self, Listener, ServerContext};
 
 /// Poll interval for the shutdown flag.
 pub const TICK: Duration = Duration::from_millis(100);
@@ -72,6 +74,15 @@ pub fn run(config: &AgentConfig) -> Result<(), AgentError> {
 
     let shutdown = install_shutdown_signals()?;
 
+    std::fs::create_dir_all(&config.state_dir).map_err(|err| {
+        AgentError::new(
+            ErrorCode::Journal,
+            format!("creating state directory: {}", err.kind()),
+        )
+    })?;
+    let journal = Journal::open(&config.state_dir.join("agent.db"))
+        .map_err(|err| AgentError::new(ErrorCode::Journal, format!("opening journal: {err}")))?;
+
     let listener = Listener::bind(&config.socket_path, config.socket_mode)
         .map_err(|err| AgentError::new(ErrorCode::Transport, format!("binding socket: {err}")))?;
 
@@ -79,13 +90,13 @@ pub fn run(config: &AgentConfig) -> Result<(), AgentError> {
         Level::Info,
         "startup",
         "agent.ready",
-        "agent listening; no privileged operations are enabled in this build",
+        "agent listening; read-only operations only in this build",
         None,
         None,
     );
 
     let catalog = Catalog::embedded();
-    let handler = NoopHandler;
+    let handler = AgentHandler::new(&journal);
     let context = ServerContext {
         catalog: &catalog,
         handler: &handler,

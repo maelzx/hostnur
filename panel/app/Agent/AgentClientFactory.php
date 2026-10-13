@@ -25,9 +25,7 @@ final class AgentClientFactory
 
         return match ($mode) {
             AgentMode::Unavailable => new UnavailableAgentClient,
-            AgentMode::Real => new UnavailableAgentClient(
-                'The real agent transport is not implemented until phase 11.'
-            ),
+            AgentMode::Real => $this->app->make(RealAgentClient::class),
             AgentMode::Fake => $this->makeFake(),
         };
     }

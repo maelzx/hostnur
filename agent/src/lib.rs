@@ -14,6 +14,7 @@ pub mod cli;
 pub mod clock;
 pub mod config;
 pub mod contract;
+pub mod dispatch;
 pub mod error;
 pub mod ids;
 pub mod journal;

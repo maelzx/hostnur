@@ -27,6 +27,8 @@ pub enum ErrorCode {
     Lifecycle,
     /// The local transport boundary failed (bind, peer check).
     Transport,
+    /// The durable journal or registry failed.
+    Journal,
 }
 
 impl ErrorCode {
@@ -39,6 +41,7 @@ impl ErrorCode {
             ErrorCode::Io => "io",
             ErrorCode::Lifecycle => "lifecycle",
             ErrorCode::Transport => "transport",
+            ErrorCode::Journal => "journal",
         }
     }
 }

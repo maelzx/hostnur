@@ -35,6 +35,29 @@ progress, bounded events, result/error), `CancellationReceipt`,
 `CapabilitySnapshot` and `ServerSnapshot`. Acceptance never means completion;
 cancellation is reported as requested until confirmed.
 
+## Control operations
+
+The panel's `AgentClient` control methods use three additive operations, carried
+in the same request envelope and framing as every other operation:
+
+- `agent.capabilities` — read-only; returns `CapabilitySnapshot`.
+- `agent.inspect` (`execution_id` uuid) — read-only; returns `OperationSnapshot`.
+- `agent.cancel` (`execution_id` uuid) — returns `CancellationReceipt`
+  (`requested` / `unsupported` / `already_finished`).
+
+A control response may instead be an error object `{ "error": { code, message,
+retryable } }`; the panel maps that to the matching error code. Errors never
+contain secrets, environments or traces.
+
+## Transport
+
+Local Unix stream socket, one request/response per connection. Each message is a
+four-byte unsigned big-endian length prefix followed by UTF-8 JSON, capped at the
+message limit before the body is read. Peer identity is the kernel-reported UID
+(`SO_PEERCRED`) checked against an explicit allowlist — never a caller-supplied
+id. The Rust agent parses every field independently; the PHP schema is not the
+trust boundary. Implemented in phase 11 (agent P11.1–P11.5).
+
 ## Error codes
 
 `agent_unavailable`, `unsupported_operation`, `unsupported_protocol`,

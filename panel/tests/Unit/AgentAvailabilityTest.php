@@ -6,6 +6,7 @@ use App\Agent\Dto\OperationRequest;
 use App\Agent\Exceptions\AgentConfigurationException;
 use App\Agent\Exceptions\AgentUnavailableException;
 use App\Agent\FakeAgentClient;
+use App\Agent\RealAgentClient;
 use App\Agent\UnavailableAgentClient;
 use App\Contracts\AgentClient;
 use App\Enums\AgentMode;
@@ -78,15 +79,23 @@ class AgentAvailabilityTest extends TestCase
         $this->assertFailsClosed(fn () => $this->client()->cancel(self::EXECUTION_ID));
     }
 
-    public function test_real_mode_still_reports_unavailable_until_phase_eleven(): void
+    public function test_real_mode_resolves_to_the_real_client(): void
     {
         config(['hostnur.agent_mode' => 'real']);
 
-        $capabilities = $this->client()->capabilities();
+        $client = $this->client();
 
-        $this->assertSame(AgentMode::Unavailable, $capabilities->mode);
-        $this->assertFalse($capabilities->available);
-        $this->assertStringContainsString('phase 11', (string) $capabilities->reason);
+        $this->assertInstanceOf(RealAgentClient::class, $client);
+        $this->assertNotInstanceOf(FakeAgentClient::class, $client);
+        $this->assertNotInstanceOf(UnavailableAgentClient::class, $client);
+    }
+
+    public function test_real_mode_is_allowed_in_production(): void
+    {
+        $this->app['env'] = 'production';
+        config(['hostnur.agent_mode' => 'real']);
+
+        $this->assertInstanceOf(RealAgentClient::class, $this->client());
     }
 
     public function test_fake_mode_is_denied_in_production(): void

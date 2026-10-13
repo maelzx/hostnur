@@ -31,6 +31,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Real Agent Transport
+    |--------------------------------------------------------------------------
+    |
+    | Local Unix socket used by the "real" adapter. The panel and the agent must
+    | agree on this protected path; the panel never falls back to fake or
+    | unavailable-and-successful when the socket is missing.
+    |
+    */
+
+    'agent' => [
+        'socket_path' => env('HOSTNUR_AGENT_SOCKET', '/run/hostnur/agent.sock'),
+        'timeout_seconds' => (float) env('HOSTNUR_AGENT_TIMEOUT', 5),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Agent Contract
     |--------------------------------------------------------------------------
     |
