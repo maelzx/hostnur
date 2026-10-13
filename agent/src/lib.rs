@@ -16,6 +16,7 @@ pub mod config;
 pub mod contract;
 pub mod dispatch;
 pub mod error;
+pub mod git;
 pub mod ids;
 pub mod journal;
 pub mod logging;
