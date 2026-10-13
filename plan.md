@@ -468,7 +468,11 @@ ask only when the choice materially changes scope, cost, access, or product beha
   `route:list`, `view:cache` and a real guest HTTP smoke (`/panel*` redirect to
   `/login`, `/login` 200) all passed. The user's port 9000 server was not started
   and no migration was needed. No Rust.
-- Next slice: **P6.1** (application inventory schema and models) from section 9.8.
+- Feature commit `7db8121` pushed; remote CI **passed** for PHP 8.3/Node 24 and
+  PHP 8.4/Node 24 (locked installs, static gates, asset build, migration,
+  template/queue and tests): <https://github.com/maelzx/hostnur/actions/runs/38335876307>,
+  verified with `gh run watch 38335876307 --exit-status`.
+- Next slice: **P6.1** (application schema/inventory/policy) from section 9.8.
 
 ### Session 018 — Phase 4 tasks/queue/audit (P4.1–P4.6) (2026-10-13)
 
