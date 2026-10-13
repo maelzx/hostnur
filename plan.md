@@ -1439,8 +1439,15 @@ ask only when the choice materially changes scope, cost, access, or product beha
   scheduler oneshot+timer running as the app identity (`systemd-analyze verify`
   gated), verified on the VM (`tests/worker_vm.rs`: worker active as the app UID,
   timer active).
-- Deferred still: blue/green routing, per-app `public/` ACLs, full crash/cancel
-  reconciliation wiring, and panel/task integration (P15.6/P15.7).
+- P15.7 progress: added the `agent.register_application` control operation (panel
+  registers source/domain; the agent validates the URL via the Git policy and the
+  hostname via the provider policy, storing it in a new `application_sources`
+  registry table), the matching PHP `AgentClient::registerApplication` method, and
+  a **privileged** `hostnur-agent.service` (runs as root; the read-only floor
+  hardening is removed because it blocks UID switching and config writes).
+- Deferred still: the actual socket-driven `application.deploy` execution
+  (async `submit` receipt + `inspect` polling semantics), blue/green routing,
+  per-app `public/` ACLs, and full crash/cancel reconciliation wiring.
 - Next slice: remaining phase-15 items (workers/scheduler, panel integration) or
   **phase 16** (real TLS) once a public VM + test domain are available.
 

@@ -303,9 +303,17 @@ The unprivileged Composer build now runs when `composer.json` is present
 and each release state is recorded in the journal `deployments` table
 (`staged`/`active`/`superseded`/`rolled_back`) for restart reconciliation.
 
-Deferred/recorded: queue workers/scheduler, blue/green routing, per-app `public/`
-ACLs, full crash/cancel reconciliation wiring, and panel/task integration (part of
-P15.6/P15.7).
+The panel registers an application's source/domain through the
+`agent.register_application` control operation (validated URL + hostname, stored
+in the agent's `application_sources` registry); the panel-side
+`AgentClient::registerApplication` forwards it. The packaged
+`hostnur-agent.service` now runs as **root** because provisioning and deployment
+require UID switching and Nginx/FPM/systemd writes; the earlier read-only floor
+hardening is removed and finer-grained hardening is deferred.
+
+Deferred/recorded: the socket-driven `application.deploy` execution (needs async
+`submit`/`inspect` semantics), blue/green routing, per-app `public/` ACLs, and
+full crash/cancel reconciliation wiring.
 
 ## Blocked / deferred checks
 
