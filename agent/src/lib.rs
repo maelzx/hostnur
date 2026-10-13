@@ -21,6 +21,7 @@ pub mod journal;
 pub mod logging;
 pub mod observe;
 pub mod process;
+pub mod provision;
 pub mod runtime;
 pub mod transport;
 

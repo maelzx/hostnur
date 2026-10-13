@@ -15,7 +15,7 @@ use crate::contract::{OperationRequest, OperationStatus, SnapshotEvent, Uuid};
 use crate::ids;
 
 /// Schema version recorded in `schema_meta`.
-pub const SCHEMA_VERSION: &str = "1";
+pub const SCHEMA_VERSION: &str = "2";
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -54,6 +54,20 @@ CREATE TABLE IF NOT EXISTS resources (
     owner_gid INTEGER,
     revision TEXT,
     lifecycle_state TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS managed_applications (
+    application_id TEXT PRIMARY KEY,
+    account_name TEXT NOT NULL UNIQUE,
+    account_uid INTEGER,
+    account_gid INTEGER,
+    layout_root TEXT NOT NULL,
+    account_group TEXT NOT NULL,
+    lifecycle_state TEXT NOT NULL,
+    provider TEXT,
+    revision TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -119,6 +133,23 @@ pub struct RegisteredResource {
     pub lifecycle_state: String,
 }
 
+/// A managed application: the persistent UUID -> account/UID/GID/layout
+/// mapping and lifecycle state owned by the agent (phase 12).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManagedApplication {
+    pub application_id: Uuid,
+    pub account_name: String,
+    pub account_group: String,
+    pub account_uid: Option<u32>,
+    pub account_gid: Option<u32>,
+    pub layout_root: String,
+    pub lifecycle_state: String,
+    pub provider: Option<String>,
+    pub revision: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 /// SQLite-backed journal. One connection; the transport is single-threaded.
 pub struct Journal {
     connection: Connection,
@@ -149,7 +180,8 @@ impl Journal {
             .map_err(|err| JournalError::Open(err.to_string()))?;
         connection
             .execute(
-                "INSERT OR IGNORE INTO schema_meta(key, value) VALUES ('schema_version', ?1)",
+                "INSERT INTO schema_meta(key, value) VALUES ('schema_version', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                 params![SCHEMA_VERSION],
             )
             .map_err(|err| JournalError::Open(err.to_string()))?;
@@ -407,6 +439,127 @@ impl Journal {
             .optional()
             .map_err(|err| JournalError::Query(err.to_string()))
     }
+
+    /// Reserve a managed application identity. Returns `true` when a new row was
+    /// inserted, `false` when the application id already exists.
+    ///
+    /// The unique `account_name` constraint also makes account-name collisions
+    /// a hard error rather than silently sharing an identity.
+    pub fn insert_managed_application(
+        &self,
+        application: &ManagedApplication,
+    ) -> Result<bool, JournalError> {
+        let now = clock::now_rfc3339();
+        let changed = self
+            .connection
+            .execute(
+                "INSERT OR IGNORE INTO managed_applications (
+                    application_id, account_name, account_group, account_uid, account_gid,
+                    layout_root, lifecycle_state, provider, revision, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
+                params![
+                    application.application_id.as_str(),
+                    application.account_name,
+                    application.account_group,
+                    application.account_uid,
+                    application.account_gid,
+                    application.layout_root,
+                    application.lifecycle_state,
+                    application.provider,
+                    application.revision,
+                    now,
+                ],
+            )
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+        Ok(changed == 1)
+    }
+
+    /// Look up a managed application by its application UUID.
+    pub fn managed_application(
+        &self,
+        application_id: &Uuid,
+    ) -> Result<Option<ManagedApplication>, JournalError> {
+        self.connection
+            .query_row(
+                "SELECT application_id, account_name, account_group, account_uid, account_gid,
+                        layout_root, lifecycle_state, provider, revision, created_at, updated_at
+                 FROM managed_applications WHERE application_id = ?1",
+                params![application_id.as_str()],
+                row_to_managed_application,
+            )
+            .optional()
+            .map_err(|err| JournalError::Query(err.to_string()))
+    }
+
+    /// Look up a managed application by its derived account name.
+    pub fn managed_application_by_account(
+        &self,
+        account_name: &str,
+    ) -> Result<Option<ManagedApplication>, JournalError> {
+        self.connection
+            .query_row(
+                "SELECT application_id, account_name, account_group, account_uid, account_gid,
+                        layout_root, lifecycle_state, provider, revision, created_at, updated_at
+                 FROM managed_applications WHERE account_name = ?1",
+                params![account_name],
+                row_to_managed_application,
+            )
+            .optional()
+            .map_err(|err| JournalError::Query(err.to_string()))
+    }
+
+    /// Update the lifecycle state and resolved account ids.
+    pub fn update_managed_application_state(
+        &self,
+        application_id: &Uuid,
+        lifecycle_state: &str,
+        account_uid: Option<u32>,
+        account_gid: Option<u32>,
+    ) -> Result<(), JournalError> {
+        self.connection
+            .execute(
+                "UPDATE managed_applications
+                 SET lifecycle_state = ?2, account_uid = ?3, account_gid = ?4, updated_at = ?5
+                 WHERE application_id = ?1",
+                params![
+                    application_id.as_str(),
+                    lifecycle_state,
+                    account_uid,
+                    account_gid,
+                    clock::now_rfc3339(),
+                ],
+            )
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+        Ok(())
+    }
+
+    /// Remove a managed-application row (rollback of a reservation only).
+    pub fn delete_managed_application(&self, application_id: &Uuid) -> Result<(), JournalError> {
+        self.connection
+            .execute(
+                "DELETE FROM managed_applications WHERE application_id = ?1",
+                params![application_id.as_str()],
+            )
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+        Ok(())
+    }
+}
+
+fn row_to_managed_application(row: &rusqlite::Row<'_>) -> rusqlite::Result<ManagedApplication> {
+    Ok(ManagedApplication {
+        application_id: Uuid::parse(&row.get::<_, String>(0)?)
+            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+        account_name: row.get(1)?,
+        account_group: row.get(2)?,
+        account_uid: row.get(3)?,
+        account_gid: row.get(4)?,
+        layout_root: row.get(5)?,
+        lifecycle_state: row.get(6)?,
+        provider: row.get(7)?,
+        revision: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
+    })
 }
 
 /// Canonical, order-stable representation of an intent for dedupe comparison.
