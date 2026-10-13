@@ -462,6 +462,10 @@ ask only when the choice materially changes scope, cost, access, or product beha
   `php artisan migrate`, `route:list`, `view:cache` and a guest HTTP smoke all
   passed. The user's port 9000 server was not restarted; the local DB gained only
   the additive server-administration tables.
+- Feature commit `7635290` pushed; remote CI **passed** for PHP 8.3/Node 24 and
+  PHP 8.4/Node 24 (locked installs, static gates, asset build, migration,
+  template/queue and tests): <https://github.com/maelzx/hostnur/actions/runs/38371962845>,
+  verified with `gh run watch 38371962845 --exit-status`.
 - Next slice: **P9.1** (complete web regression) from section 9.11.
 
 ### Session 021 — Phase 7 deployment intent/operations (P7.1–P7.5) (2026-10-13)
