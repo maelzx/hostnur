@@ -1,6 +1,5 @@
-<main class="mx-auto flex min-h-screen max-w-5xl flex-col px-6 py-12 sm:px-10">
-    <header class="mb-8">
-        <p class="mb-3 text-sm font-semibold uppercase tracking-widest text-indigo-700">{{ config('app.name') }}</p>
+<main>
+    <header class="mb-6">
         <h1 class="text-2xl font-semibold tracking-tight">Audit history</h1>
         <p class="mt-2 text-sm leading-6 text-slate-600">
             Append-only record of authentication and task activity. Secrets, codes and
@@ -8,44 +7,69 @@
         </p>
     </header>
 
+    <x-ui.panel class="mb-6">
+        <form class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" role="search">
+            <div>
+                <label for="action-filter" class="block text-sm font-medium text-slate-700">Action</label>
+                <select
+                    id="action-filter"
+                    wire:model.live="action"
+                    class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500"
+                >
+                    <option value="">All actions</option>
+                    @foreach ($actions as $option)
+                        <option value="{{ $option->value }}">{{ $option->value }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div>
+                <label for="actor-filter" class="block text-sm font-medium text-slate-700">Actor</label>
+                <input
+                    id="actor-filter"
+                    type="search"
+                    wire:model.live.debounce.300ms="actor"
+                    placeholder="email"
+                    class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500"
+                >
+            </div>
+        </form>
+    </x-ui.panel>
+
     @if ($events->isEmpty())
-        <section class="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
-            No audit events recorded yet.
-        </section>
+        <x-ui.empty-state title="No matching audit events">Adjust the filters.</x-ui.empty-state>
     @else
         <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-            <table class="min-w-full divide-y divide-slate-200 text-sm">
-                <thead class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                        <th class="px-4 py-3 font-medium">When</th>
-                        <th class="px-4 py-3 font-medium">Action</th>
-                        <th class="px-4 py-3 font-medium">Actor</th>
-                        <th class="px-4 py-3 font-medium">Outcome</th>
-                        <th class="px-4 py-3 font-medium">Resource</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100">
-                    @foreach ($events as $event)
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-slate-200 text-sm">
+                    <caption class="sr-only">Authentication and task audit events</caption>
+                    <thead class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                         <tr>
-                            <td class="px-4 py-3 text-slate-600">{{ $event->recorded_at?->toDayDateTimeString() ?? '—' }}</td>
-                            <td class="px-4 py-3 font-medium text-slate-800">{{ $event->action->value }}</td>
-                            <td class="px-4 py-3 text-slate-600">{{ $event->actor_label ?? '—' }}</td>
-                            <td class="px-4 py-3 text-slate-600">{{ $event->outcome->value }}</td>
-                            <td class="px-4 py-3 text-slate-600">{{ $event->resource_kind !== null ? $event->resource_kind.' '.$event->resource_id : '—' }}</td>
+                            <th scope="col" class="px-4 py-3 font-medium">When</th>
+                            <th scope="col" class="px-4 py-3 font-medium">Action</th>
+                            <th scope="col" class="px-4 py-3 font-medium">Actor</th>
+                            <th scope="col" class="px-4 py-3 font-medium">Outcome</th>
+                            <th scope="col" class="px-4 py-3 font-medium">Resource</th>
                         </tr>
-                    @endforeach
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        @foreach ($events as $event)
+                            <tr wire:key="audit-{{ $event->id }}">
+                                <td class="px-4 py-3 text-slate-600">{{ $event->recorded_at?->toDayDateTimeString() ?? '—' }}</td>
+                                <td class="px-4 py-3 font-medium">
+                                    <a href="{{ route('panel.audit.show', ['event' => $event->id]) }}" class="text-indigo-700 hover:underline">{{ $event->action->value }}</a>
+                                </td>
+                                <td class="px-4 py-3 text-slate-600">{{ $event->actor_label ?? '—' }}</td>
+                                <td class="px-4 py-3"><x-ui.badge :tone="$event->outcome->value === 'failure' ? 'danger' : ($event->outcome->value === 'denied' ? 'warning' : 'success')">{{ $event->outcome->value }}</x-ui.badge></td>
+                                <td class="px-4 py-3 text-slate-600">{{ $event->resource_kind !== null ? $event->resource_kind.' '.$event->resource_id : '—' }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
         </section>
 
         <div class="mt-6">
             {{ $events->links() }}
         </div>
     @endif
-
-    <p class="mt-6 text-sm">
-        <a href="{{ route('panel.dashboard') }}" class="font-medium text-indigo-700 hover:underline">Back to panel</a>
-        ·
-        <a href="{{ route('panel.tasks.index') }}" class="font-medium text-indigo-700 hover:underline">Task history</a>
-    </p>
 </main>

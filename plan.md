@@ -224,14 +224,15 @@ session's numbering. All phases after 1 are pending unless explicitly noted.
   and 15.
 
 ### Phase 5 — Panel shell, dashboard and agent availability
-- Status: pending; next. Begins at P5.1 in section 9.7.
+- Status: complete. P5.1 (protected shell/components), P5.2 (task/audit screens),
+  P5.3 (dashboard adapter states) and P5.4 (responsive/accessibility) all passed
+  local checks and real PHP 8.3/8.4 CI.
 - Depends on: 2, 3, 4.
-- Slices: responsive/accessibility baseline, navigation, overview cards, task/audit
-  history, CPU/RAM/disk/uptime and service views with simulated/stale/offline states.
-- Exit: useful authenticated UI without a running agent; no fake metrics presented
-  as live production readings; polling and database writes are bounded.
+- Exit: met — useful authenticated UI without a running agent; unavailable values
+  are not presented as zero; polling and database writes are bounded.
 
 ### Phase 6 — Application, source and secret configuration
+- Status: pending; next. Begins at P6.1 in section 9.8.
 - Depends on: 2, 3, 4.
 - Slices: app inventory, runtime selection, public/private Git repository/ref
   configuration, encrypted credential references, environment/secrets, domains,
@@ -428,6 +429,46 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 019 — Phase 5 UI shell/dashboard/task visibility (P5.1–P5.4) (2026-10-13)
+
+- Completed **all of phase 5** (P5.1–P5.4). P5.1: added
+  `resources/views/layouts/panel.blade.php` with a labelled navigation shell
+  (`resources/views/components/panel/nav.blade.php`), a skip link, flash status,
+  and reusable components `x-ui.button`, `x-ui.panel`, `x-ui.badge`,
+  `x-ui.task-status`, `x-ui.empty-state`, `x-ui.stat` and a keyboard-operable,
+  labelled `x-ui.confirm` dialog (used for MFA disable/regeneration). All
+  authenticated panel pages now use `layouts.panel`.
+- P5.2: task list gained status/operation filters and paging; task detail loads
+  events with a bounded cursor plus "load more" and polls (`wire:poll.5s`) only
+  while active; audit list gained action/actor filters and a new
+  `/panel/audit/{event}` detail page. P5.3: the dashboard reads a single
+  short-cached (`hostnur.dashboard.cache_seconds`) adapter snapshot and shows CPU,
+  memory, disk, load, uptime, hostname/OS, managed services, active tasks and
+  recent failures, with a persistent fake-mode banner, `—` for unavailable values
+  plus the agent reason, and stale labelling; `ServerSnapshot` gained optional
+  `hostname`/`os`.
+- P5.4: responsive tables wrapped in `overflow-x-auto`, captions and `scope`
+  headers, skip link, `aria-current` navigation, `role`/`aria-live` status text,
+  and an `aria-modal`/`aria-labelledby` confirmation dialog; status is conveyed by
+  text as well as colour. Added `[x-cloak]` and broadened Tailwind `@source` roots.
+- Files: `resources/views/layouts/panel.blade.php`,
+  `resources/views/components/panel/nav.blade.php`,
+  `resources/views/components/ui/*`, updated panel Livewire components and views
+  (`Dashboard`, `TaskIndex`, `TaskShow`, `AuditIndex`, new `AuditShow`,
+  `SecuritySettings`, `ConfirmPassword`, `MfaEnrollment`), `routes/web.php`,
+  `resources/css/app.css`, `config/hostnur.php`, `app/Agent/Dto/ServerSnapshot.php`,
+  `contracts/v1/` server-snapshot schema/fixture, and tests
+  `tests/Feature/{PanelShellTest,TaskVisibilityTest,DashboardTest,AccessibilityTest}.php`
+  plus `tests/Support/InteractsWithPanel.php`; updated both READMEs and `AGENTS.md`.
+- Checks: full `php artisan test --compact` — **161 tests / 765 assertions passed**
+  (17 new phase-5 tests). `vendor/bin/pint`, `composer check:syntax`,
+  `composer check:style`, `composer validate` (known license warning),
+  `composer check-platform-reqs`, `composer audit`, `npm audit`, `npm run build`,
+  `route:list`, `view:cache` and a real guest HTTP smoke (`/panel*` redirect to
+  `/login`, `/login` 200) all passed. The user's port 9000 server was not started
+  and no migration was needed. No Rust.
+- Next slice: **P6.1** (application inventory schema and models) from section 9.8.
 
 ### Session 018 — Phase 4 tasks/queue/audit (P4.1–P4.6) (2026-10-13)
 
@@ -1088,29 +1129,30 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ### Next session's single slice
 
-Use the **DeepSeek starter prompt in section 9.1** and implement **P5.1** from
-section 9.7 (protected app shell and reusable Blade components; phases 1–4 are
-complete including durable tasks/queue/audit and the read-only history pages).
-Finish one slice, record exact checks and the next slice ID, commit/push and stop.
-Real PHP 8.3/8.4 CI is green through session 018. Port 9000 is the selected local
-panel port; Rust remains deferred to phase 10.
+Use the **DeepSeek starter prompt in section 9.1** and implement **P6.1** from
+section 9.8 (application schema/inventory/policy; phases 1–5 are complete including
+the tasks/queue/audit and the panel shell/dashboard). Finish one slice, record exact
+checks and the next slice ID, commit/push and stop. Real PHP 8.3/8.4 CI is green
+through session 019. Port 9000 is the selected local panel port; Rust remains
+deferred to phase 10.
 
-Concrete P5.1 starting notes from session 018 (verify against the installed code
+Concrete P6.1 starting notes from session 019 (verify against the installed code
 before relying on them):
 
-- Build an authenticated app layout/shell with navigation groups (Overview,
-  Applications, Tasks, Server, Security/Settings) and shared Blade components for
-  buttons, form fields/errors, status badges, panels, tables, pagination and
-  confirmation dialogs. Reuse the existing system-font / neutral-slate / indigo
-  direction. Link only routes that exist; unsupported areas show an explanatory
-  state, not a dead button.
-- Server-side gates must hold on both route requests and Livewire update requests
-  (the `administrator`/`mfa`/`recent-auth` middleware are already registered as
-  persistent Livewire middleware). Keep guest/login views separate.
-- P5.1 is shell/navigation/components only. Task/audit filters + active polling are
-  P5.2; dashboard adapter states are P5.3; the responsive/accessibility pass is
-  P5.4. Do not add charts or real metrics; use `—`/explanations for unavailable
-  data. No Rust.
+- Add an `applications` migration + `Application` model per section 9.8: UUID
+  identity, bounded display name, unique **immutable** lowercase slug
+  (`[a-z0-9-]`), provider/runtime/version, desired config revision, archive time;
+  keep observed state/mode/time separate from desired state. Use normal Eloquent
+  relationships and a policy; archive rather than delete when tasks/history exist.
+- Provide an inventory UI (list/create/show/archive) using the `layouts.panel` shell
+  and `x-ui.*` components, with the default provider (Laravel) as an allowlisted ID.
+  Re-authorize server-side and resolve IDs from the DB, never trusting Livewire
+  properties. Refuse archive/config replacement while an active task references the
+  app, and enforce unique immutable identity.
+- P6.1 is inventory/schema/policy only. Configuration/revisions are P6.2, Git
+  metadata/credentials P6.3, environment secrets P6.4 and domains/archive behavior
+  P6.5. No network fetch on save (`not_checked`), no host provisioning, no secrets
+  yet, no Rust.
 
 ### Current blockers
 
@@ -1135,7 +1177,7 @@ before relying on them):
 | Item | Existing implementation / evidence |
 |---|---|
 | Web foundation | `panel/`; Laravel 13.35.0, Livewire 4.4.7, Tailwind 4.3.3, Vite 8.3.4 |
-| Current browser entry | `routes/web.php`: `/` redirects guests to `login` and admins to `/panel`; Livewire pages under `App\Livewire\Auth` and `App\Livewire\Panel` (Dashboard, ConfirmPassword, SecuritySettings, TaskIndex, TaskShow, AuditIndex) |
+| Current browser entry | `routes/web.php`: `/` redirects guests to `login` and admins to `/panel`; `layouts.panel` shell with `App\Livewire\Panel` pages (Dashboard, TaskIndex, TaskShow, AuditIndex, AuditShow, SecuritySettings, ConfirmPassword) and `App\Livewire\Auth` guest/MFA pages |
 | Layout/assets | `resources/views/layouts/app.blade.php`, `resources/css/app.css`, `vite.config.js`; Livewire supplies Alpine |
 | Database | SQLite; database sessions/cache/queue; baseline user/cache/job migrations plus MFA, fake execution and task/audit migrations |
 | Administrator bootstrap | `app/Console/Commands/BootstrapAdministrator.php`; `hostnur:admin:bootstrap` |
@@ -1143,19 +1185,21 @@ before relying on them):
 | Authentication | `laravel/fortify` v1.41.0; admin-only login/logout, `EnsureAdministrator`, MFA enrollment (`/panel/security/mfa`), generation-bound challenge (`/two-factor-challenge`), `EnsureMfaVerified` gate on `/panel`, recent-auth (`/panel/security`, `EnsureRecentAuthentication`) and CLI recovery (`hostnur:admin:recover`) |
 | User model | `app/Models/User.php`; hashed password cast, boolean admin cast, Fortify two-factor trait, hidden secret/recovery, integer `mfa_version`; admin flag excluded from mass assignment |
 | Agent contract | `app/Agent/` DTOs, `OperationCatalog`, `OperationRequestValidator`, `AgentClient` interface, `UnavailableAgentClient`, `AgentModeGuard`, fixture-driven `FakeAgentClient` and durable `FakeExecutionSimulator` over `fake_agent_executions`; `../contracts/v1/` schemas/catalog/fixtures/notes; `tests/Support` fixture + JSON Schema runner |
-| Tasks/queue/audit | `app/Services/TaskService` + `AuditRecorder`, `app/Jobs/RunTask`, `hostnur:tasks:reconcile` (scheduled), `tasks`/`task_events`/`audit_events`, `App\Listeners\AuthenticationEventSubscriber`, `/panel/tasks`, `/panel/tasks/{id}` and `/panel/audit` |
-| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment, 13 MFA-challenge, 17 security-settings, 8 recovery, 8 agent-contract, 8 agent-availability, 12 fake-agent, 4 task-status, 7 task-request, 11 task-execution, 8 task-audit/UI and 2 scaffold tests; 144 tests / 687 assertions at handoff |
+| Panel UI | `layouts.panel` shell, `components/panel/nav`, `components/ui/*` (button/panel/badge/task-status/empty-state/stat/confirm), dashboard adapter states, filtered task/audit screens with cursor polling |
+| Tasks/queue/audit | `app/Services/TaskService` + `AuditRecorder`, `app/Jobs/RunTask`, `hostnur:tasks:reconcile` (scheduled), `tasks`/`task_events`/`audit_events`, `App\Listeners\AuthenticationEventSubscriber`, `/panel/tasks`, `/panel/tasks/{id}`, `/panel/audit`, `/panel/audit/{id}` |
+| Tests | 20 bootstrap, 14 authentication, 12 MFA-enrollment, 13 MFA-challenge, 17 security-settings, 8 recovery, 8 agent-contract, 8 agent-availability, 12 fake-agent, 4 task-status, 7 task-request, 11 task-execution, 8 task-audit/UI, 5 panel-shell, 5 task-visibility, 3 dashboard, 4 accessibility and 2 scaffold tests; 161 tests / 765 assertions at handoff |
 | CI | `.github/workflows/web-panel.yml`; PHP 8.3/8.4, Node 24, actual runtime/static/build/migration/test gates; watches `panel/**` and `contracts/**` |
-| Last application CI | Session 017 code passed: <https://github.com/maelzx/hostnur/actions/runs/38333551101>, code commit `a691275` |
+| Last application CI | Session 018 code passed: <https://github.com/maelzx/hostnur/actions/runs/38335015107>, code commit `9deae38` |
 | Current local URL | `http://127.0.0.1:9000`; committed example uses port 9000 |
-| Remaining work | Phase 5 shell/dashboard/task-visibility, then application/server-management flows |
+| Remaining work | Phase 6 app inventory/source/secrets, then deployment, server-management and integration phases |
 
 Do not scaffold again, regenerate the app key, reset the database, create test
 users in the real DB, reinstall Boost, or install Rust. The last inspection found
 zero real users, but the user may have subsequently run bootstrap. Inspect state
-read-only when necessary; never assume the account needs recreating. Phases 2–4
-authentication, the agent contract and durable tasks/queue/audit are complete;
-the application-management schema and dashboard/operation UI do not exist yet.
+read-only when necessary; never assume the account needs recreating. Phases 2–5
+(authentication, agent contract, durable tasks/queue/audit and the panel UI) are
+complete; application resources/secrets and server-management flows do not exist
+yet.
 
 #### Low-cost session protocol
 
@@ -1657,6 +1701,11 @@ Phase exit: meaningful queue/process-interruption behavior passes using the dura
 fake adapter. Real cross-process agent recovery remains a later VM gate.
 
 ### 9.7 Phase 5 — Shared UI shell, dashboard and task visibility
+
+**Status: P5.1–P5.4 done; phase 5 complete.** The protected shell/navigation,
+shared components, dashboard adapter states, filtered task/audit screens with
+cursor polling and the responsive/accessibility pass exist. Phase 6 (application
+inventory/source/secrets) is next.
 
 Reuse the current system-font/neutral-slate/indigo styling as the starting direction;
 build an operations workspace, not a marketing homepage. Use shared Blade components

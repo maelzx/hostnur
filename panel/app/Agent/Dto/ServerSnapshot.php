@@ -20,6 +20,8 @@ final readonly class ServerSnapshot
         public array $metrics,
         public array $services,
         public ?string $reason,
+        public ?string $hostname = null,
+        public ?string $os = null,
     ) {}
 
     /**
@@ -28,7 +30,7 @@ final readonly class ServerSnapshot
     public static function fromArray(array $data): self
     {
         $extra = array_diff(array_keys($data), [
-            'protocol_version', 'mode', 'available', 'sampled_at', 'metrics', 'services', 'reason',
+            'protocol_version', 'mode', 'available', 'sampled_at', 'metrics', 'services', 'reason', 'hostname', 'os',
         ]);
 
         if ($extra !== []) {
@@ -71,7 +73,19 @@ final readonly class ServerSnapshot
             throw AgentContractException::invalidParameters('Server snapshot reason must be a string or null.');
         }
 
-        return new self($protocolVersion, $mode, $available, $sampledAt, $metrics, $services, $reason);
+        $hostname = $data['hostname'] ?? null;
+
+        if ($hostname !== null && ! is_string($hostname)) {
+            throw AgentContractException::invalidParameters('Server snapshot hostname must be a string or null.');
+        }
+
+        $os = $data['os'] ?? null;
+
+        if ($os !== null && ! is_string($os)) {
+            throw AgentContractException::invalidParameters('Server snapshot os must be a string or null.');
+        }
+
+        return new self($protocolVersion, $mode, $available, $sampledAt, $metrics, $services, $reason, $hostname, $os);
     }
 
     /**
@@ -87,6 +101,8 @@ final readonly class ServerSnapshot
             'metrics' => $this->metrics,
             'services' => $this->services,
             'reason' => $this->reason,
+            'hostname' => $this->hostname,
+            'os' => $this->os,
         ];
     }
 

@@ -72,7 +72,7 @@ class FakeAgentTest extends TestCase
         $this->assertSame(AgentMode::Fake, $snapshot->mode);
         $this->assertTrue($snapshot->available);
         $this->assertSame(now()->toIso8601String(), $snapshot->sampledAt);
-        $this->assertCount(4, $snapshot->metrics);
+        $this->assertCount(6, $snapshot->metrics);
         $this->assertCount(3, $snapshot->services);
         $this->assertSame('cpu_percent', $snapshot->metrics[0]['name']);
         $this->assertSame('running', $snapshot->services[0]['status']);

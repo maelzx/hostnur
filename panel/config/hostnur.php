@@ -86,4 +86,19 @@ return [
         'max_output_characters' => 2000,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Dashboard
+    |--------------------------------------------------------------------------
+    |
+    | The dashboard caches a single latest adapter sample briefly (never an
+    | unbounded time series) and marks samples older than the stale threshold.
+    |
+    */
+
+    'dashboard' => [
+        'cache_seconds' => 15,
+        'stale_after_seconds' => 120,
+    ],
+
 ];

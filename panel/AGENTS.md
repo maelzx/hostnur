@@ -26,10 +26,11 @@
   Durable fake execution is persisted in `fake_agent_executions` and derived from
   the record plus a controlled clock. A shared fixture runner
   (`tests/Support/ContractFixtures` + `JsonSchemaValidator`) keeps schemas, fixtures
-  and DTOs aligned; compatibility notes are in `../contracts/v1/README.md`. Phase 3
-  and phase 4 (durable tasks/queue/audit via `App\Services\TaskService`,
-  `tasks`/`task_events`/`audit_events`, `hostnur:tasks:reconcile` and the read-only
-  `/panel/tasks` + `/panel/audit` pages) are complete. Phase 5 is next.
+  and DTOs aligned; compatibility notes are in `../contracts/v1/README.md`. Phases 3
+  and 4 (durable tasks/queue/audit) are complete, and phase 5 (protected panel
+  shell, navigation, shared UI components, dashboard adapter states and responsive/
+  accessible task/audit screens) is complete. Use the shared `x-ui.*` components
+  and `layouts.panel` for new panel pages. Phase 6 is next.
 - Bootstrap uses `panel_setup` as durable one-time state, claimed in the same DB
   transaction as user creation. Do not turn deletion or repeat bootstrap into a
   reset mechanism. `is_admin` defaults false and is not mass assignable.

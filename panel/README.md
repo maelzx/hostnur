@@ -153,13 +153,14 @@ npm audit
 npm run build
 ```
 
-Sessions 004–018 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
+Sessions 004–019 verified local checks with PHP 8.4.26, Composer 2.9.2, Node
 24.12.0 and npm 11.6.2. The suite contains 20 administrator-bootstrap tests, 14
 authentication tests, 12 MFA-enrollment tests, 13 MFA-challenge tests, 17
 security-settings tests, 8 administrator-recovery tests, 8 agent-contract tests,
 8 agent-availability tests, 12 fake-agent tests, 4 task-status tests, 7 task-request
-tests, 11 task-execution tests, 8 task-audit/UI tests and two scaffold baseline
-tests. Run individual suites with:
+tests, 11 task-execution tests, 8 task-audit/UI tests, 5 panel-shell tests, 5
+task-visibility tests, 3 dashboard tests, 4 accessibility tests and two scaffold
+baseline tests. Run individual suites with:
 
 ```bash
 php artisan test --compact tests/Feature/AuthenticationTest.php
@@ -175,6 +176,10 @@ php artisan test --compact tests/Unit/TaskStatusTest.php
 php artisan test --compact tests/Feature/TaskRequestTest.php
 php artisan test --compact tests/Feature/TaskExecutionTest.php
 php artisan test --compact tests/Feature/TaskAuditUiTest.php
+php artisan test --compact tests/Feature/PanelShellTest.php
+php artisan test --compact tests/Feature/TaskVisibilityTest.php
+php artisan test --compact tests/Feature/DashboardTest.php
+php artisan test --compact tests/Feature/AccessibilityTest.php
 ```
 
 Authentication tests use isolated in-memory SQLite and cover guest redirects,
@@ -255,6 +260,25 @@ fingerprint/conflict, recent-auth and approval gating, durable execution,
 failure/timeout/unknown outcomes, cancellation, retry, revoked actors, expired
 approvals, lease safety, reconciliation, audit redaction and the paginated
 read-only history gates.
+
+## Panel shell and dashboard
+
+Authenticated panel pages share `resources/views/layouts/panel.blade.php` with a
+labelled navigation shell (Overview, Tasks, Security plus clearly marked
+"later phase" Applications/Server groups), a skip link and reusable Blade
+components (`x-ui.button`, `x-ui.panel`, `x-ui.badge`, `x-ui.task-status`,
+`x-ui.empty-state`, `x-ui.stat`, `x-ui.confirm`). The dashboard reads a single
+short-cached agent snapshot (`hostnur.dashboard.cache_seconds`, default 15s) and
+presents CPU, memory, disk, load, uptime, hostname/OS, managed services, active
+tasks and recent failures. Fake data shows a persistent "Simulated data" banner;
+unavailable values render `—` with the agent's reason, never zero; stale samples
+are labelled.
+
+The task list and audit list have status/action/actor filters and paging; the task
+detail loads events in a bounded cursor and polls only while the task is active.
+Tables scroll horizontally on small screens, use captions and scoped headers, and
+status is conveyed by text as well as colour; destructive security actions use a
+keyboard-operable, labelled modal dialog.
 
 Bootstrap tests use isolated in-memory SQLite, including interleaved setup writes,
 rollback and secret-output checks; they do not create your real administrator.

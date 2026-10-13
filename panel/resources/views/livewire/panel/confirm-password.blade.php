@@ -1,6 +1,5 @@
-<main class="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-12">
+<div class="max-w-md">
     <header class="mb-8">
-        <p class="mb-3 text-sm font-semibold uppercase tracking-widest text-indigo-700">{{ config('app.name') }}</p>
         <h1 class="text-2xl font-semibold tracking-tight">Confirm your password</h1>
         <p class="mt-2 text-sm leading-6 text-slate-600">
             Re-enter your account password to continue. This confirmation lasts a
@@ -36,4 +35,4 @@
     <p class="mt-6 text-center text-sm">
         <a href="{{ route('panel.dashboard') }}" class="font-medium text-slate-600 hover:underline">Cancel</a>
     </p>
-</main>
+</div>

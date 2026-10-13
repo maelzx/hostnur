@@ -16,7 +16,7 @@ use Laravel\Fortify\Actions\GenerateNewRecoveryCodes;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
-#[Layout('layouts.app')]
+#[Layout('layouts.panel')]
 class SecuritySettings extends Component
 {
     public string $password = '';

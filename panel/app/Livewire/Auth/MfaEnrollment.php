@@ -11,7 +11,7 @@ use Laravel\Fortify\Fortify;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
-#[Layout('layouts.app')]
+#[Layout('layouts.panel')]
 class MfaEnrollment extends Component
 {
     public string $code = '';

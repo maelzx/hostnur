@@ -44,6 +44,8 @@
                 }
             }
         },
-        "reason": { "type": ["string", "null"] }
+        "reason": { "type": ["string", "null"] },
+        "hostname": { "type": ["string", "null"] },
+        "os": { "type": ["string", "null"] }
     }
 }

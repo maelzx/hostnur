@@ -1,6 +1,5 @@
-<main class="mx-auto flex min-h-screen max-w-2xl flex-col justify-center px-6 py-12">
+<div class="max-w-2xl">
     <header class="mb-8">
-        <p class="mb-3 text-sm font-semibold uppercase tracking-widest text-indigo-700">{{ config('app.name') }}</p>
         <h1 class="text-2xl font-semibold tracking-tight">Multi-factor authentication</h1>
         <p class="mt-2 text-sm leading-6 text-slate-600">
             Protect the administrator account with a time-based one-time password
@@ -102,4 +101,4 @@
     <p class="mt-6 text-sm leading-6 text-slate-600">
         <a href="{{ route('panel.dashboard') }}" class="font-medium text-indigo-700 hover:underline">Back to panel</a>
     </p>
-</main>
+</div>
