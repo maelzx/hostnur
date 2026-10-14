@@ -1007,14 +1007,14 @@ renewal and failure recovery pass on the VM; observed certificate identity/expir
 is accurate and the previous healthy configuration survives failed changes.
 
 ### Phase 17 — Real services, packages and scheduled jobs
-- Status: **in progress** (session 035). P17.1 (allowlisted managed service
-  observation/control), P17.2 (approved package install) and P17.5 (read-only
-  firewall snapshot) are implemented and unit-tested; `server.snapshot` now reports
-  live services and firewall. P17.3/P17.4 schedule registry + app-owned systemd
-  timer install/remove are implemented agent-side. **Remaining:** panel wiring for
-  schedules (map the stored `command_reference` to a program+argv and convert the
-  cron expression to `OnCalendar`, calling `agent.register_schedule` before
-  `schedule.apply`), then VM validation.
+- Status: **complete (P17.1–P17.5)** in session 035. Allowlisted managed service
+  observation/control, approved package install and read-only firewall snapshot
+  are implemented; `server.snapshot` reports live services and firewall. Schedules:
+  agent registry + app-owned systemd timer install/apply/remove, plus a full
+  cron→`OnCalendar` converter, and panel wiring (`ScheduleService` maps the stored
+  `command_reference` to a program+argv and registers the schedule with the agent
+  before applying). Unit-tested (Rust **115** unit + integration; PHP **256**);
+  **VM validation pending** on the recreated throwaway host.
 - Depends on: 8, 12, 15.
 
 #### Service and package controls
@@ -1463,9 +1463,16 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - Rust: `cargo fmt` / `clippy -D warnings` / `test` — **108 unit + all integration
   tests pass** (services/firewall/register/apply/remove covered). PHP: **256 tests
   pass** (unchanged).
-- Remaining: panel-side schedule wiring (command-reference → program/argv,
-  cron → `OnCalendar`, call `register_schedule` before `schedule.apply`) and VM
-  validation on the recreated throwaway host. Commits: `bcbae4f`, `56f4f56`.
+- Added a full cron→`OnCalendar` converter (`agent/src/cron.rs`): 5-field parsing
+  with values/ranges/steps/lists, DOW names, bounded expansion, two-line output for
+  cron's day-of-month/day-of-week OR semantics, and rejection of unsupported input.
+  `agent.register_schedule` now takes `expression` + `timezone` and stores the
+  converted `OnCalendar`; the timer renderer emits one `OnCalendar=` per line.
+  Panel `ScheduleService` maps `command_reference` to `program`+argv
+  (`artisan …` → the app's PHP binary) and registers the schedule before applying;
+  `AgentClient::registerSchedule` added.
+- Remaining: VM validation on the recreated throwaway host. Commits: `bcbae4f`,
+  `56f4f56`, `853e8a1`.
 
 ### Session 034 — Scope decisions recorded (2026-10-13)
 
@@ -2681,13 +2688,12 @@ The panel is independently runnable and tested; the agent crate builds, tests an
 runs unprivileged in the Lima VM. See `docs/web-milestone.md` and
 `docs/agent-development.md` for passed gates, blocked checks and acceptance maps.
 
-**Phases 11–16 are complete for their scopes**, and **phase 17 is in progress**
-(session 035): agent-side service control, approved package install, read-only
-firewall snapshot and the schedule registry/timer machinery are done and tested.
-The next slice is **panel wiring for schedules** (map `command_reference` to a
-program+argv, convert cron → `OnCalendar`, call `agent.register_schedule` before
-`schedule.apply`), then re-run the throwaway-host setup from
-[`docs/p16-test-host.md`](docs/p16-test-host.md) to validate on the VM.
+**Phases 11–17 are complete for their scopes** (sessions 026–035). Phase 17 added
+real managed service control, approved package install, a read-only firewall
+snapshot, and app-owned scheduled jobs (agent registry + timer, full
+cron→`OnCalendar` converter, panel wiring). Next: re-run the throwaway-host setup
+from [`docs/p16-test-host.md`](docs/p16-test-host.md) to validate phase 17 on the
+VM, then proceed to **phase 18 (MariaDB provisioning)**.
 
 Scope decisions (session 034): MariaDB for phase 18; phase 19 backup/restore
 deferred; phase 20 Debian/APT deferred in favour of a curl+bash bootstrap script;
