@@ -1,6 +1,6 @@
 <div class="grid min-h-dvh lg:grid-cols-2">
     {{-- Brand panel --}}
-    <aside class="relative hidden overflow-hidden bg-slate-900 lg:flex lg:flex-col lg:justify-between lg:p-12">
+    <aside class="relative hidden overflow-hidden bg-slate-900 p-12 lg:flex lg:flex-col">
         <div class="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-indigo-500/10 blur-2xl" aria-hidden="true"></div>
 
         <div class="relative flex items-center gap-3">
@@ -8,34 +8,9 @@
             <span class="text-lg font-semibold tracking-tight text-white">{{ config('app.name') }}</span>
         </div>
 
-        <div class="relative max-w-md">
-            <h2 class="text-3xl font-semibold leading-tight tracking-tight text-white">
-                Your own control panel for the VPS.
-            </h2>
-            <p class="mt-4 text-sm leading-6 text-slate-300">
-                Deploy and manage Laravel applications on a native stack — Linux users,
-                systemd, Nginx and PHP-FPM — with databases and TLS handled for you.
-            </p>
-
-            <ul class="mt-8 space-y-3 text-sm text-slate-300">
-                <li class="flex items-start gap-3">
-                    <svg class="mt-0.5 h-5 w-5 shrink-0 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
-                    One-command deploys from Git
-                </li>
-                <li class="flex items-start gap-3">
-                    <svg class="mt-0.5 h-5 w-5 shrink-0 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
-                    Managed databases and HTTPS
-                </li>
-                <li class="flex items-start gap-3">
-                    <svg class="mt-0.5 h-5 w-5 shrink-0 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
-                    Audited, allowlisted privileged operations
-                </li>
-            </ul>
-        </div>
-
-        <p class="relative text-xs text-slate-500">
-            Administrator access only. No public registration.
-        </p>
+        <h2 class="relative mt-16 max-w-sm text-3xl font-semibold leading-tight tracking-tight text-white">
+            Your own control panel for the VPS.
+        </h2>
     </aside>
 
     {{-- Sign-in form --}}
@@ -46,12 +21,7 @@
                 <span class="text-lg font-semibold tracking-tight text-slate-900">{{ config('app.name') }}</span>
             </div>
 
-            <header class="mb-8">
-                <h1 class="text-2xl font-semibold tracking-tight text-slate-900">Sign in</h1>
-                <p class="mt-2 text-sm leading-6 text-slate-600">
-                    Use the provisioned administrator account.
-                </p>
-            </header>
+            <h1 class="mb-8 text-2xl font-semibold tracking-tight text-slate-900">Sign in</h1>
 
             <form method="POST" action="{{ route('login.store') }}" class="space-y-5">
                 @csrf
@@ -115,11 +85,6 @@
                     Sign in
                 </button>
             </form>
-
-            <p class="mt-8 text-sm leading-6 text-slate-500">
-                Multi-factor authentication is required after sign-in. Account recovery
-                is handled locally on the server.
-            </p>
         </div>
     </main>
 </div>

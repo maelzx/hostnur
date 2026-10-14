@@ -1,19 +1,9 @@
 <div class="max-w-2xl">
-    <header class="mb-8">
-        <h1 class="text-2xl font-semibold tracking-tight">Multi-factor authentication</h1>
-        <p class="mt-2 text-sm leading-6 text-slate-600">
-            Protect the administrator account with a time-based one-time password
-            from an authenticator app. Secrets are stored encrypted and shown only
-            during setup.
-        </p>
-    </header>
+    <h1 class="mb-8 text-2xl font-semibold tracking-tight text-slate-900">Multi-factor authentication</h1>
 
     @if ($user->two_factor_secret === null)
         <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-xs">
             <h2 class="text-lg font-semibold tracking-tight text-slate-900">Setup required</h2>
-            <p class="mt-2 text-sm leading-6 text-slate-600">
-                Multi-factor authentication is not configured for this account yet.
-            </p>
             <button
                 type="button"
                 wire:click="enable"
@@ -28,8 +18,7 @@
             <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-xs">
                 <h2 class="text-lg font-semibold tracking-tight text-slate-900">Set up your authenticator</h2>
                 <p class="mt-2 text-sm leading-6 text-slate-600">
-                    Scan the QR code or enter the key manually in your authenticator
-                    app. Then enter the generated six-digit code below to finish.
+                    Scan the QR code, then confirm with the code below.
                 </p>
                 <div class="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start">
                     <div class="h-48 w-48 shrink-0 [&>svg]:h-48 [&>svg]:w-48" aria-hidden="true">
@@ -43,9 +32,6 @@
 
                 <form wire:submit="confirm" class="mt-6 border-t border-slate-200 pt-6">
                     <h3 class="text-base font-semibold tracking-tight text-slate-900">Confirm setup</h3>
-                    <p class="mt-1 text-sm leading-6 text-slate-600">
-                        Enter the current six-digit code from your authenticator app.
-                    </p>
 
                     @error('code')
                         <p role="alert" class="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{{ $message }}</p>
@@ -84,8 +70,7 @@
                     <div class="max-w-md">
                         <h2 class="text-lg font-semibold tracking-tight text-slate-900">Recovery codes</h2>
                         <p class="mt-2 text-sm leading-6 text-slate-600">
-                            Store these one-time codes somewhere safe. They are shown only
-                            during setup and each can be used once if you lose your device.
+                            Shown only once. Save them somewhere safe.
                         </p>
                     </div>
 

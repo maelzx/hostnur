@@ -5,13 +5,7 @@
             <span class="text-lg font-semibold tracking-tight text-slate-900">{{ config('app.name') }}</span>
         </div>
 
-        <header class="mb-8">
-            <h1 class="text-2xl font-semibold tracking-tight text-slate-900">Two-factor verification</h1>
-            <p class="mt-2 text-sm leading-6 text-slate-600">
-                Enter the current six-digit code from your authenticator app, or use one
-                of your recovery codes.
-            </p>
-        </header>
+        <h1 class="mb-8 text-2xl font-semibold tracking-tight text-slate-900">Two-factor verification</h1>
 
         <form method="POST" action="{{ route('two-factor.login.store') }}" class="space-y-5">
             @csrf
