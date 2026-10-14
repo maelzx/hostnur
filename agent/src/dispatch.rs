@@ -543,6 +543,49 @@ impl<'a> AgentHandler<'a> {
         json!({"protocol_version": 1, "removed": true, "schedule": schedule_id.as_str()})
     }
 
+    /// Run a task-driven mutation as accept→execute→receipt, persisting the
+    /// terminal status and result so the panel's `inspect` poll sees the outcome.
+    /// Read-only/control methods (capabilities/snapshot/register_*) stay immediate.
+    fn complete_operation(
+        &self,
+        request: &OperationRequest,
+        work: impl FnOnce() -> Value,
+    ) -> Value {
+        let acceptance = match self.journal.accept(request) {
+            Ok(acceptance) => acceptance,
+            Err(error) => return error_body(ContractErrorCode::Conflict, &error.to_string()),
+        };
+
+        if !acceptance.reused {
+            let outcome = work();
+            let failed = outcome.get("error").is_some();
+            let status = if failed {
+                OperationStatus::Failed
+            } else {
+                OperationStatus::Succeeded
+            };
+            let _ = self
+                .journal
+                .set_status(&acceptance.execution_id, status, Some(100));
+            let _ = self
+                .journal
+                .set_execution_result(&acceptance.execution_id, Some(&outcome.to_string()));
+            let _ = self.journal.append_event(
+                &acceptance.execution_id,
+                if failed { "Failed." } else { "Completed." },
+            );
+        }
+
+        to_value(OperationReceipt {
+            protocol_version: 1,
+            request_id: acceptance.request_id.clone(),
+            execution_id: acceptance.execution_id.clone(),
+            operation: request.operation.clone(),
+            status: acceptance.status,
+            accepted_at: acceptance.accepted_at.clone(),
+        })
+    }
+
     fn service_control(&self, request: &OperationRequest) -> Value {
         let Some(resource) = request.resource.as_ref() else {
             return error_body(
@@ -774,18 +817,24 @@ impl<'a> AgentHandler<'a> {
         };
 
         match self.journal.inspect(&execution_id) {
-            Ok(Some(view)) => to_value(OperationSnapshot {
-                protocol_version: 1,
-                execution_id: view.execution_id,
-                request_id: view.request_id,
-                operation: view.operation,
-                status: view.status,
-                progress: view.progress,
-                events: view.events,
-                result: None,
-                error: None,
-                updated_at: view.updated_at,
-            }),
+            Ok(Some(view)) => {
+                let result = view
+                    .result
+                    .as_deref()
+                    .and_then(|raw| serde_json::from_str::<Value>(raw).ok());
+                to_value(OperationSnapshot {
+                    protocol_version: 1,
+                    execution_id: view.execution_id,
+                    request_id: view.request_id,
+                    operation: view.operation,
+                    status: view.status,
+                    progress: view.progress,
+                    events: view.events,
+                    result,
+                    error: None,
+                    updated_at: view.updated_at,
+                })
+            }
             Ok(None) => error_body(
                 ContractErrorCode::ExecutionUnknown,
                 "the execution is not known to the agent",
@@ -842,17 +891,19 @@ impl RequestHandler for AgentHandler<'_> {
             "agent.cancel" => self.cancel(request),
             "agent.register_application" => self.register_application(request),
             "application.deploy" => self.deploy_release(request),
-            "service.control" => self.service_control(request),
-            "package.install" => self.package_install(request),
+            "service.control" => self.complete_operation(request, || self.service_control(request)),
+            "package.install" => self.complete_operation(request, || self.package_install(request)),
             "agent.register_database" => self.register_database(request),
-            "database.provision" => self.database_provision(request),
-            "database.rotate" => self.rotate_database(request),
+            "database.provision" => {
+                self.complete_operation(request, || self.database_provision(request))
+            }
+            "database.rotate" => self.complete_operation(request, || self.rotate_database(request)),
             "database.export" => self.export_database(request),
-            "database.import" => self.import_database(request),
+            "database.import" => self.complete_operation(request, || self.import_database(request)),
             "agent.remove_database" => self.remove_database(request),
             "agent.register_schedule" => self.register_schedule(request),
             "agent.remove_schedule" => self.remove_schedule(request),
-            "schedule.apply" => self.schedule_apply(request),
+            "schedule.apply" => self.complete_operation(request, || self.schedule_apply(request)),
             _ => error_body(
                 ContractErrorCode::UnsupportedOperation,
                 "the operation is not implemented by this agent build",

@@ -286,6 +286,56 @@ if systemctl list-unit-files hostnur-panel.service >/dev/null 2>&1; then
   systemctl daemon-reload
 fi
 
+# --- panel queue worker + scheduler -----------------------------------------
+log "Configuring panel queue worker and scheduler"
+cat > /etc/systemd/system/hostnur-panel-worker.service <<EOF
+[Unit]
+Description=Hostnur panel queue worker
+After=network.target
+
+[Service]
+Type=simple
+User=${PANEL_USER}
+Group=${PANEL_GROUP}
+WorkingDirectory=${PANEL_DIR}
+ExecStart=/usr/bin/php artisan queue:work --sleep=3 --tries=1 --max-time=3600
+Restart=always
+RestartSec=5
+StopWaitSecs=60
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat > /etc/systemd/system/hostnur-panel-schedule.service <<EOF
+[Unit]
+Description=Hostnur panel scheduler (schedule:run)
+
+[Service]
+Type=oneshot
+User=${PANEL_USER}
+Group=${PANEL_GROUP}
+WorkingDirectory=${PANEL_DIR}
+ExecStart=/usr/bin/php artisan schedule:run
+EOF
+
+cat > /etc/systemd/system/hostnur-panel-schedule.timer <<'EOF'
+[Unit]
+Description=Run the Hostnur panel scheduler every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+AccuracySec=1s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now hostnur-panel-worker.service
+systemctl enable --now hostnur-panel-schedule.timer
+
 # --- firewall ----------------------------------------------------------------
 if command -v ufw >/dev/null; then
   ufw allow OpenSSH >/dev/null 2>&1 || true

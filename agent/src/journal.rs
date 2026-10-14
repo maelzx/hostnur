@@ -15,7 +15,7 @@ use crate::contract::{OperationRequest, OperationStatus, SnapshotEvent, Uuid};
 use crate::ids;
 
 /// Schema version recorded in `schema_meta`.
-pub const SCHEMA_VERSION: &str = "6";
+pub const SCHEMA_VERSION: &str = "7";
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS executions (
     resource_id TEXT,
     status TEXT NOT NULL,
     progress INTEGER,
+    result TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -158,6 +159,8 @@ pub struct ExecutionView {
     pub status: OperationStatus,
     pub progress: Option<i64>,
     pub events: Vec<SnapshotEvent>,
+    /// Serialized operation result (JSON), when the operation produced one.
+    pub result: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -265,6 +268,8 @@ impl Journal {
         connection
             .execute_batch(SCHEMA)
             .map_err(|err| JournalError::Open(err.to_string()))?;
+        // Additive migration for databases created before the result column.
+        let _ = connection.execute("ALTER TABLE executions ADD COLUMN result TEXT", []);
         connection
             .execute(
                 "INSERT INTO schema_meta(key, value) VALUES ('schema_version', ?1)
@@ -349,7 +354,7 @@ impl Journal {
         let base = self
             .connection
             .query_row(
-                "SELECT execution_id, request_id, operation, status, progress, created_at, updated_at
+                "SELECT execution_id, request_id, operation, status, progress, created_at, updated_at, result
                  FROM executions WHERE execution_id = ?1",
                 params![execution_id.as_str()],
                 |row| {
@@ -361,6 +366,7 @@ impl Journal {
                         row.get::<_, Option<i64>>(4)?,
                         row.get::<_, String>(5)?,
                         row.get::<_, String>(6)?,
+                        row.get::<_, Option<String>>(7)?,
                     ))
                 },
             )
@@ -378,6 +384,7 @@ impl Journal {
             status: parse_status(&base.3)?,
             progress: base.4,
             events: self.events_after(execution_id, 0)?,
+            result: base.7,
             created_at: base.5,
             updated_at: base.6,
         }))
@@ -470,6 +477,21 @@ impl Journal {
                     progress,
                     clock::now_rfc3339(),
                 ],
+            )
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+        Ok(())
+    }
+
+    /// Persist an operation result (serialized JSON) for later inspection.
+    pub fn set_execution_result(
+        &self,
+        execution_id: &Uuid,
+        result: Option<&str>,
+    ) -> Result<(), JournalError> {
+        self.connection
+            .execute(
+                "UPDATE executions SET result = ?2, updated_at = ?3 WHERE execution_id = ?1",
+                params![execution_id.as_str(), result, clock::now_rfc3339()],
             )
             .map_err(|err| JournalError::Query(err.to_string()))?;
         Ok(())
