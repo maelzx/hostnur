@@ -65,7 +65,7 @@
 
         <x-ui.panel title="Managed services">
             @if ($snapshot->services === [])
-                <p class="mt-4 text-sm text-slate-600">No services reported by the agent.</p>
+                <p class="mt-4 text-sm text-slate-600">No services reported.</p>
             @else
                 <ul class="mt-4 space-y-2 text-sm">
                     @foreach ($snapshot->services as $service)

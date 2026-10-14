@@ -10,8 +10,7 @@
         <section class="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-6">
             <h2 class="text-lg font-semibold text-amber-900">New recovery codes</h2>
             <p class="mt-2 text-sm leading-6 text-amber-900">
-                Store these one-time codes now. They replace all previous recovery
-                codes and are shown only once.
+                Save them now; they replace all previous codes and are shown once.
             </p>
             <ul class="mt-4 grid grid-cols-1 gap-2 font-mono text-sm sm:grid-cols-2">
                 @foreach ($recoveryCodes as $recoveryCode)
@@ -60,8 +59,7 @@
     <x-ui.panel title="Multi-factor authentication">
         @if ($user->hasEnabledTwoFactorAuthentication())
             <p class="mt-2 text-sm leading-6 text-slate-600">
-                Multi-factor authentication is enabled. Disabling it removes the
-                secret and all recovery codes and signs out existing sessions.
+                Enabled. Disabling removes the secret and all recovery codes, and signs out other sessions.
             </p>
             <div class="mt-4 flex flex-wrap gap-3">
                 <x-ui.confirm

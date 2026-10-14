@@ -33,7 +33,7 @@
             <div class="sm:col-span-2">
                 <label for="command_reference" class="block text-sm font-medium text-slate-700">Command reference</label>
                 <input id="command_reference" type="text" wire:model="command_reference" placeholder="schedule:run" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm">
-                <p class="mt-1 text-xs text-slate-500">A logical reference for the hosted app; the panel does not execute it.</p>
+                <p class="mt-1 text-xs text-slate-500">Reference only; not executed by the panel.</p>
                 @error('command_reference') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
             </div>
             <div class="flex items-center gap-3 sm:col-span-2">
@@ -81,6 +81,6 @@
         </section>
 
         <div class="mt-6">{{ $jobs->links() }}</div>
-        <p class="mt-4 text-xs text-slate-500">Execution history is produced by the agent in a later phase; no runs are recorded yet.</p>
+        <p class="mt-4 text-xs text-slate-500">No runs recorded yet.</p>
     @endif
 </main>

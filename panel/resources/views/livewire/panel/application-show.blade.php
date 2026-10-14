@@ -79,7 +79,7 @@
                                 <option value="{{ $credential->id }}">{{ $credential->label }} ({{ $credential->type->value }} v{{ $credential->version }})</option>
                             @endforeach
                         </select>
-                        <p class="mt-1 text-xs text-slate-500">Only needed for private repositories (add one in step 2).</p>
+                        <p class="mt-1 text-xs text-slate-500">For private repositories only.</p>
                         @error('source_credential_id') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
                     </div>
                 </div>
@@ -154,19 +154,19 @@
                     <div>
                         <label for="runtime_version" class="block text-sm font-medium text-slate-700">PHP version</label>
                         <input id="runtime_version" type="text" wire:model="runtime_version" placeholder="8.3" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                        <p class="mt-1 text-xs text-slate-500">Must be a version the server supports (e.g. 8.3 or 8.4).</p>
+                        <p class="mt-1 text-xs text-slate-500">Server-supported version, e.g. 8.3 or 8.4.</p>
                         @error('runtime_version') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
                     </div>
                     <div>
                         <label for="workers" class="block text-sm font-medium text-slate-700">Queue workers</label>
                         <input id="workers" type="number" min="0" max="10" wire:model="workers" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                        <p class="mt-1 text-xs text-slate-500">Set to <code>1</code> if the app sends queued email (e.g. alerts).</p>
+                        <p class="mt-1 text-xs text-slate-500">Set to <code>1</code> if the app queues email.</p>
                         @error('workers') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
                     </div>
                     <div>
                         <label for="health_path" class="block text-sm font-medium text-slate-700">Health check path</label>
                         <input id="health_path" type="text" wire:model="health_path" placeholder="up" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                        <p class="mt-1 text-xs text-slate-500">A page that returns 200. Laravel’s default is <code>/up</code>.</p>
+                        <p class="mt-1 text-xs text-slate-500">Must return 200. Laravel default: <code>/up</code>.</p>
                         @error('health_path') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
                     </div>
                 </div>
@@ -182,7 +182,7 @@
                         <div>
                             <label for="build_command" class="block text-sm font-medium text-slate-700">Extra build command</label>
                             <input id="build_command" type="text" wire:model="build_command" placeholder="(handled automatically)" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                            <p class="mt-1 text-xs text-slate-500">Composer install and <code>npm run build</code> run automatically when detected.</p>
+                            <p class="mt-1 text-xs text-slate-500">Runs automatically when detected.</p>
                             @error('build_command') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
                         </div>
                         <div>
@@ -193,7 +193,7 @@
                         <div class="sm:col-span-2">
                             <label for="persistent_paths_text" class="block text-sm font-medium text-slate-700">Persistent paths (one per line)</label>
                             <textarea id="persistent_paths_text" wire:model="persistent_paths_text" rows="3" placeholder="storage/app" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
-                            <p class="mt-1 text-xs text-slate-500">Files kept across deploys (uploads, attachments). Laravel uses <code>storage/app</code>.</p>
+                            <p class="mt-1 text-xs text-slate-500">Kept across deploys, e.g. <code>storage/app</code>.</p>
                             @error('persistent_paths') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
                             @error('persistent_paths.*') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
                         </div>
@@ -322,8 +322,7 @@
     @if (! $application->isArchived())
         <x-ui.panel title="Danger zone" class="mt-6">
             <p class="mt-2 text-sm text-slate-600">
-                Archiving keeps the application and its history; it does not delete records or host
-                data. It is refused while the application has active work.
+                Keeps records and history; refused while the application has active work.
             </p>
             @error('archive') <p role="alert" class="mt-2 text-sm text-red-700">{{ $message }}</p> @enderror
             <div class="mt-4">

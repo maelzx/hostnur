@@ -10,7 +10,7 @@
     <div class="grid gap-6 lg:grid-cols-2">
         <x-ui.panel title="Managed services">
             @if ($snapshot->services === [])
-                <p class="mt-4 text-sm text-slate-600">No services reported by the agent.</p>
+                <p class="mt-4 text-sm text-slate-600">No services reported.</p>
             @else
                 <ul class="mt-4 divide-y divide-slate-100 text-sm">
                     @foreach ($snapshot->services as $service)
@@ -48,7 +48,7 @@
         </x-ui.panel>
 
         <x-ui.panel title="Package catalog">
-            <p class="mt-2 text-sm text-slate-600">Approved package IDs only; no arbitrary APT flags or repositories.</p>
+            <p class="mt-2 text-sm text-slate-600">Approved package IDs only.</p>
             <form wire:submit="install" class="mt-4 space-y-3">
                 @error('package') <p role="alert" class="text-sm text-red-700">{{ $message }}</p> @enderror
                 <div>
@@ -67,14 +67,14 @@
 
     <x-ui.panel title="Firewall (read-only)" class="mt-6">
         @if ($snapshot->firewall === null)
-            <p class="mt-2 text-sm text-slate-600">The firewall state is not reported by this agent. No firewall changes are available.</p>
+            <p class="mt-2 text-sm text-slate-600">Not reported by this agent.</p>
         @else
             <dl class="mt-2 grid gap-3 text-sm sm:grid-cols-3">
                 <div><dt class="text-slate-600">Enabled</dt><dd class="font-medium">{{ $snapshot->firewall['enabled'] ? 'yes' : 'no' }}</dd></div>
                 <div><dt class="text-slate-600">Incoming policy</dt><dd class="font-medium">{{ $snapshot->firewall['incoming_policy'] }}</dd></div>
                 <div><dt class="text-slate-600">Rules</dt><dd class="font-medium">{{ $snapshot->firewall['rule_count'] }}</dd></div>
             </dl>
-            <p class="mt-2 text-xs text-slate-500">Read-only summary; firewall mutations are not available.</p>
+            <p class="mt-2 text-xs text-slate-500">Read-only.</p>
         @endif
     </x-ui.panel>
 </main>

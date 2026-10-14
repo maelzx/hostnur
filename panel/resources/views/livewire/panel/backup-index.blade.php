@@ -95,10 +95,7 @@
                     @endforeach
                 </ul>
             @endif
-            <p class="mt-4 text-xs text-slate-500">
-                Restore is unavailable in this phase; consistency, key custody and
-                cross-VM verification arrive later.
-            </p>
+            <p class="mt-4 text-xs text-slate-500">Restore is not available yet.</p>
         </x-ui.panel>
     </div>
 </main>

@@ -25,8 +25,7 @@
             @endforeach
         </ul>
         <p class="mt-4 text-xs text-slate-500">
-            Preflight checks panel configuration only; repository reachability, package
-            availability and host changes remain agent-dependent.
+            Checks panel configuration only; host access is agent-dependent.
         </p>
     </x-ui.panel>
 
@@ -46,7 +45,7 @@
                 <input type="checkbox" wire:model.live="run_migrations" class="rounded border-slate-300">
                 Run database migrations
             </label>
-            <span class="text-xs text-slate-500">Code rollback is not database rollback; shared uploads are not reverted.</span>
+            <span class="text-xs text-slate-500">Does not revert the database or uploads.</span>
         </div>
 
         <div class="mt-4 flex flex-wrap gap-3">
@@ -72,7 +71,7 @@
         <x-ui.panel title="Rollback">
             @error('release') <p role="alert" class="mt-2 text-sm text-red-700">{{ $message }}</p> @enderror
             @if ($releases->isEmpty())
-                <p class="mt-2 text-sm text-slate-600">No successful releases are available to roll back to.</p>
+                <p class="mt-2 text-sm text-slate-600">No releases to roll back to.</p>
             @else
                 <div class="mt-2">
                     <label for="release" class="block text-sm font-medium text-slate-700">Known release</label>

@@ -4,7 +4,7 @@
     </header>
 
     @if ($deployments->isEmpty())
-        <x-ui.empty-state title="No deployments yet">Request a deployment from an application's operations page.</x-ui.empty-state>
+        <x-ui.empty-state title="No deployments yet">Request one from an application's operations page.</x-ui.empty-state>
     @else
         <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
             <div class="overflow-x-auto">
