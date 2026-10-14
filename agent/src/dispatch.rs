@@ -14,21 +14,26 @@ use crate::contract::{
     OperationSnapshot, OperationStatus, Uuid,
 };
 use crate::deploy::DeployRuntime;
+use crate::firewall::FirewallPolicy;
 use crate::git::policy::{NetworkPolicy, validate_repository_url};
 use crate::git::{GitRef, validate_ref};
 use crate::journal::{ApplicationSource, Journal};
 use crate::observe;
+use crate::packages::{PackageError, PackagePolicy};
 use crate::provider::RuntimePolicy;
 use crate::provider::policy::validate_hostname;
+use crate::services::{ServiceAction, ServiceError, ServicePolicy};
 use crate::transport::RequestHandler;
 
 /// Operations this build actually advertises and can serve.
-pub const SUPPORTED_OPERATIONS: [&str; 5] = [
+pub const SUPPORTED_OPERATIONS: [&str; 7] = [
     "agent.capabilities",
     "agent.inspect",
     "agent.cancel",
     "agent.register_application",
     "server.snapshot",
+    "service.control",
+    "package.install",
 ];
 
 /// Handler backed by the durable journal.
@@ -36,6 +41,9 @@ pub struct AgentHandler<'a> {
     journal: &'a Journal,
     deploy: Option<DeployRuntime>,
     policy: RuntimePolicy,
+    services: ServicePolicy,
+    packages: PackagePolicy,
+    firewall: FirewallPolicy,
 }
 
 impl<'a> AgentHandler<'a> {
@@ -44,6 +52,9 @@ impl<'a> AgentHandler<'a> {
             journal,
             deploy: None,
             policy: RuntimePolicy::default(),
+            services: ServicePolicy::default(),
+            packages: PackagePolicy::default(),
+            firewall: FirewallPolicy::default(),
         }
     }
 
@@ -53,6 +64,75 @@ impl<'a> AgentHandler<'a> {
             journal,
             deploy: Some(deploy),
             policy,
+            services: ServicePolicy::default(),
+            packages: PackagePolicy::default(),
+            firewall: FirewallPolicy::default(),
+        }
+    }
+
+    fn service_control(&self, request: &OperationRequest) -> Value {
+        let Some(resource) = request.resource.as_ref() else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "service resource is required",
+            );
+        };
+        if resource.kind != "service" {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "resource must be a service",
+            );
+        }
+        let Some(action) = request
+            .parameters
+            .get("action")
+            .and_then(Value::as_str)
+            .and_then(ServiceAction::parse)
+        else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "action must be start, stop or restart",
+            );
+        };
+
+        match self.services.control(&resource.id, action) {
+            Ok(observation) => json!({
+                "protocol_version": 1,
+                "service": observation.name,
+                "status": observation.status,
+                "action": action.as_str(),
+            }),
+            Err(ServiceError::UnknownService(id)) => error_body(
+                ContractErrorCode::PermissionDenied,
+                &format!("service `{id}` is not managed by the agent"),
+            ),
+            Err(ServiceError::Tool(message)) => {
+                error_body(ContractErrorCode::OperationFailed, &message)
+            }
+        }
+    }
+
+    fn package_install(&self, request: &OperationRequest) -> Value {
+        let Some(id) = request.parameters.get("package").and_then(Value::as_str) else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "package id is required",
+            );
+        };
+        match self.packages.install(id) {
+            Ok(version) => json!({
+                "protocol_version": 1,
+                "installed": true,
+                "package": id,
+                "version": version,
+            }),
+            Err(PackageError::UnknownPackage(_)) => error_body(
+                ContractErrorCode::InvalidParameters,
+                "package is not in the approved catalog",
+            ),
+            Err(PackageError::ToolFailed(message)) => {
+                error_body(ContractErrorCode::OperationFailed, &message)
+            }
         }
     }
 
@@ -75,6 +155,16 @@ impl<'a> AgentHandler<'a> {
                 "resource must be an application",
             );
         }
+
+        let application_id = match Uuid::parse(&resource.id) {
+            Ok(id) => id,
+            Err(_) => {
+                return error_body(
+                    ContractErrorCode::InvalidParameters,
+                    "application resource id must be a UUID",
+                );
+            }
+        };
 
         let git_ref = match request.parameters.get("ref").and_then(Value::as_str) {
             Some(value) => match validate_ref(value) {
@@ -99,7 +189,6 @@ impl<'a> AgentHandler<'a> {
         if !acceptance.reused {
             let runtime = runtime.clone();
             let execution_id = acceptance.execution_id.clone();
-            let application_id = resource.id.clone();
             std::thread::spawn(move || {
                 runtime.run_worker(execution_id, application_id, git_ref, run_migrations);
             });
@@ -134,7 +223,10 @@ impl<'a> AgentHandler<'a> {
     }
 
     fn server_snapshot(&self) -> Value {
-        to_value(observe::server_snapshot())
+        let mut snapshot = observe::server_snapshot();
+        snapshot.services = self.services.observations();
+        snapshot.firewall = self.firewall.snapshot();
+        to_value(snapshot)
     }
 
     fn register_application(&self, request: &OperationRequest) -> Value {
@@ -277,6 +369,8 @@ impl RequestHandler for AgentHandler<'_> {
             "agent.cancel" => self.cancel(request),
             "agent.register_application" => self.register_application(request),
             "application.deploy" => self.deploy_release(request),
+            "service.control" => self.service_control(request),
+            "package.install" => self.package_install(request),
             _ => error_body(
                 ContractErrorCode::UnsupportedOperation,
                 "the operation is not implemented by this agent build",

@@ -17,6 +17,7 @@ pub mod contract;
 pub mod deploy;
 pub mod dispatch;
 pub mod error;
+pub mod firewall;
 pub mod git;
 pub mod ids;
 pub mod journal;
@@ -27,6 +28,7 @@ pub mod process;
 pub mod provider;
 pub mod provision;
 pub mod runtime;
+pub mod services;
 pub mod tls;
 pub mod transport;
 

@@ -32,10 +32,14 @@ pub struct OperationRequest {
 }
 
 /// A managed-resource reference resolved by the agent, never a caller path.
+///
+/// The id is either a UUID (applications, etc.) or a bounded safe identifier
+/// (e.g. an allowlisted service name such as `nginx`); it is always validated
+/// before use and never treated as a filesystem path or unit name directly.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ResourceRef {
     pub kind: String,
-    pub id: Uuid,
+    pub id: String,
 }
 
 #[derive(Deserialize)]
@@ -56,7 +60,16 @@ struct RawRequest {
 #[serde(deny_unknown_fields)]
 struct RawResource {
     kind: String,
-    id: Uuid,
+    id: String,
+}
+
+/// A resource id is a UUID or a bounded, safe identifier.
+fn is_safe_resource_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
 }
 
 /// Parse and validate a request from raw message bytes.
@@ -124,6 +137,9 @@ fn validate_resource(
                 return Err(ContractError::invalid_parameters(
                     "resource kind is not valid for this operation",
                 ));
+            }
+            if !is_safe_resource_id(&raw.id) {
+                return Err(ContractError::invalid_parameters("resource id is invalid"));
             }
             Ok(Some(ResourceRef {
                 kind: raw.kind,
