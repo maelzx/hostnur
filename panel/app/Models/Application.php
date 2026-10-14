@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Enums\ApplicationStatus;
 use App\Enums\SourceStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Application extends Model
 {
@@ -80,6 +82,18 @@ class Application extends Model
         return $this->hasMany(Backup::class)->latest('created_at');
     }
 
+    public function deployments(): HasMany
+    {
+        return $this->hasMany(Deployment::class);
+    }
+
+    public function latestDeployment(): HasOne
+    {
+        return $this->hasOne(Deployment::class)
+            ->orderByDesc('requested_at')
+            ->orderByDesc('created_at');
+    }
+
     public function sourceCredential(): BelongsTo
     {
         return $this->belongsTo(SourceCredential::class);
@@ -88,5 +102,16 @@ class Application extends Model
     public function isArchived(): bool
     {
         return $this->archived_at !== null;
+    }
+
+    public function status(): ApplicationStatus
+    {
+        if ($this->isArchived()) {
+            return ApplicationStatus::Archived;
+        }
+
+        return $this->latestDeployment === null
+            ? ApplicationStatus::NotDeployed
+            : ApplicationStatus::fromDeploymentState($this->latestDeployment->state);
     }
 }

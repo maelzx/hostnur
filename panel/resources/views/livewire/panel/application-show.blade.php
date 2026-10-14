@@ -6,11 +6,7 @@
         <h1 class="mt-2 break-words text-2xl font-semibold tracking-tight">{{ $application->name }}</h1>
         <p class="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
             <span class="font-mono">{{ $application->slug }}</span>
-            @if ($application->isArchived())
-                <x-ui.badge tone="warning">archived</x-ui.badge>
-            @else
-                <x-ui.badge tone="info">desired</x-ui.badge>
-            @endif
+            <x-ui.application-status :status="$application->status()" :deployment="$application->latestDeployment" />
             <span>provider {{ $application->provider }}</span>
             <span>revision {{ $application->current_revision }}</span>
         </p>

@@ -48,7 +48,7 @@ class ApplicationIndex extends Component
     public function render(): View
     {
         return view('livewire.panel.application-index', [
-            'applications' => Application::query()->withCount('domains')->latest('created_at')->paginate(25),
+            'applications' => Application::query()->with('latestDeployment')->withCount('domains')->latest('created_at')->paginate(25),
             'providers' => config('hostnur.applications.providers'),
             'runtimes' => config('hostnur.applications.runtimes'),
         ]);

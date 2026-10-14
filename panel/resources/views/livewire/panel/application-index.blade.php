@@ -56,7 +56,7 @@
                             <th scope="col" class="px-4 py-3 font-medium">Name</th>
                             <th scope="col" class="px-4 py-3 font-medium">Runtime</th>
                             <th scope="col" class="px-4 py-3 font-medium">Domains</th>
-                            <th scope="col" class="px-4 py-3 font-medium">State</th>
+                            <th scope="col" class="px-4 py-3 font-medium">Status</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
@@ -69,11 +69,7 @@
                                 <td class="px-4 py-3 text-slate-600">{{ $application->runtime }} {{ $application->runtime_version }}</td>
                                 <td class="px-4 py-3 text-slate-600">{{ $application->domains_count }}</td>
                                 <td class="px-4 py-3">
-                                    @if ($application->isArchived())
-                                        <x-ui.badge tone="warning">archived</x-ui.badge>
-                                    @else
-                                        <x-ui.badge tone="info">desired</x-ui.badge>
-                                    @endif
+                                    <x-ui.application-status :status="$application->status()" :deployment="$application->latestDeployment" />
                                 </td>
                             </tr>
                         @endforeach
