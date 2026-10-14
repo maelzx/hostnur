@@ -279,3 +279,62 @@ fn package_install_rejects_unapproved() {
     let body = handler.handle(&request("package.install", p)).unwrap();
     assert_eq!(body["error"]["code"], "invalid_parameters");
 }
+
+#[test]
+fn register_database_is_idempotent_and_conflict_aware() {
+    let journal = Journal::open_in_memory().unwrap();
+    let handler = AgentHandler::new(&journal);
+    let database = "11111111-2222-4333-8444-555555555555";
+    let app = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    let other = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
+
+    let mut params = Map::new();
+    params.insert("database".into(), json!(database));
+    params.insert("application".into(), json!(app));
+
+    let body = handler
+        .handle(&request("agent.register_database", params.clone()))
+        .unwrap();
+    assert_eq!(body["registered"], true);
+    assert_eq!(body["database"], "hn_db_111111112222");
+
+    // Idempotent re-register.
+    let body = handler
+        .handle(&request("agent.register_database", params))
+        .unwrap();
+    assert_eq!(body["registered"], true);
+
+    // Same database id for a different application is a conflict.
+    let mut conflict = Map::new();
+    conflict.insert("database".into(), json!(database));
+    conflict.insert("application".into(), json!(other));
+    let body = handler
+        .handle(&request("agent.register_database", conflict))
+        .unwrap();
+    assert_eq!(body["error"]["code"], "conflict");
+}
+
+#[test]
+fn provision_and_remove_require_registration() {
+    let journal = Journal::open_in_memory().unwrap();
+    let handler = AgentHandler::new(&journal);
+    let database = "11111111-2222-4333-8444-555555555555";
+
+    let mut provision = Map::new();
+    provision.insert("request".into(), json!(database));
+    assert_eq!(
+        handler
+            .handle(&request("database.provision", provision))
+            .unwrap()["error"]["code"],
+        "resource_not_found"
+    );
+
+    let mut remove = Map::new();
+    remove.insert("database".into(), json!(database));
+    assert_eq!(
+        handler
+            .handle(&request("agent.remove_database", remove))
+            .unwrap()["error"]["code"],
+        "resource_not_found"
+    );
+}

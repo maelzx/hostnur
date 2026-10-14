@@ -15,7 +15,7 @@ use crate::contract::{OperationRequest, OperationStatus, SnapshotEvent, Uuid};
 use crate::ids;
 
 /// Schema version recorded in `schema_meta`.
-pub const SCHEMA_VERSION: &str = "5";
+pub const SCHEMA_VERSION: &str = "6";
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -62,6 +62,18 @@ CREATE TABLE IF NOT EXISTS deployments (
     release_id TEXT PRIMARY KEY,
     application_id TEXT NOT NULL,
     commit_id TEXT NOT NULL,
+    state TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS databases (
+    resource_id TEXT PRIMARY KEY,
+    application_id TEXT NOT NULL,
+    engine TEXT NOT NULL,
+    db_name TEXT NOT NULL UNIQUE,
+    username TEXT NOT NULL UNIQUE,
+    host TEXT NOT NULL,
     state TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -211,6 +223,18 @@ pub struct ScheduleRecord {
     /// JSON array of argument strings.
     pub arguments: String,
     pub on_calendar: String,
+}
+
+/// A managed application database allocation (phase 18).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DatabaseResource {
+    pub resource_id: Uuid,
+    pub application_id: Uuid,
+    pub engine: String,
+    pub db_name: String,
+    pub username: String,
+    pub host: String,
+    pub state: String,
 }
 
 /// SQLite-backed journal. One connection; the transport is single-threaded.
@@ -771,6 +795,83 @@ impl Journal {
             .execute(
                 "DELETE FROM schedules WHERE schedule_id = ?1",
                 params![schedule_id.as_str()],
+            )
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+        Ok(())
+    }
+}
+
+impl Journal {
+    pub fn set_database(&self, record: &DatabaseResource) -> Result<(), JournalError> {
+        self.connection
+            .execute(
+                "INSERT INTO databases (resource_id, application_id, engine, db_name, username, host, state, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)
+                 ON CONFLICT(resource_id) DO UPDATE SET
+                    application_id = excluded.application_id,
+                    engine = excluded.engine,
+                    db_name = excluded.db_name,
+                    username = excluded.username,
+                    host = excluded.host,
+                    state = excluded.state,
+                    updated_at = excluded.updated_at",
+                params![
+                    record.resource_id.as_str(),
+                    record.application_id.as_str(),
+                    record.engine,
+                    record.db_name,
+                    record.username,
+                    record.host,
+                    record.state,
+                    clock::now_rfc3339(),
+                ],
+            )
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+        Ok(())
+    }
+
+    pub fn database(&self, resource_id: &Uuid) -> Result<Option<DatabaseResource>, JournalError> {
+        self.connection
+            .query_row(
+                "SELECT resource_id, application_id, engine, db_name, username, host, state FROM databases WHERE resource_id = ?1",
+                params![resource_id.as_str()],
+                |row| {
+                    Ok(DatabaseResource {
+                        resource_id: Uuid::parse(&row.get::<_, String>(0)?)
+                            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        application_id: Uuid::parse(&row.get::<_, String>(1)?)
+                            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        engine: row.get(2)?,
+                        db_name: row.get(3)?,
+                        username: row.get(4)?,
+                        host: row.get(5)?,
+                        state: row.get(6)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|err| JournalError::Query(err.to_string()))
+    }
+
+    pub fn update_database_state(
+        &self,
+        resource_id: &Uuid,
+        state: &str,
+    ) -> Result<(), JournalError> {
+        self.connection
+            .execute(
+                "UPDATE databases SET state = ?2, updated_at = ?3 WHERE resource_id = ?1",
+                params![resource_id.as_str(), state, clock::now_rfc3339()],
+            )
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+        Ok(())
+    }
+
+    pub fn remove_database(&self, resource_id: &Uuid) -> Result<(), JournalError> {
+        self.connection
+            .execute(
+                "DELETE FROM databases WHERE resource_id = ?1",
+                params![resource_id.as_str()],
             )
             .map_err(|err| JournalError::Query(err.to_string()))?;
         Ok(())

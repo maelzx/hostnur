@@ -58,6 +58,23 @@
             "read_only": false,
             "retry": "capability_declared"
         },
+        "agent.register_database": {
+            "resource": null,
+            "parameters": {
+                "database": { "type": "uuid", "required": true },
+                "application": { "type": "uuid", "required": true }
+            },
+            "read_only": false,
+            "retry": "capability_declared"
+        },
+        "agent.remove_database": {
+            "resource": null,
+            "parameters": {
+                "database": { "type": "uuid", "required": true }
+            },
+            "read_only": false,
+            "retry": "capability_declared"
+        },
         "server.snapshot": {
             "resource": null,
             "parameters": {},

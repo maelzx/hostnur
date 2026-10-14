@@ -15,11 +15,15 @@ use crate::contract::{
     AgentMode, CapabilitySnapshot, ContractErrorCode, OperationReceipt, OperationRequest,
     OperationSnapshot, OperationStatus, Uuid,
 };
+use crate::database::{
+    DatabaseError, MariaDbAdmin, database_name, generate_password, is_managed_database,
+    is_managed_username, username,
+};
 use crate::deploy::DeployRuntime;
 use crate::firewall::FirewallPolicy;
 use crate::git::policy::{NetworkPolicy, validate_repository_url};
 use crate::git::{GitRef, validate_ref};
-use crate::journal::{ApplicationSource, Journal};
+use crate::journal::{ApplicationSource, DatabaseResource, Journal};
 use crate::observe;
 use crate::packages::{PackageError, PackagePolicy};
 use crate::provider::policy::validate_hostname;
@@ -28,7 +32,7 @@ use crate::services::{ServiceAction, ServiceError, ServicePolicy};
 use crate::transport::RequestHandler;
 
 /// Operations this build actually advertises and can serve.
-pub const SUPPORTED_OPERATIONS: [&str; 8] = [
+pub const SUPPORTED_OPERATIONS: [&str; 9] = [
     "agent.capabilities",
     "agent.inspect",
     "agent.cancel",
@@ -37,6 +41,7 @@ pub const SUPPORTED_OPERATIONS: [&str; 8] = [
     "service.control",
     "package.install",
     "schedule.apply",
+    "database.provision",
 ];
 
 /// Handler backed by the durable journal.
@@ -49,6 +54,8 @@ pub struct AgentHandler<'a> {
     firewall: FirewallPolicy,
     worker: WorkerManager,
     apps_root: PathBuf,
+    db: MariaDbAdmin,
+    secrets_dir: PathBuf,
 }
 
 impl<'a> AgentHandler<'a> {
@@ -62,6 +69,8 @@ impl<'a> AgentHandler<'a> {
             firewall: FirewallPolicy::default(),
             worker: WorkerManager::default(),
             apps_root: PathBuf::from("/opt/hostnur/apps"),
+            db: MariaDbAdmin::default(),
+            secrets_dir: PathBuf::from("/var/lib/hostnur/agent/secrets"),
         }
     }
 
@@ -76,7 +85,151 @@ impl<'a> AgentHandler<'a> {
             firewall: FirewallPolicy::default(),
             worker: WorkerManager::default(),
             apps_root: PathBuf::from("/opt/hostnur/apps"),
+            db: MariaDbAdmin::default(),
+            secrets_dir: PathBuf::from("/var/lib/hostnur/agent/secrets"),
         }
+    }
+
+    fn register_database(&self, request: &OperationRequest) -> Value {
+        let string = |key: &str| request.parameters.get(key).and_then(Value::as_str);
+        let Some(resource_id) = string("database").and_then(|value| Uuid::parse(value).ok()) else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "database must be a UUID",
+            );
+        };
+        let Some(application_id) = string("application").and_then(|value| Uuid::parse(value).ok())
+        else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "application must be a UUID",
+            );
+        };
+
+        if let Ok(Some(existing)) = self.journal.database(&resource_id) {
+            if existing.application_id != application_id {
+                return error_body(
+                    ContractErrorCode::Conflict,
+                    "database identity conflicts with another application",
+                );
+            }
+            return json!({"protocol_version": 1, "registered": true, "database": existing.db_name, "username": existing.username});
+        }
+
+        let record = DatabaseResource {
+            resource_id: resource_id.clone(),
+            application_id,
+            engine: "mariadb".to_string(),
+            db_name: database_name(&resource_id),
+            username: username(&resource_id),
+            host: self.db.host.clone(),
+            state: "registered".to_string(),
+        };
+        match self.journal.set_database(&record) {
+            Ok(()) => {
+                json!({"protocol_version": 1, "registered": true, "database": record.db_name, "username": record.username})
+            }
+            Err(error) => error_body(ContractErrorCode::OperationFailed, &error.to_string()),
+        }
+    }
+
+    fn database_provision(&self, request: &OperationRequest) -> Value {
+        let Some(resource_id) = request
+            .parameters
+            .get("request")
+            .and_then(Value::as_str)
+            .and_then(|value| Uuid::parse(value).ok())
+        else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "request must be a UUID",
+            );
+        };
+
+        let record = match self.journal.database(&resource_id) {
+            Ok(Some(record)) => record,
+            Ok(None) => {
+                return error_body(
+                    ContractErrorCode::ResourceNotFound,
+                    "database is not registered",
+                );
+            }
+            Err(error) => {
+                return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+            }
+        };
+
+        if record.state == "ready" {
+            return json!({"protocol_version": 1, "provisioned": true, "state": "ready", "database": record.db_name, "username": record.username, "host": record.host});
+        }
+
+        let password = match generate_password() {
+            Ok(password) => password,
+            Err(error) => return error_body(ContractErrorCode::OperationFailed, &error),
+        };
+
+        if let Err(error) = self
+            .db
+            .provision(&record.db_name, &record.username, &password)
+        {
+            let _ = self.journal.update_database_state(&resource_id, "failed");
+            return database_error(error);
+        }
+        if let Err(error) = self
+            .db
+            .check_connection(&record.db_name, &record.username, &password)
+        {
+            let _ = self.journal.update_database_state(&resource_id, "failed");
+            return database_error(error);
+        }
+        if let Err(error) =
+            crate::secrets::write_secret(&self.secrets_dir, resource_id.as_str(), &password)
+        {
+            let _ = self.journal.update_database_state(&resource_id, "failed");
+            return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+        }
+        let _ = self.journal.update_database_state(&resource_id, "ready");
+
+        json!({"protocol_version": 1, "provisioned": true, "state": "ready", "database": record.db_name, "username": record.username, "host": record.host})
+    }
+
+    fn remove_database(&self, request: &OperationRequest) -> Value {
+        let Some(resource_id) = request
+            .parameters
+            .get("database")
+            .and_then(Value::as_str)
+            .and_then(|value| Uuid::parse(value).ok())
+        else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "database must be a UUID",
+            );
+        };
+        let record = match self.journal.database(&resource_id) {
+            Ok(Some(record)) => record,
+            Ok(None) => {
+                return error_body(
+                    ContractErrorCode::ResourceNotFound,
+                    "database is not registered",
+                );
+            }
+            Err(error) => {
+                return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+            }
+        };
+
+        if !is_managed_database(&record.db_name) || !is_managed_username(&record.username) {
+            return error_body(
+                ContractErrorCode::PermissionDenied,
+                "refusing to drop an unmanaged database",
+            );
+        }
+        if let Err(error) = self.db.remove(&record.db_name, &record.username) {
+            return database_error(error);
+        }
+        let _ = crate::secrets::remove_secret(&self.secrets_dir, resource_id.as_str());
+        let _ = self.journal.remove_database(&resource_id);
+        json!({"protocol_version": 1, "removed": true, "database": record.db_name})
     }
 
     fn schedule_name(&self, application_id: &Uuid, schedule_id: &Uuid) -> String {
@@ -548,6 +701,9 @@ impl RequestHandler for AgentHandler<'_> {
             "application.deploy" => self.deploy_release(request),
             "service.control" => self.service_control(request),
             "package.install" => self.package_install(request),
+            "agent.register_database" => self.register_database(request),
+            "database.provision" => self.database_provision(request),
+            "agent.remove_database" => self.remove_database(request),
             "agent.register_schedule" => self.register_schedule(request),
             "agent.remove_schedule" => self.remove_schedule(request),
             "schedule.apply" => self.schedule_apply(request),
@@ -597,6 +753,14 @@ fn to_value<T: serde::Serialize>(value: T) -> Value {
             "the agent could not encode the response",
         )
     })
+}
+
+fn database_error(error: DatabaseError) -> Value {
+    let code = match error {
+        DatabaseError::Policy(_) => ContractErrorCode::InvalidParameters,
+        DatabaseError::Tool(_) | DatabaseError::Conflict(_) => ContractErrorCode::OperationFailed,
+    };
+    error_body(code, &error.to_string())
 }
 
 fn error_body(code: ContractErrorCode, message: &str) -> Value {
