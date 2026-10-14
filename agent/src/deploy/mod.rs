@@ -93,6 +93,8 @@ pub struct Deployer<'a> {
     pub nginx: NginxManager,
     pub fpm: FpmManager,
     pub apps_root: PathBuf,
+    /// Root-only store holding generated credentials (e.g. the app's database).
+    pub secrets_dir: PathBuf,
 }
 
 impl<'a> Deployer<'a> {
@@ -273,6 +275,31 @@ impl<'a> Deployer<'a> {
 
     /// Run the Composer production build as the application user when a
     /// `composer.json` is present. Scripts are disabled (untrusted app code).
+    /// Overlay the application's managed-database environment, reading the
+    /// credential from the agent's root-only secret store.
+    fn with_database_env(&self, application_id: &Uuid, mut env_text: String) -> String {
+        let Ok(Some(database)) = self.journal.database_for_application(application_id) else {
+            return env_text;
+        };
+        let Ok(password) =
+            crate::secrets::read_secret(&self.secrets_dir, database.resource_id.as_str())
+        else {
+            return env_text;
+        };
+        let entries = [
+            ("DB_CONNECTION", "mysql".to_string()),
+            ("DB_HOST", database.host.clone()),
+            ("DB_PORT", "3306".to_string()),
+            ("DB_DATABASE", database.db_name.clone()),
+            ("DB_USERNAME", database.username.clone()),
+            ("DB_PASSWORD", password),
+        ];
+        for (key, value) in entries {
+            env_text = upsert_env(&env_text, key, &value);
+        }
+        env_text
+    }
+
     fn php_binary(&self, version: &str) -> PathBuf {
         if version.is_empty() {
             PathBuf::from("/usr/bin/php")
@@ -405,6 +432,10 @@ impl<'a> Deployer<'a> {
                 env_text = upsert_env(&env_text, key, value);
             }
         }
+        // Inject the app's managed database credentials (agent-owned, never sent
+        // to the panel) so a Laravel app uses MariaDB instead of a local SQLite.
+        env_text = self.with_database_env(&input.application_id, env_text);
+
         if !env_text.is_empty() {
             self.root
                 .write_file(
@@ -552,6 +583,7 @@ pub struct DeployRuntime {
     pub nginx: NginxManager,
     pub fpm: FpmManager,
     pub allow_protocol: String,
+    pub secrets_dir: PathBuf,
 }
 
 impl DeployRuntime {
@@ -617,6 +649,7 @@ impl DeployRuntime {
             nginx: self.nginx.clone(),
             fpm: self.fpm.clone(),
             apps_root: self.apps_root.clone(),
+            secrets_dir: self.secrets_dir.clone(),
         };
         let release_id = crate::ids::new_uuid_v4();
         let input = DeployInput {

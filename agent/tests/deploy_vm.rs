@@ -157,6 +157,7 @@ fn deploy_activate_health_redeploy_and_rollback() {
         nginx: NginxManager::default(),
         fpm: FpmManager::default(),
         apps_root: PathBuf::from(MANAGED_ROOT),
+        secrets_dir: journal_dir.path().join("secrets"),
     };
 
     let make_input = |release: &str, commit: &str| DeployInput {

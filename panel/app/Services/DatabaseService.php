@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Agent\Dto\OperationRequest;
+use App\Contracts\AgentClient;
 use App\Enums\AuditAction;
 use App\Enums\AuditOutcome;
 use App\Enums\DatabaseEngine;
@@ -24,6 +25,7 @@ final class DatabaseService
     public function __construct(
         private readonly TaskService $tasks,
         private readonly AuditRecorder $audit,
+        private readonly AgentClient $agent,
     ) {}
 
     public function request(User $actor, Application $application, string $engine, string $name, string $username, string $idempotencyKey): DatabaseRequest
@@ -48,6 +50,8 @@ final class DatabaseService
             'password' => Str::password(32, symbols: false),
             'state' => RequestState::Requested,
         ]);
+
+        $this->registerWithAgent($application, $request);
 
         $task = $this->tasks->requestApproved($actor, new OperationRequest(
             protocolVersion: (int) config('hostnur.protocol_version', 1),
@@ -77,5 +81,76 @@ final class DatabaseService
         }
 
         return $request;
+    }
+
+    /**
+     * Remove a managed database (explicit destructive operation). Only acts on a
+     * provisioned database; the agent drops only its registered DB/principal.
+     */
+    public function delete(User $actor, DatabaseRequest $request): void
+    {
+        if (config('hostnur.agent_mode') === 'real' && $request->state === RequestState::Succeeded) {
+            try {
+                $this->agent->removeDatabase(new OperationRequest(
+                    protocolVersion: (int) config('hostnur.protocol_version', 1),
+                    requestId: (string) Str::uuid(),
+                    idempotencyKey: (string) Str::uuid(),
+                    operation: 'agent.remove_database',
+                    resource: null,
+                    parameters: ['database' => $request->getKey()],
+                    timeoutSeconds: null,
+                ));
+            } catch (\Throwable $exception) {
+                throw ValidationException::withMessages([
+                    'database' => 'Could not remove the database: '.$exception->getMessage(),
+                ]);
+            }
+        }
+
+        $applicationId = $request->application_id;
+        $request->delete();
+
+        $this->audit->record($actor, AuditAction::DatabaseRemoved, AuditOutcome::Success, [
+            'resource_kind' => 'application',
+            'resource_id' => $applicationId,
+            'metadata' => ['operation' => 'database.remove'],
+        ]);
+    }
+
+    /**
+     * Register the database allocation with the agent and adopt its derived
+     * identifiers (the agent owns the naming and the credential).
+     */
+    private function registerWithAgent(Application $application, DatabaseRequest $request): void
+    {
+        if (config('hostnur.agent_mode') !== 'real') {
+            return;
+        }
+
+        try {
+            $response = $this->agent->registerDatabase(new OperationRequest(
+                protocolVersion: (int) config('hostnur.protocol_version', 1),
+                requestId: (string) Str::uuid(),
+                idempotencyKey: (string) Str::uuid(),
+                operation: 'agent.register_database',
+                resource: null,
+                parameters: [
+                    'database' => $request->getKey(),
+                    'application' => $application->getKey(),
+                ],
+                timeoutSeconds: null,
+            ));
+        } catch (\Throwable $exception) {
+            throw ValidationException::withMessages([
+                'database_name' => 'Could not register the database with the agent: '.$exception->getMessage(),
+            ]);
+        }
+
+        if (isset($response['database'], $response['username'])) {
+            $request->forceFill([
+                'database_name' => $response['database'],
+                'username' => $response['username'],
+            ])->save();
+        }
     }
 }

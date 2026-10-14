@@ -853,6 +853,34 @@ impl Journal {
             .map_err(|err| JournalError::Query(err.to_string()))
     }
 
+    /// The registered (ready) database for an application, if any.
+    pub fn database_for_application(
+        &self,
+        application_id: &Uuid,
+    ) -> Result<Option<DatabaseResource>, JournalError> {
+        self.connection
+            .query_row(
+                "SELECT resource_id, application_id, engine, db_name, username, host, state
+                 FROM databases WHERE application_id = ?1 AND state = 'ready' LIMIT 1",
+                params![application_id.as_str()],
+                |row| {
+                    Ok(DatabaseResource {
+                        resource_id: Uuid::parse(&row.get::<_, String>(0)?)
+                            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        application_id: Uuid::parse(&row.get::<_, String>(1)?)
+                            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        engine: row.get(2)?,
+                        db_name: row.get(3)?,
+                        username: row.get(4)?,
+                        host: row.get(5)?,
+                        state: row.get(6)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|err| JournalError::Query(err.to_string()))
+    }
+
     pub fn update_database_state(
         &self,
         resource_id: &Uuid,

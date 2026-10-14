@@ -55,6 +55,8 @@ enum AuditAction: string
     case CertificateIngested = 'application.certificate_ingested';
     case CertificateIssueRequested = 'application.certificate_issue_requested';
     case DatabaseRequested = 'application.database_requested';
+
+    case DatabaseRemoved = 'application.database_removed';
     case BackupPolicyCreated = 'application.backup_policy_created';
     case BackupRequested = 'application.backup_requested';
 }

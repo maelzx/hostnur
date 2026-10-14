@@ -109,6 +109,7 @@ pub fn run(config: &AgentConfig) -> Result<(), AgentError> {
         nginx: NginxManager::default(),
         fpm: FpmManager::default(),
         allow_protocol: "https".to_string(),
+        secrets_dir: config.state_dir.join("secrets"),
     };
     let extra_php: Vec<&str> = config
         .php_versions

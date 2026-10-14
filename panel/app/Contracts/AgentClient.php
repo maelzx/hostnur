@@ -47,4 +47,18 @@ interface AgentClient
      * agent registry before applying it. No-op without a durable registry.
      */
     public function registerSchedule(OperationRequest $request): void;
+
+    /**
+     * Register a database allocation and return the agent-derived identifiers
+     * (`database`, `username`). Real adapters return the registry response;
+     * others return an empty array.
+     *
+     * @return array<string, mixed>
+     */
+    public function registerDatabase(OperationRequest $request): array;
+
+    /**
+     * Drop a registered managed database. No-op without a durable registry.
+     */
+    public function removeDatabase(OperationRequest $request): void;
 }

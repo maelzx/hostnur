@@ -65,6 +65,16 @@ final class RealAgentClient implements AgentClient
         $this->send($request->toArray());
     }
 
+    public function registerDatabase(OperationRequest $request): array
+    {
+        return $this->send($request->toArray());
+    }
+
+    public function removeDatabase(OperationRequest $request): void
+    {
+        $this->send($request->toArray());
+    }
+
     /**
      * @param  array<string, mixed>  $parameters
      * @return array<string, mixed>

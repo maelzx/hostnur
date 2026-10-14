@@ -115,6 +115,17 @@ final class FakeAgentClient implements AgentClient
         // The fake adapter has no durable registry; registration is a no-op.
     }
 
+    public function registerDatabase(OperationRequest $request): array
+    {
+        // The fake adapter has no durable registry.
+        return [];
+    }
+
+    public function removeDatabase(OperationRequest $request): void
+    {
+        // The fake adapter has no durable registry; removal is a no-op.
+    }
+
     private function find(string $executionId): FakeAgentExecution
     {
         $record = FakeAgentExecution::query()->where('execution_id', $executionId)->first();
