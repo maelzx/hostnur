@@ -1007,7 +1007,14 @@ renewal and failure recovery pass on the VM; observed certificate identity/expir
 is accurate and the previous healthy configuration survives failed changes.
 
 ### Phase 17 — Real services, packages and scheduled jobs
-- Status: planned; extends the internal package/service primitives from phase 14.
+- Status: **in progress** (session 035). P17.1 (allowlisted managed service
+  observation/control), P17.2 (approved package install) and P17.5 (read-only
+  firewall snapshot) are implemented and unit-tested; `server.snapshot` now reports
+  live services and firewall. P17.3/P17.4 schedule registry + app-owned systemd
+  timer install/remove are implemented agent-side. **Remaining:** panel wiring for
+  schedules (map the stored `command_reference` to a program+argv and convert the
+  cron expression to `OnCalendar`, calling `agent.register_schedule` before
+  `schedule.apply`), then VM validation.
 - Depends on: 8, 12, 15.
 
 #### Service and package controls
@@ -1437,6 +1444,28 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 035 — Phase 17 service/package/firewall + schedule machinery (2026-10-14)
+
+- Implemented the agent side of phase 17. `agent/src/services.rs`: an allowlisted
+  managed-service policy (nginx, php8.3-fpm, php8.4-fpm, mariadb, redis-server)
+  with observed status via `systemctl is-active` and allowlisted start/stop/
+  restart via a fixed unit — unknown/raw unit names are refused
+  (`permission_denied`). `agent/src/firewall.rs`: read-only `ufw status` summary
+  (enabled, incoming policy, rule count); no mutation path. `server.snapshot` now
+  populates live services and firewall.
+- Wired dispatch arms `service.control` and `package.install` (the latter reuses
+  the approved-catalog `PackagePolicy::install`). Relaxed the contract's
+  resource-id from UUID-only to a bounded safe identifier so allowlisted service
+  names (e.g. `nginx`) are accepted; application resource ids are still parsed as
+  UUIDs. Added `agent.register_schedule` / `agent.remove_schedule` (+ a `schedules`
+  registry table) and `schedule.apply` rendering an app-owned systemd timer.
+- Rust: `cargo fmt` / `clippy -D warnings` / `test` — **108 unit + all integration
+  tests pass** (services/firewall/register/apply/remove covered). PHP: **256 tests
+  pass** (unchanged).
+- Remaining: panel-side schedule wiring (command-reference → program/argv,
+  cron → `OnCalendar`, call `register_schedule` before `schedule.apply`) and VM
+  validation on the recreated throwaway host. Commits: `bcbae4f`, `56f4f56`.
 
 ### Session 034 — Scope decisions recorded (2026-10-13)
 
@@ -2652,11 +2681,12 @@ The panel is independently runnable and tested; the agent crate builds, tests an
 runs unprivileged in the Lima VM. See `docs/web-milestone.md` and
 `docs/agent-development.md` for passed gates, blocked checks and acceptance maps.
 
-**Phases 11–16 are complete for their scopes** (sessions 026–033). The next work
-is **phase 17 (real services, packages and scheduled jobs)**: wire the server UI
-to the existing allowlisted agent primitives (service start/stop/restart, approved
-package install, app-owned schedules/timers); firewall stays read-only. After
-that, re-run the throwaway-host setup from
+**Phases 11–16 are complete for their scopes**, and **phase 17 is in progress**
+(session 035): agent-side service control, approved package install, read-only
+firewall snapshot and the schedule registry/timer machinery are done and tested.
+The next slice is **panel wiring for schedules** (map `command_reference` to a
+program+argv, convert cron → `OnCalendar`, call `agent.register_schedule` before
+`schedule.apply`), then re-run the throwaway-host setup from
 [`docs/p16-test-host.md`](docs/p16-test-host.md) to validate on the VM.
 
 Scope decisions (session 034): MariaDB for phase 18; phase 19 backup/restore
