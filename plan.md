@@ -1451,6 +1451,27 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ## 8. Current handoff
 
+### Session 040 — Interim installer + GitHub release pipeline (2026-10-14)
+
+- Added the interim **curl-and-bash installer** (`packaging/install.sh`) that
+  downloads a release bundle (with optional `SHA256SUMS` verification), installs
+  prerequisites, the agent (privileged systemd unit + `/etc/hostnur/agent.toml`),
+  the panel (`/opt/hostnur-panel`, `.env`, migrate, `trustProxies`, interim
+  `php artisan serve` unit behind nginx), optional Let's Encrypt TLS, and prints
+  the admin-bootstrap step. Idempotent and preserves existing config/`.env`.
+  `HOSTNUR_VERSION`/`HOSTNUR_BASE_URL` allow tags/private mirrors.
+- Added `.github/workflows/release.yml`: on a `v*` tag (or manual dispatch) it
+  builds the amd64 agent, the production panel (Composer `--no-dev` + built Vite
+  assets), bundles `hostnur-linux-x86_64.tar.gz` (agent + panel + contracts +
+  units) plus `install.sh` and `SHA256SUMS`, and publishes a GitHub Release.
+  Once the repo is public, `.../releases/latest/download/install.sh` can be
+  curled directly (private repos need a token / `HOSTNUR_BASE_URL`).
+- `packaging/README.md` documents the release, install and private-repo flows.
+  `bash -n` and YAML validation pass. Commit `3e9aa34`.
+- **Activation requires pushing** to GitHub and tagging a release
+  (e.g. `git push origin main && git push origin v0.1.0`); earlier sessions
+  committed locally only, and `gh` is not installed here.
+
 ### Session 039 — Phase 18 completion: rotation + export/import (2026-10-14)
 
 - Finished phase 18. Added `database.rotate` (ALTER USER to a fresh hex credential,
