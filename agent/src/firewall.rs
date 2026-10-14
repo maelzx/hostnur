@@ -31,6 +31,14 @@ impl FirewallPolicy {
         let mut spec = CommandSpec::new(&self.ufw, self.deadline);
         spec.args = vec!["status".to_string(), "verbose".to_string()];
         spec.output_cap_bytes = 65_536;
+        // `ufw` is a script that shells out to iptables/sysctl; it needs PATH.
+        let mut env = std::collections::BTreeMap::new();
+        env.insert(
+            "PATH".to_string(),
+            "/usr/sbin:/usr/bin:/sbin:/bin".to_string(),
+        );
+        env.insert("LC_ALL".to_string(), "C".to_string());
+        spec.env = env;
         let outcome = run(&spec).ok()?;
         // `ufw status` needs root; a failure means we cannot observe it.
         if !outcome.succeeded() {
