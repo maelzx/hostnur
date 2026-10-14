@@ -1077,12 +1077,15 @@ work through the panel with bounded failure/recovery. Unmanaged/root commands an
 firewall mutations remain unavailable; resulting state is observed, not assumed.
 
 ### Phase 18 — Application database provisioning
-- Status: **in progress** (session 037). P18.1 (engine/policy + identifier derivation
-  + protected names + credential generation), P18.2 (journaled provisioning: register
-  → create DB/principal/grants → real connection check → write-only credential) and
-  the isolation/deletion part of P18.5 are implemented and VM-validated. **Remaining:**
-  P18.3 (panel wiring: deliver credential references into a deployment revision;
-  rotation) and P18.4 (bounded data movement). Engine: **MariaDB**.
+- Status: **substantially complete** (sessions 037–038). P18.1, P18.2, P18.3 (panel
+  wiring + the agent injecting the app's managed DB credentials into the release
+  `DB_*` env at deploy time — the credential never reaches the panel) and the
+  isolation/deletion part of P18.5 are implemented and VM-validated: a real
+  Laravel app (AssetKOM) now runs on MariaDB. **Remaining:** credential
+  **rotation** (an `ALTER USER`-based op + panel action; not yet implemented) and
+  **P18.4** (bounded data movement). Known limitation: if an application has more
+  than one ready database, the deploy injects only the first; a Laravel app uses
+  one. Engine: **MariaDB**.
 - Depends on: 8, 12, 15.
 
 #### Engine scope and privilege model
@@ -1449,6 +1452,24 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 038 — Phase 18.3 DB-backed deployment + VM (2026-10-14)
+
+- Completed P18.3: the agent's deploy now injects the application's managed
+  database credentials into the release `.env` (`DB_CONNECTION=mysql`, host, port,
+  DB, user, password read from the agent's root-only secret store and upserted via
+  `upsert_env`). The credential never travels to the panel. Panel wiring:
+  `DatabaseService` registers the allocation with the agent (`agent.register_database`)
+  and adopts the agent-derived names; a `delete` action calls `agent.remove_database`;
+  `AgentClient` gained `registerDatabase`/`removeDatabase`. Added an audit action
+  `application.database_removed`. `Deployer`/`DeployRuntime` carry `secrets_dir`.
+- **VM validation**: for the AssetKOM app, registered + provisioned a managed
+  MariaDB database, then redeployed over the socket — the release `.env` gained the
+  `DB_*` mysql settings and MariaDB `hn_db_777777778888` received **17 tables**
+  (AssetKOM migrations ran into MariaDB); `/up` returned 200. (A stale extra DB from
+  an earlier probe was removed first; noted the multi-DB deploy picks the first
+  ready DB.) Rust fmt/clippy/tests and PHP **256 tests** pass. Commit `c993040`.
+- Remaining in phase 18: credential rotation and bounded data movement (P18.4).
 
 ### Session 037 — Phase 18 MariaDB provisioning + VM isolation (2026-10-14)
 
