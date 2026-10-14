@@ -126,6 +126,11 @@ final class FakeAgentClient implements AgentClient
         // The fake adapter has no durable registry; removal is a no-op.
     }
 
+    public function rotateDatabase(OperationRequest $request): void
+    {
+        // The fake adapter has no durable registry; rotation is a no-op.
+    }
+
     private function find(string $executionId): FakeAgentExecution
     {
         $record = FakeAgentExecution::query()->where('execution_id', $executionId)->first();

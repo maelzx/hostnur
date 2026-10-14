@@ -61,4 +61,9 @@ interface AgentClient
      * Drop a registered managed database. No-op without a durable registry.
      */
     public function removeDatabase(OperationRequest $request): void;
+
+    /**
+     * Rotate a managed database credential. No-op without a durable registry.
+     */
+    public function rotateDatabase(OperationRequest $request): void;
 }

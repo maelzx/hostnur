@@ -32,7 +32,7 @@ use crate::services::{ServiceAction, ServiceError, ServicePolicy};
 use crate::transport::RequestHandler;
 
 /// Operations this build actually advertises and can serve.
-pub const SUPPORTED_OPERATIONS: [&str; 9] = [
+pub const SUPPORTED_OPERATIONS: [&str; 12] = [
     "agent.capabilities",
     "agent.inspect",
     "agent.cancel",
@@ -42,6 +42,9 @@ pub const SUPPORTED_OPERATIONS: [&str; 9] = [
     "package.install",
     "schedule.apply",
     "database.provision",
+    "database.rotate",
+    "database.export",
+    "database.import",
 ];
 
 /// Handler backed by the durable journal.
@@ -56,6 +59,7 @@ pub struct AgentHandler<'a> {
     apps_root: PathBuf,
     db: MariaDbAdmin,
     secrets_dir: PathBuf,
+    dumps_dir: PathBuf,
 }
 
 impl<'a> AgentHandler<'a> {
@@ -71,6 +75,7 @@ impl<'a> AgentHandler<'a> {
             apps_root: PathBuf::from("/opt/hostnur/apps"),
             db: MariaDbAdmin::default(),
             secrets_dir: PathBuf::from("/var/lib/hostnur/agent/secrets"),
+            dumps_dir: PathBuf::from("/var/lib/hostnur/agent/dumps"),
         }
     }
 
@@ -87,6 +92,7 @@ impl<'a> AgentHandler<'a> {
             apps_root: PathBuf::from("/opt/hostnur/apps"),
             db: MariaDbAdmin::default(),
             secrets_dir: PathBuf::from("/var/lib/hostnur/agent/secrets"),
+            dumps_dir: PathBuf::from("/var/lib/hostnur/agent/dumps"),
         }
     }
 
@@ -230,6 +236,143 @@ impl<'a> AgentHandler<'a> {
         let _ = crate::secrets::remove_secret(&self.secrets_dir, resource_id.as_str());
         let _ = self.journal.remove_database(&resource_id);
         json!({"protocol_version": 1, "removed": true, "database": record.db_name})
+    }
+
+    fn rotate_database(&self, request: &OperationRequest) -> Value {
+        let Some(resource_id) = request
+            .parameters
+            .get("database")
+            .and_then(Value::as_str)
+            .and_then(|value| Uuid::parse(value).ok())
+        else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "database must be a UUID",
+            );
+        };
+        let record = match self.journal.database(&resource_id) {
+            Ok(Some(record)) => record,
+            Ok(None) => {
+                return error_body(
+                    ContractErrorCode::ResourceNotFound,
+                    "database is not registered",
+                );
+            }
+            Err(error) => {
+                return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+            }
+        };
+        let password = match generate_password() {
+            Ok(password) => password,
+            Err(error) => return error_body(ContractErrorCode::OperationFailed, &error),
+        };
+        if let Err(error) = self.db.rotate(&record.username, &password) {
+            return database_error(error);
+        }
+        if let Err(error) = self
+            .db
+            .check_connection(&record.db_name, &record.username, &password)
+        {
+            return database_error(error);
+        }
+        if let Err(error) =
+            crate::secrets::write_secret(&self.secrets_dir, resource_id.as_str(), &password)
+        {
+            return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+        }
+        json!({"protocol_version": 1, "rotated": true, "database": record.db_name})
+    }
+
+    fn export_database(&self, request: &OperationRequest) -> Value {
+        let Some(resource_id) = request
+            .parameters
+            .get("database")
+            .and_then(Value::as_str)
+            .and_then(|value| Uuid::parse(value).ok())
+        else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "database must be a UUID",
+            );
+        };
+        let record = match self.journal.database(&resource_id) {
+            Ok(Some(record)) if record.state == "ready" => record,
+            Ok(Some(_)) => return error_body(ContractErrorCode::Conflict, "database is not ready"),
+            Ok(None) => {
+                return error_body(
+                    ContractErrorCode::ResourceNotFound,
+                    "database is not registered",
+                );
+            }
+            Err(error) => {
+                return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+            }
+        };
+        let password = match crate::secrets::read_secret(&self.secrets_dir, resource_id.as_str()) {
+            Ok(password) => password,
+            Err(_) => {
+                return error_body(
+                    ContractErrorCode::ResourceNotFound,
+                    "credential is not available",
+                );
+            }
+        };
+        let dump = match self.db.export(&record.db_name, &record.username, &password) {
+            Ok(dump) => dump,
+            Err(error) => return database_error(error),
+        };
+        let artifact = format!("{}.sql", resource_id.as_str());
+        if let Err(error) = crate::secrets::write_bytes(&self.dumps_dir, &artifact, &dump) {
+            return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+        }
+        json!({"protocol_version": 1, "exported": true, "bytes": dump.len(), "artifact": artifact})
+    }
+
+    fn import_database(&self, request: &OperationRequest) -> Value {
+        let Some(resource_id) = request
+            .parameters
+            .get("database")
+            .and_then(Value::as_str)
+            .and_then(|value| Uuid::parse(value).ok())
+        else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "database must be a UUID",
+            );
+        };
+        let Some(dump) = request.parameters.get("dump").and_then(Value::as_str) else {
+            return error_body(ContractErrorCode::InvalidParameters, "dump is required");
+        };
+        let record = match self.journal.database(&resource_id) {
+            Ok(Some(record)) => record,
+            Ok(None) => {
+                return error_body(
+                    ContractErrorCode::ResourceNotFound,
+                    "database is not registered",
+                );
+            }
+            Err(error) => {
+                return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+            }
+        };
+        let password = match crate::secrets::read_secret(&self.secrets_dir, resource_id.as_str()) {
+            Ok(password) => password,
+            Err(_) => {
+                return error_body(
+                    ContractErrorCode::ResourceNotFound,
+                    "credential is not available",
+                );
+            }
+        };
+        if let Err(error) = self.db.import(
+            &record.db_name,
+            &record.username,
+            &password,
+            dump.as_bytes(),
+        ) {
+            return database_error(error);
+        }
+        json!({"protocol_version": 1, "imported": true, "database": record.db_name})
     }
 
     fn schedule_name(&self, application_id: &Uuid, schedule_id: &Uuid) -> String {
@@ -703,6 +846,9 @@ impl RequestHandler for AgentHandler<'_> {
             "package.install" => self.package_install(request),
             "agent.register_database" => self.register_database(request),
             "database.provision" => self.database_provision(request),
+            "database.rotate" => self.rotate_database(request),
+            "database.export" => self.export_database(request),
+            "database.import" => self.import_database(request),
             "agent.remove_database" => self.remove_database(request),
             "agent.register_schedule" => self.register_schedule(request),
             "agent.remove_schedule" => self.remove_schedule(request),

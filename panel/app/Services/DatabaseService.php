@@ -118,6 +118,40 @@ final class DatabaseService
     }
 
     /**
+     * Rotate the managed database credential. The running application keeps the
+     * previous credential in its release env until the next deployment, so a
+     * redeploy is required to adopt the new one.
+     */
+    public function rotate(User $actor, DatabaseRequest $request): void
+    {
+        if (config('hostnur.agent_mode') !== 'real' || $request->state !== RequestState::Succeeded) {
+            return;
+        }
+
+        try {
+            $this->agent->rotateDatabase(new OperationRequest(
+                protocolVersion: (int) config('hostnur.protocol_version', 1),
+                requestId: (string) Str::uuid(),
+                idempotencyKey: (string) Str::uuid(),
+                operation: 'database.rotate',
+                resource: null,
+                parameters: ['database' => $request->getKey()],
+                timeoutSeconds: null,
+            ));
+        } catch (\Throwable $exception) {
+            throw ValidationException::withMessages([
+                'database' => 'Could not rotate the credential: '.$exception->getMessage(),
+            ]);
+        }
+
+        $this->audit->record($actor, AuditAction::DatabaseRequested, AuditOutcome::Requested, [
+            'resource_kind' => 'application',
+            'resource_id' => $request->application_id,
+            'metadata' => ['operation' => 'database.rotate'],
+        ]);
+    }
+
+    /**
      * Register the database allocation with the agent and adopt its derived
      * identifiers (the agent owns the naming and the credential).
      */

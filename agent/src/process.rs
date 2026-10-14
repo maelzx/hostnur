@@ -36,6 +36,8 @@ pub struct CommandSpec {
     /// When set and the agent runs as root, the child runs as this uid/gid.
     pub uid: Option<u32>,
     pub gid: Option<u32>,
+    /// Optional bounded bytes written to the child's stdin (then closed).
+    pub stdin: Option<Vec<u8>>,
 }
 
 impl CommandSpec {
@@ -49,6 +51,7 @@ impl CommandSpec {
             output_cap_bytes: 65_536,
             uid: None,
             gid: None,
+            stdin: None,
         }
     }
 }
@@ -172,7 +175,11 @@ pub fn run(spec: &CommandSpec) -> Result<ProcessOutcome, ProcessError> {
         .args(&spec.args)
         .env_clear()
         .envs(&spec.env)
-        .stdin(Stdio::null())
+        .stdin(if spec.stdin.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if let Some(working_dir) = &spec.working_dir {
@@ -210,6 +217,19 @@ pub fn run(spec: &CommandSpec) -> Result<ProcessOutcome, ProcessError> {
         .spawn()
         .map_err(|err| ProcessError::Spawn(err.to_string()))?;
     let pid = child.id();
+
+    // Feed bounded stdin (e.g. a SQL dump) then close it, so the child never
+    // deadlocks waiting for input and the payload cannot be unbounded.
+    if let Some(bytes) = &spec.stdin
+        && let Some(mut stdin) = child.stdin.take()
+    {
+        let payload = bytes.clone();
+        std::thread::spawn(move || {
+            use std::io::Write;
+            let _ = stdin.write_all(&payload);
+            let _ = stdin.flush();
+        });
+    }
 
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();

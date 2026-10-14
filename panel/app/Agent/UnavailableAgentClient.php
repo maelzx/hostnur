@@ -80,6 +80,11 @@ final class UnavailableAgentClient implements AgentClient
         throw new AgentUnavailableException('The agent is unavailable, so the database was not removed.');
     }
 
+    public function rotateDatabase(OperationRequest $request): void
+    {
+        throw new AgentUnavailableException('The agent is unavailable, so the credential was not rotated.');
+    }
+
     private function protocolVersion(): int
     {
         return (int) config('hostnur.protocol_version', 1);

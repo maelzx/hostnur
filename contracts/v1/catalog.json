@@ -75,6 +75,31 @@
             "read_only": false,
             "retry": "capability_declared"
         },
+        "database.rotate": {
+            "resource": null,
+            "parameters": {
+                "database": { "type": "uuid", "required": true }
+            },
+            "read_only": false,
+            "retry": "capability_declared"
+        },
+        "database.export": {
+            "resource": null,
+            "parameters": {
+                "database": { "type": "uuid", "required": true }
+            },
+            "read_only": true,
+            "retry": "bounded"
+        },
+        "database.import": {
+            "resource": null,
+            "parameters": {
+                "database": { "type": "uuid", "required": true },
+                "dump": { "type": "string", "required": true, "max": 262144 }
+            },
+            "read_only": false,
+            "retry": "no_blind_replay"
+        },
         "server.snapshot": {
             "resource": null,
             "parameters": {},

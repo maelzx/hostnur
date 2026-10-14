@@ -11,10 +11,15 @@ use std::path::{Path, PathBuf};
 
 /// Store `value` at `<dir>/<id>` with directory `0700` and file `0600`.
 pub fn write_secret(dir: &Path, id: &str, value: &str) -> io::Result<PathBuf> {
+    write_bytes(dir, id, value.as_bytes())
+}
+
+/// Store bounded bytes at `<dir>/<id>` with directory `0700` and file `0600`.
+pub fn write_bytes(dir: &Path, id: &str, value: &[u8]) -> io::Result<PathBuf> {
     std::fs::create_dir_all(dir)?;
     std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
     let path = dir.join(id);
-    std::fs::write(&path, value.as_bytes())?;
+    std::fs::write(&path, value)?;
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
     Ok(path)
 }

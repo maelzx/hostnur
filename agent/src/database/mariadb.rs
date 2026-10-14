@@ -173,6 +173,89 @@ impl MariaDbAdmin {
             .collect())
     }
 
+    /// Rotate the application principal's password (both hosts). Existing pooled
+    /// connections are not guaranteed to survive; the credential store and the
+    /// next deployment env are updated by the caller.
+    pub fn rotate(&self, username: &str, new_password: &str) -> Result<(), DatabaseError> {
+        ensure_managed_user(username)?;
+        ensure_password(new_password)?;
+        let sql = format!(
+            "ALTER USER '{username}'@'localhost' IDENTIFIED BY '{new_password}'; \
+             ALTER USER '{username}'@'127.0.0.1' IDENTIFIED BY '{new_password}';"
+        );
+        self.admin_sql(&sql)?;
+        Ok(())
+    }
+
+    /// Logical dump of the application database via `mysqldump` as the app
+    /// principal; returns the bounded dump bytes.
+    pub fn export(
+        &self,
+        db_name: &str,
+        username: &str,
+        password: &str,
+    ) -> Result<Vec<u8>, DatabaseError> {
+        ensure_managed_database(db_name)?;
+        ensure_managed_user(username)?;
+        let mut spec = CommandSpec::new(self.mysql.with_file_name("mysqldump"), self.deadline);
+        spec.args = vec![
+            "-h".to_string(),
+            self.host.clone(),
+            "-P".to_string(),
+            self.port.to_string(),
+            "-u".to_string(),
+            username.to_string(),
+            "--single-transaction".to_string(),
+            "--skip-lock-tables".to_string(),
+            "--no-tablespaces".to_string(),
+            "--skip-comments".to_string(),
+            db_name.to_string(),
+        ];
+        let mut env = tool_env();
+        env.insert("MYSQL_PWD".to_string(), password.to_string());
+        spec.env = env;
+        spec.output_cap_bytes = 262_144;
+        let outcome = run(&spec).map_err(|error| DatabaseError::Tool(error.to_string()))?;
+        if !outcome.succeeded() {
+            return Err(DatabaseError::Tool("export failed".to_string()));
+        }
+        Ok(outcome.stdout)
+    }
+
+    /// Import a bounded logical dump as the application principal into its own
+    /// database (never as the admin; no arbitrary SQL endpoint).
+    pub fn import(
+        &self,
+        db_name: &str,
+        username: &str,
+        password: &str,
+        dump: &[u8],
+    ) -> Result<(), DatabaseError> {
+        ensure_managed_database(db_name)?;
+        ensure_managed_user(username)?;
+        let mut spec = CommandSpec::new(&self.mysql, self.deadline);
+        spec.args = vec![
+            "-h".to_string(),
+            self.host.clone(),
+            "-P".to_string(),
+            self.port.to_string(),
+            "-u".to_string(),
+            username.to_string(),
+            db_name.to_string(),
+            "--batch".to_string(),
+        ];
+        let mut env = tool_env();
+        env.insert("MYSQL_PWD".to_string(), password.to_string());
+        spec.env = env;
+        spec.output_cap_bytes = 65_536;
+        spec.stdin = Some(dump.to_vec());
+        let outcome = run(&spec).map_err(|error| DatabaseError::Tool(error.to_string()))?;
+        if !outcome.succeeded() {
+            return Err(DatabaseError::Tool("import failed".to_string()));
+        }
+        Ok(())
+    }
+
     /// Drop the managed database and principal (explicit destructive operation).
     pub fn remove(&self, db_name: &str, username: &str) -> Result<(), DatabaseError> {
         ensure_managed_database(db_name)?;
