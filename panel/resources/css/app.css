@@ -13,3 +13,23 @@
 [x-cloak] {
     display: none !important;
 }
+
+@media print {
+    body * {
+        visibility: hidden;
+    }
+
+    #recovery-codes,
+    #recovery-codes * {
+        visibility: visible;
+    }
+
+    #recovery-codes {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        border: 0;
+        box-shadow: none;
+    }
+}

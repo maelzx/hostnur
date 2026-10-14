@@ -75,15 +75,52 @@
                 </form>
             </div>
 
-            <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-xs">
-                <h2 class="text-lg font-semibold tracking-tight text-slate-900">Recovery codes</h2>
-                <p class="mt-2 text-sm leading-6 text-slate-600">
-                    Store these one-time codes somewhere safe. They are shown only
-                    during setup and each can be used once if you lose your device.
+            <div
+                id="recovery-codes"
+                x-data="{ copied: false, codes: @js($recoveryCodes) }"
+                class="rounded-xl border border-slate-200 bg-white p-6 shadow-xs"
+            >
+                <div class="flex flex-wrap items-start justify-between gap-4">
+                    <div class="max-w-md">
+                        <h2 class="text-lg font-semibold tracking-tight text-slate-900">Recovery codes</h2>
+                        <p class="mt-2 text-sm leading-6 text-slate-600">
+                            Store these one-time codes somewhere safe. They are shown only
+                            during setup and each can be used once if you lose your device.
+                        </p>
+                    </div>
+
+                    <div class="flex flex-wrap gap-2 print:hidden">
+                        <button
+                            type="button"
+                            x-on:click="navigator.clipboard?.writeText(codes.join('\n')).then(() => { copied = true; setTimeout(() => copied = false, 2000) }).catch(() => { copied = false })"
+                            class="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+                        >
+                            <svg x-show="! copied" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                            <svg x-show="copied" x-cloak class="h-4 w-4 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+                            <span x-show="! copied">Copy codes</span>
+                            <span x-show="copied" x-cloak>Copied</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            x-on:click="window.print()"
+                            class="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+                        >
+                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
+                            Save as PDF
+                        </button>
+                    </div>
+                </div>
+
+                <p class="sr-only" role="status" aria-live="polite" x-text="copied ? 'Recovery codes copied to clipboard' : ''"></p>
+
+                <p class="mt-4 hidden text-xs font-medium uppercase tracking-wide text-slate-500 print:block">
+                    {{ config('app.name') }} · account recovery codes
                 </p>
-                <ul class="mt-4 grid grid-cols-2 gap-2 font-mono text-sm">
+
+                <ul class="mt-4 grid grid-cols-2 gap-2 font-mono text-sm print:grid-cols-2 print:gap-3">
                     @foreach ($recoveryCodes as $recoveryCode)
-                        <li class="rounded bg-slate-100 px-3 py-2">{{ $recoveryCode }}</li>
+                        <li class="rounded bg-slate-100 px-3 py-2 print:border print:border-slate-300 print:bg-white">{{ $recoveryCode }}</li>
                     @endforeach
                 </ul>
             </div>
