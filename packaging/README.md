@@ -60,8 +60,9 @@ Or point the installer at an authenticated mirror via `HOSTNUR_BASE_URL`.
 - It installs only from the release bundle (no `git clone`, no build tools
   required on the target). Development tooling (Node/Rust/Composer dev) is not
   needed to run an installed panel.
-- The panel's web service here is a small `php artisan serve` unit behind nginx;
-  a PHP-FPM service and full ownership model are part of the deferred packaging
-  phase. The agent runs as a privileged systemd service.
+- The panel is served by **nginx + PHP-FPM** under a dedicated unprivileged user
+  (`hostnur-panel`); the agent runs as a privileged systemd service and exposes
+  its socket to a dedicated group (`hostnur`) that the panel user joins, with a
+  peer-UID allowlist. (`php artisan serve` is used only for local development.)
 - Existing `/etc/hostnur/agent.toml` is preserved; the panel `.env` is preserved
   on re-run. Unmanaged Nginx sites are not deleted.

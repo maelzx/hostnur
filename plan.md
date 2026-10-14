@@ -1451,6 +1451,25 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ## 8. Current handoff
 
+### Session 041 — nginx + PHP-FPM panel service in the installer (2026-10-14)
+
+- The interim installer now serves the panel with **nginx + PHP-FPM** under a
+  dedicated unprivileged user `hostnur-panel` (system account, no login), replacing
+  the `php artisan serve` unit (which is now only for local development). It creates
+  a per-panel FPM pool, an nginx fastcgi vhost (HTTPS when a domain is given, else a
+  default :80 server), disables/removes any old `hostnur-panel.service`, and chowns
+  the panel to the dedicated user.
+- Added an agent config **`socket_group`**: the agent chgrps the bound socket (and
+  its parent dir) to that group and makes the dir group-traversable, so the
+  unprivileged panel user (added to the group) can connect while peer-UID checks
+  still apply. Installer sets `socket_group = "hostnur"` and
+  `allowed_peer_uids = [<hostnur-panel uid>]`.
+- **VM validation** on the throwaway host: socket became `660 root:hostnur` with
+  `/run/hostnur` `750 root:hostnur`; the panel user could access it; the panel
+  served `https://hostnur-p16.kom.my/login` 200 via nginx+FPM; and the panel (as
+  `hostnur-panel`) resolved the agent `mode=real, available=1`. Rust fmt/clippy/
+  tests pass. Commit `96c3559`.
+
 ### Session 040 — Interim installer + GitHub release pipeline (2026-10-14)
 
 - Added the interim **curl-and-bash installer** (`packaging/install.sh`) that

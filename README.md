@@ -54,9 +54,9 @@ deploying a real Laravel app (**AssetKOM**) on MariaDB with a production TLS cer
 
 - **Status: early / pre-beta.** Phases 1–18 are implemented and VM-validated;
   release packaging, backup/restore and hardening are not finished.
-- The panel's own web service is an interim `php artisan serve` unit behind Nginx;
-  a PHP-FPM-based panel service and a dedicated non-root panel identity are
-  deferred.
+- The installed panel is served by **nginx + PHP-FPM** under a dedicated
+  unprivileged user (`hostnur-panel`); `php artisan serve` is used only for local
+  development.
 - **Migrations run when the deploy requests them**; the stricter "recovery
   prerequisite before migrations" gate is a recorded follow-up.
 - **No backup/restore** (phase 19 deferred) and **no signed APT repo / upgrades**
