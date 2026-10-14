@@ -58,6 +58,16 @@
             "read_only": false,
             "retry": "capability_declared"
         },
+        "agent.register_certificate": {
+            "resource": null,
+            "parameters": {
+                "certificate": { "type": "string", "required": true, "max": 64 },
+                "hostname": { "type": "string", "required": true, "max": 253 },
+                "application": { "type": "uuid", "required": false }
+            },
+            "read_only": false,
+            "retry": "capability_declared"
+        },
         "agent.register_database": {
             "resource": null,
             "parameters": {

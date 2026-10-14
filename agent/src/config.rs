@@ -35,7 +35,7 @@ const MAX_SOCKET_PATH_BYTES: usize = 107;
 
 /// Top-level settings accepted by this schema version. Anything else is an
 /// unknown setting and is rejected.
-const KNOWN_KEYS: [&str; 11] = [
+const KNOWN_KEYS: [&str; 13] = [
     "version",
     "socket_path",
     "state_dir",
@@ -47,6 +47,8 @@ const KNOWN_KEYS: [&str; 11] = [
     "allowed_peer_uids",
     "php_versions",
     "socket_group",
+    "acme_email",
+    "acme_staging",
 ];
 
 /// Validated agent configuration.
@@ -68,6 +70,10 @@ pub struct AgentConfig {
     /// Optional group granted access to the socket (and its parent directory),
     /// e.g. a dedicated panel-access group.
     pub socket_group: Option<String>,
+    /// ACME account contact email (required to issue Let's Encrypt certs).
+    pub acme_email: Option<String>,
+    /// Use the Let's Encrypt staging endpoint (for testing).
+    pub acme_staging: bool,
 }
 
 impl AgentConfig {
@@ -119,6 +125,8 @@ impl AgentConfig {
         let allowed_peer_uids = optional_u32_array(table, "allowed_peer_uids")?;
         let php_versions = optional_string_array(table, "php_versions", &["8.3"])?;
         let socket_group = optional_string(table, "socket_group")?;
+        let acme_email = optional_string(table, "acme_email")?;
+        let acme_staging = optional_bool(table, "acme_staging", false)?;
 
         let config = AgentConfig {
             version: u32::try_from(version)
@@ -133,6 +141,8 @@ impl AgentConfig {
             allowed_peer_uids,
             php_versions,
             socket_group,
+            acme_email,
+            acme_staging,
         };
         config.validate()?;
         Ok(config)
@@ -199,6 +209,17 @@ impl AgentConfig {
                     .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'));
             if !valid {
                 return Err(invalid("`socket_group` must be a valid group name"));
+            }
+        }
+
+        if let Some(email) = &self.acme_email {
+            let valid = email.len() <= 320
+                && email.contains('@')
+                && !email.starts_with('@')
+                && !email.ends_with('@')
+                && !email.chars().any(|c| c.is_control() || c.is_whitespace());
+            if !valid {
+                return Err(invalid("`acme_email` must be a valid email address"));
             }
         }
 
@@ -309,6 +330,19 @@ fn optional_bounded_u32(
             u32::try_from(raw)
                 .map_err(|_| invalid(format!("setting `{key}` must be a non-negative integer")))
         }
+    }
+}
+
+fn optional_bool(
+    table: &toml::map::Map<String, toml::Value>,
+    key: &str,
+    default: bool,
+) -> Result<bool, AgentError> {
+    match table.get(key) {
+        None => Ok(default),
+        Some(value) => value
+            .as_bool()
+            .ok_or_else(|| invalid(format!("setting `{key}` must be a boolean"))),
     }
 }
 

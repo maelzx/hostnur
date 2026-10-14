@@ -122,7 +122,8 @@ pub fn run(config: &AgentConfig) -> Result<(), AgentError> {
         .filter(|version| *version != "8.3")
         .collect();
     let policy = RuntimePolicy::default().allow_versions("php", &extra_php);
-    let handler = AgentHandler::with_deploy(&journal, deploy, policy);
+    let mut handler = AgentHandler::with_deploy(&journal, deploy, policy);
+    handler.configure_acme(config.acme_email.clone(), config.acme_staging);
     let context = ServerContext {
         catalog: &catalog,
         handler: &handler,

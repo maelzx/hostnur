@@ -80,6 +80,11 @@ final class RealAgentClient implements AgentClient
         $this->send($request->toArray());
     }
 
+    public function registerCertificate(OperationRequest $request): void
+    {
+        $this->send($request->toArray());
+    }
+
     /**
      * @param  array<string, mixed>  $parameters
      * @return array<string, mixed>

@@ -66,4 +66,10 @@ interface AgentClient
      * Rotate a managed database credential. No-op without a durable registry.
      */
     public function rotateDatabase(OperationRequest $request): void;
+
+    /**
+     * Register a certificate request (domain hostname + owning application) with
+     * the agent. No-op without a durable registry.
+     */
+    public function registerCertificate(OperationRequest $request): void;
 }

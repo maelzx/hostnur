@@ -23,16 +23,20 @@ use crate::deploy::DeployRuntime;
 use crate::firewall::FirewallPolicy;
 use crate::git::policy::{NetworkPolicy, validate_repository_url};
 use crate::git::{GitRef, validate_ref};
-use crate::journal::{ApplicationSource, DatabaseResource, Journal};
+use crate::journal::{ApplicationSource, CertificateRecord, DatabaseResource, Journal};
 use crate::observe;
 use crate::packages::{PackageError, PackagePolicy};
 use crate::provider::policy::validate_hostname;
-use crate::provider::{RuntimePolicy, ScheduleUnit, WorkerManager};
+use crate::provider::{
+    ManagedSite, NginxManager, RuntimePolicy, ScheduleUnit, SiteKind, WorkerManager,
+    render_http_challenge_site, render_tls_site,
+};
 use crate::services::{ServiceAction, ServiceError, ServicePolicy};
+use crate::tls::{CertbotClient, CertbotRequest, CertificateManager, from_live_dir};
 use crate::transport::RequestHandler;
 
 /// Operations this build actually advertises and can serve.
-pub const SUPPORTED_OPERATIONS: [&str; 12] = [
+pub const SUPPORTED_OPERATIONS: [&str; 13] = [
     "agent.capabilities",
     "agent.inspect",
     "agent.cancel",
@@ -45,6 +49,7 @@ pub const SUPPORTED_OPERATIONS: [&str; 12] = [
     "database.rotate",
     "database.export",
     "database.import",
+    "certificate.issue",
 ];
 
 /// Handler backed by the durable journal.
@@ -60,6 +65,12 @@ pub struct AgentHandler<'a> {
     db: MariaDbAdmin,
     secrets_dir: PathBuf,
     dumps_dir: PathBuf,
+    certbot: CertbotClient,
+    certs: CertificateManager,
+    tls_nginx: NginxManager,
+    acme_webroot: PathBuf,
+    acme_email: Option<String>,
+    acme_staging: bool,
 }
 
 impl<'a> AgentHandler<'a> {
@@ -76,6 +87,12 @@ impl<'a> AgentHandler<'a> {
             db: MariaDbAdmin::default(),
             secrets_dir: PathBuf::from("/var/lib/hostnur/agent/secrets"),
             dumps_dir: PathBuf::from("/var/lib/hostnur/agent/dumps"),
+            certbot: CertbotClient::default(),
+            certs: CertificateManager::default(),
+            tls_nginx: NginxManager::default(),
+            acme_webroot: PathBuf::from("/var/www/hostnur-acme"),
+            acme_email: None,
+            acme_staging: false,
         }
     }
 
@@ -93,6 +110,12 @@ impl<'a> AgentHandler<'a> {
             db: MariaDbAdmin::default(),
             secrets_dir: PathBuf::from("/var/lib/hostnur/agent/secrets"),
             dumps_dir: PathBuf::from("/var/lib/hostnur/agent/dumps"),
+            certbot: CertbotClient::default(),
+            certs: CertificateManager::default(),
+            tls_nginx: NginxManager::default(),
+            acme_webroot: PathBuf::from("/var/www/hostnur-acme"),
+            acme_email: None,
+            acme_staging: false,
         }
     }
 
@@ -236,6 +259,188 @@ impl<'a> AgentHandler<'a> {
         let _ = crate::secrets::remove_secret(&self.secrets_dir, resource_id.as_str());
         let _ = self.journal.remove_database(&resource_id);
         json!({"protocol_version": 1, "removed": true, "database": record.db_name})
+    }
+
+    /// Configure ACME (called from process startup with the agent config).
+    pub fn configure_acme(&mut self, email: Option<String>, staging: bool) {
+        self.acme_email = email;
+        self.acme_staging = staging;
+    }
+
+    fn site_name(&self, application_id: &Uuid) -> String {
+        format!(
+            "hn-{}",
+            crate::provision::account_name(application_id).trim_start_matches("hn_")
+        )
+    }
+
+    fn register_certificate(&self, request: &OperationRequest) -> Value {
+        let string = |key: &str| request.parameters.get(key).and_then(Value::as_str);
+        let Some(certificate_id) = string("certificate") else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "certificate is required",
+            );
+        };
+        if certificate_id.is_empty()
+            || certificate_id.len() > 64
+            || !certificate_id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+        {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "certificate id is invalid",
+            );
+        }
+        let Some(hostname) = string("hostname") else {
+            return error_body(ContractErrorCode::InvalidParameters, "hostname is required");
+        };
+        if let Err(error) = validate_hostname(hostname) {
+            return error_body(ContractErrorCode::InvalidParameters, &error.to_string());
+        }
+        let application_id = string("application").and_then(|value| Uuid::parse(value).ok());
+
+        let record = CertificateRecord {
+            certificate_id: certificate_id.to_string(),
+            application_id,
+            hostname: hostname.to_string(),
+            state: "registered".to_string(),
+        };
+        match self.journal.set_certificate(&record) {
+            Ok(()) => json!({"protocol_version": 1, "registered": true, "hostname": hostname}),
+            Err(error) => error_body(ContractErrorCode::OperationFailed, &error.to_string()),
+        }
+    }
+
+    fn certificate_issue(&self, request: &OperationRequest) -> Value {
+        let Some(resource) = request.resource.as_ref() else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "domain resource is required",
+            );
+        };
+        if resource.kind != "domain" {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "resource must be a domain",
+            );
+        }
+        let record = match self.journal.certificate(&resource.id) {
+            Ok(Some(record)) => record,
+            Ok(None) => {
+                return error_body(
+                    ContractErrorCode::ResourceNotFound,
+                    "certificate request is not registered",
+                );
+            }
+            Err(error) => {
+                return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+            }
+        };
+
+        let Some(email) = self.acme_email.clone() else {
+            return error_body(
+                ContractErrorCode::OperationFailed,
+                "ACME contact email is not configured on the agent",
+            );
+        };
+
+        // Resolve the owning application by the domain's server_name.
+        let application_id = match record.application_id.clone() {
+            Some(id) => id,
+            None => match self
+                .journal
+                .application_source_by_server_name(&record.hostname)
+            {
+                Ok(Some(source)) => source.application_id,
+                Ok(None) => {
+                    return error_body(
+                        ContractErrorCode::ResourceNotFound,
+                        "no application is registered for this domain",
+                    );
+                }
+                Err(error) => {
+                    return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+                }
+            },
+        };
+
+        let hostname = record.hostname.clone();
+        let name = self.site_name(&application_id);
+        let socket = PathBuf::from(format!("/run/php/{name}.sock"));
+        let docroot = self
+            .apps_root
+            .join(application_id.as_str())
+            .join("current/public");
+        let webroot = self.acme_webroot.join(&name);
+
+        if let Err(error) = std::fs::create_dir_all(webroot.join(".well-known/acme-challenge")) {
+            return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+        }
+
+        let site = ManagedSite {
+            name: name.clone(),
+            server_name: hostname.clone(),
+            root: docroot,
+            fpm_socket: Some(socket),
+            kind: SiteKind::Laravel,
+        };
+
+        // Serve the HTTP-01 challenge on :80 first.
+        let challenge = match render_http_challenge_site(&site, &webroot) {
+            Ok(contents) => contents,
+            Err(error) => {
+                return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+            }
+        };
+        if let Err(error) = self.tls_nginx.apply(&name, &challenge) {
+            return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+        }
+
+        let outcome = match self.certbot.obtain(&CertbotRequest {
+            domains: vec![hostname.clone()],
+            email,
+            webroot: webroot.clone(),
+            staging: self.acme_staging,
+        }) {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+            }
+        };
+
+        let live = from_live_dir(&outcome.live_dir);
+        let info = match self.certs.validate(&live.fullchain, &live.key, &hostname) {
+            Ok(info) => info,
+            Err(error) => {
+                return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+            }
+        };
+        let dest = PathBuf::from(format!("/etc/hostnur/tls/{name}"));
+        let installed = match self.certs.install(&live, &dest) {
+            Ok(installed) => installed,
+            Err(error) => {
+                return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+            }
+        };
+
+        let tls_site = match render_tls_site(&site, &webroot, &installed.fullchain, &installed.key)
+        {
+            Ok(contents) => contents,
+            Err(error) => {
+                return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+            }
+        };
+        if let Err(error) = self.tls_nginx.apply(&name, &tls_site) {
+            return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+        }
+
+        let mut updated = record.clone();
+        updated.state = "issued".to_string();
+        let _ = self.journal.set_certificate(&updated);
+
+        json!({"protocol_version": 1, "issued": true, "hostname": hostname, "not_after": info.not_after})
     }
 
     fn rotate_database(&self, request: &OperationRequest) -> Value {
@@ -904,6 +1109,10 @@ impl RequestHandler for AgentHandler<'_> {
             "agent.register_schedule" => self.register_schedule(request),
             "agent.remove_schedule" => self.remove_schedule(request),
             "schedule.apply" => self.complete_operation(request, || self.schedule_apply(request)),
+            "agent.register_certificate" => self.register_certificate(request),
+            "certificate.issue" => {
+                self.complete_operation(request, || self.certificate_issue(request))
+            }
             _ => error_body(
                 ContractErrorCode::UnsupportedOperation,
                 "the operation is not implemented by this agent build",

@@ -85,6 +85,11 @@ final class UnavailableAgentClient implements AgentClient
         throw new AgentUnavailableException('The agent is unavailable, so the credential was not rotated.');
     }
 
+    public function registerCertificate(OperationRequest $request): void
+    {
+        throw new AgentUnavailableException('The agent is unavailable, so the certificate was not registered.');
+    }
+
     private function protocolVersion(): int
     {
         return (int) config('hostnur.protocol_version', 1);

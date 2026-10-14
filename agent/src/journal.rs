@@ -15,7 +15,7 @@ use crate::contract::{OperationRequest, OperationStatus, SnapshotEvent, Uuid};
 use crate::ids;
 
 /// Schema version recorded in `schema_meta`.
-pub const SCHEMA_VERSION: &str = "7";
+pub const SCHEMA_VERSION: &str = "8";
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -75,6 +75,15 @@ CREATE TABLE IF NOT EXISTS databases (
     db_name TEXT NOT NULL UNIQUE,
     username TEXT NOT NULL UNIQUE,
     host TEXT NOT NULL,
+    state TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS certificates (
+    certificate_id TEXT PRIMARY KEY,
+    application_id TEXT,
+    hostname TEXT NOT NULL,
     state TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -237,6 +246,16 @@ pub struct DatabaseResource {
     pub db_name: String,
     pub username: String,
     pub host: String,
+    pub state: String,
+}
+
+/// A registered certificate request (phase 16 panel wiring).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CertificateRecord {
+    /// Panel-owned identifier (a UUID or a numeric domain id string).
+    pub certificate_id: String,
+    pub application_id: Option<Uuid>,
+    pub hostname: String,
     pub state: String,
 }
 
@@ -925,6 +944,80 @@ impl Journal {
             )
             .map_err(|err| JournalError::Query(err.to_string()))?;
         Ok(())
+    }
+}
+
+impl Journal {
+    pub fn set_certificate(&self, record: &CertificateRecord) -> Result<(), JournalError> {
+        self.connection
+            .execute(
+                "INSERT INTO certificates (certificate_id, application_id, hostname, state, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?5)
+                 ON CONFLICT(certificate_id) DO UPDATE SET
+                    application_id = excluded.application_id,
+                    hostname = excluded.hostname,
+                    state = excluded.state,
+                    updated_at = excluded.updated_at",
+                params![
+                    record.certificate_id,
+                    record.application_id.as_ref().map(|id| id.as_str().to_string()),
+                    record.hostname,
+                    record.state,
+                    clock::now_rfc3339(),
+                ],
+            )
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+        Ok(())
+    }
+
+    pub fn certificate(
+        &self,
+        certificate_id: &str,
+    ) -> Result<Option<CertificateRecord>, JournalError> {
+        self.connection
+            .query_row(
+                "SELECT certificate_id, application_id, hostname, state FROM certificates WHERE certificate_id = ?1",
+                params![certificate_id],
+                |row| {
+                    let application_id = row
+                        .get::<_, Option<String>>(1)?
+                        .and_then(|raw| Uuid::parse(&raw).ok());
+                    Ok(CertificateRecord {
+                        certificate_id: row.get(0)?,
+                        application_id,
+                        hostname: row.get(2)?,
+                        state: row.get(3)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|err| JournalError::Query(err.to_string()))
+    }
+
+    /// The registered application source whose server_name matches `hostname`.
+    pub fn application_source_by_server_name(
+        &self,
+        hostname: &str,
+    ) -> Result<Option<ApplicationSource>, JournalError> {
+        self.connection
+            .query_row(
+                "SELECT application_id, repository_url, server_name, provider, runtime, runtime_version
+                 FROM application_sources WHERE server_name = ?1 LIMIT 1",
+                params![hostname],
+                |row| {
+                    Ok(ApplicationSource {
+                        application_id: Uuid::parse(&row.get::<_, String>(0)?)
+                            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        repository_url: row.get(1)?,
+                        server_name: row.get(2)?,
+                        provider: row.get(3)?,
+                        runtime: row.get(4)?,
+                        runtime_version: row.get(5)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|err| JournalError::Query(err.to_string()))
     }
 }
 

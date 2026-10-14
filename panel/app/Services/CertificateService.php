@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Agent\Dto\OperationRequest;
 use App\Agent\Dto\ResourceRef;
+use App\Contracts\AgentClient;
 use App\Enums\AuditAction;
 use App\Enums\AuditOutcome;
 use App\Enums\CertificateSource;
@@ -27,6 +28,7 @@ final class CertificateService
     public function __construct(
         private readonly TaskService $tasks,
         private readonly AuditRecorder $audit,
+        private readonly AgentClient $agent,
     ) {}
 
     public function requestManaged(User $actor, ApplicationDomain $domain, string $idempotencyKey): Certificate
@@ -42,6 +44,8 @@ final class CertificateService
             'provider' => 'http01',
             'state' => RequestState::Requested,
         ]);
+
+        $this->registerWithAgent($domain);
 
         $task = $this->tasks->requestApproved($actor, new OperationRequest(
             protocolVersion: (int) config('hostnur.protocol_version', 1),
@@ -181,5 +185,36 @@ final class CertificateService
         }
 
         return $names;
+    }
+
+    /**
+     * Register the certificate request (domain id + hostname + application) with
+     * the agent so `certificate.issue` can resolve the domain. Real mode only.
+     */
+    private function registerWithAgent(ApplicationDomain $domain): void
+    {
+        if (config('hostnur.agent_mode') !== 'real') {
+            return;
+        }
+
+        try {
+            $this->agent->registerCertificate(new OperationRequest(
+                protocolVersion: (int) config('hostnur.protocol_version', 1),
+                requestId: (string) Str::uuid(),
+                idempotencyKey: (string) Str::uuid(),
+                operation: 'agent.register_certificate',
+                resource: null,
+                parameters: [
+                    'certificate' => (string) $domain->getKey(),
+                    'hostname' => $domain->hostname,
+                    'application' => $domain->application_id,
+                ],
+                timeoutSeconds: null,
+            ));
+        } catch (\Throwable $exception) {
+            throw ValidationException::withMessages([
+                'hostname' => 'Could not register the certificate with the agent: '.$exception->getMessage(),
+            ]);
+        }
     }
 }
