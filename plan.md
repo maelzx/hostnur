@@ -940,13 +940,18 @@ entirely through the real panel/agent on the VM. Persistent data survives, healt
 is evidenced and partial failures have tested recovery, not cosmetic success states.
 
 ### Phase 16 — Real TLS lifecycle
-- Status: **complete (P16.1–P16.5)** in session 031 on a public DigitalOcean
-  Ubuntu 24.04 **amd64** host: staging Let's Encrypt HTTP-01 issuance, validation,
-  root-owned install, managed TLS routing with a real HTTPS handshake, an agent
-  `renew`/`expires_within` helper, supplied-certificate validation/install, and
-  the panel installed on the host with a live panel↔agent (PHP↔Rust) link.
-  Renewal relies on certbot's own timer. Production (non-staging) issuance and
-  panel-side expiry/supplied-cert UI wiring remain as thin follow-ups.
+- Status: **complete (P16.1–P16.5)**. Session 031 built and VM-validated the TLS
+  primitives (issuance, validation, root-owned install, managed TLS routing with a
+  real handshake, renewal via certbot's timer, supplied-cert validation). Session
+  042 added the **panel→agent `certificate.issue` wiring** (`agent.register_certificate`
+  + a wrapped `certificate.issue` that serves the HTTP-01 challenge, runs certbot,
+  validates/installs, and renders the managed TLS site; agent config gained
+  `acme_email`/`acme_staging`; `CertificateService` registers the domain and the
+  panel shows result). Verified end-to-end on the droplet: the deployed app is
+  served over **HTTPS** with a production cert. Remaining: supplied-certificate
+  *install* over the sensitive channel and panel-side expiry surfacing (thin
+  follow-ups). Note: the earlier "phase 16 complete" claim covered the agent/TLS
+  part; the panel issue wiring was missing until session 042.
 - Depends on: 8, 15.
 
 #### Approach and prerequisites
@@ -1450,6 +1455,32 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 042 — Panel-driven certificate issuance + fixes (2026-10-14)
+
+- User hit three real gaps while trying the panel on the droplet:
+  1. **No queue worker**: the panel dispatches tasks to the database queue, but the
+     installer never started a worker, so tasks sat queued forever. Added a panel
+     `hostnur-panel-worker.service` and a `hostnur-panel-schedule.timer` to the
+     installer and started them on the host.
+  2. **Response-shape mismatch**: `service.control`/`package.install`/
+     `database.provision`/`database.rotate`/`database.import`/`schedule.apply`
+     returned immediate results, but the panel expects `submit → receipt →
+     inspect(snapshot.result)`. Added `complete_operation` to wrap these as
+     accept→execute→receipt and persist the result (journal `executions.result`
+     column), and `inspect` now returns the stored result. Verified: receipt
+     `accepted` → inspect `succeeded` with the result.
+  3. **No `certificate.issue` handler**: the phase-16 panel wiring was missing.
+     Added `agent.register_certificate` + a wrapped `certificate.issue` that serves
+     the HTTP-01 challenge, runs certbot (config `acme_email`/`acme_staging`),
+     validates/installs the cert root-owned and renders the managed TLS site.
+     `CertificateService` registers the domain; `AgentClient::registerCertificate`.
+- Also removed the recent-password re-confirmation gate (route `recent-auth`
+  middleware, `TaskService` checks, Security settings) so all pages are available
+  after MFA login (user request).
+- Verified on the droplet: AssetKOM deployed, DB provisioned, and served over
+  HTTPS with a production Let's Encrypt cert. Rust fmt/clippy/tests + PHP 256 pass.
+  Commits: `c4115c6`, `ab14d69`, `4d4ce99`.
 
 ### Session 041 — nginx + PHP-FPM panel service in the installer (2026-10-14)
 
