@@ -47,6 +47,13 @@ when this plan was created.
 | Development order | Web panel first; Rust development later in another prepared environment | User steering, session 003 |
 | Current environment | Use installed tools; no additional runtimes/system tools or tool upgrades | User steering, session 003 |
 | Local web port | 9000 (`php artisan serve --port=9000`) | User report, session 005 |
+| App database engine | **MariaDB** (first managed engine) | User decision, session 034 |
+| Hosted runtimes (for now) | **PHP/Laravel only**; Python/Node/Go/Java/.NET deferred | User decision, session 034 |
+| Installer/distribution (for now) | **Deferred Debian/APT packaging**; use a **curl + bash bootstrap script** for now | User decision, session 034 |
+| Backup & restore | **Deferred** (phase 19 later) | User decision, session 034 |
+| Opt-in AI assistance | **Deferred** | User decision, session 034 |
+| Expanded platforms/modules | **Deferred** | User decision, session 034 |
+| Throwaway validation host | Reuse the user's disposable Ubuntu 24.04 amd64 droplet; recreated each session | User decision, session 034 |
 
 Framework baseline: Laravel 13, Livewire 4, Tailwind 4 and PHP minimum 8.3.
 Current web development uses installed PHP 8.4.26, Composer 2.9.2, Node 24.12.0
@@ -1063,8 +1070,8 @@ work through the panel with bounded failure/recovery. Unmanaged/root commands an
 firewall mutations remain unavailable; resulting state is observed, not assumed.
 
 ### Phase 18 — Application database provisioning
-- Status: planned; user must choose the first managed engine before implementation.
-- Depends on: 8, 12, 15; engine decision required.
+- Status: planned; **engine confirmed: MariaDB** (session 034). Implementation pending.
+- Depends on: 8, 12, 15.
 
 #### Engine scope and privilege model
 
@@ -1139,7 +1146,8 @@ Laravel app; actual grants, secret handling, rotation and partial-failure behavi
 pass on the VM. Only tested engine/version/data-movement capabilities are advertised.
 
 ### Phase 19 — Backup, restore and recovery
-- Status: planned; requires a separate disposable restore VM and key-custody decision.
+- Status: **deferred by user decision** (session 034) — do later. Requires a
+  separate disposable restore VM and key-custody decision when resumed.
 - Depends on: 15, 16, 17; include 18 for managed databases.
 
 #### Backup scope and trust
@@ -1225,8 +1233,11 @@ method, consistency limits and observed recovery outcome; no fake/untested backu
 can be represented as restore-ready.
 
 ### Phase 20 — Packages, installer, signed releases and upgrades
-- Status: planned; domain, license, signing identity and distribution hosting need decisions.
-- Depends on: 2, 16, 19; signing/domain/hosting decisions required.
+- Status: **partly deferred** (session 034). Debian packages, APT repository,
+  signing and coordinated upgrades are deferred. Interim direction: install via a
+  **curl + bash bootstrap script** (verified, versioned, idempotent) that sets up
+  the host, agent and panel; revisit Debian/APT + signing later.
+- Depends on: 2, 16, 19; signing/domain/hosting decisions deferred with packaging.
 
 #### Packaging scope and release inputs
 
@@ -1337,6 +1348,9 @@ state. Ownership/socket isolation, real TLS and restore checks still hold. Publi
 verification/update/operator instructions match the exact tested artifacts.
 
 ### Phase 21 — Integrated beta validation and release gate
+- Status: planned. Uses the user's **recreated throwaway Ubuntu 24.04 amd64
+  droplet** each session (per session 034), plus a separate restore VM when
+  phase 19 resumes.
 - Depends on: 1–20 and disposable VM access.
 - Slices: full cross-process/VM regression, privilege/path/socket abuse cases,
   app isolation, crashes/disconnects, Nginx/TLS failures, SQLite contention,
@@ -1351,6 +1365,8 @@ verification/update/operator instructions match the exact tested artifacts.
 - Exit: module lifecycle passes; metadata is not treated as a root-code sandbox.
 
 ### Phase 23 — Python, generic services and additional runtimes
+- Status: **deferred except PHP** (session 034). Focus on PHP/Laravel for now;
+  Python/Node/Go/Java/.NET and generic services are deferred.
 - Depends on: 22.
 - Slices: Python venv/systemd first, generic non-root build/start services, then
   Node.js/Go/Java/.NET according to demand; each provider gets separate small slices.
@@ -1363,6 +1379,7 @@ verification/update/operator instructions match the exact tested artifacts.
 - Exit: each enabled integration passes its tests and actual compatibility gates.
 
 ### Phase 25 — Opt-in AI assistance
+- Status: **deferred by user decision** (session 034).
 - Depends on: 21 and stable authorized operation interfaces.
 - Slices: provider-neutral setup, redaction/spending limits, evidence-grounded
   diagnostics/plans, required approvals, structured operations, verification/audit.
@@ -1370,6 +1387,7 @@ verification/update/operator instructions match the exact tested artifacts.
   features remain useful without an AI key.
 
 ### Phase 26 — Expanded platforms and ecosystem
+- Status: **deferred by user decision** (session 034).
 - Depends on: 21–23 and demonstrated demand.
 - Slices: validate Ubuntu 26.04/arm64; separately scope team RBAC, optional Docker,
   multi-server management and reviewed/signed third-party modules.
@@ -1389,13 +1407,14 @@ ask only when the choice materially changes scope, cost, access, or product beha
 | Rust environment | User supplies prepared environment; recheck stored pin/MSRV before implementation | Phase 10 |
 | Protocol framing and registry | Proposed length-prefixed JSON on UDS and agent-owned registry; finalize with Rust implementation | Schema in 3; transport in 11 |
 | Git credentials | Read-only deploy keys and/or scoped HTTPS tokens, verified host keys, no credential in repository URL; confirm providers/auth modes | Config in 6; execution in 13 |
-| App database engine | Proposed MariaDB first for Laravel; confirm MariaDB versus PostgreSQL | Before 18 |
-| Secret and backup keys | Established encryption primitives, key outside DB, rotation and encrypted off-host recovery-key handling | Config in 6; recovery in 19 |
-| Existing-host installer | Propose clean supported VPS beta; no implicit adoption/overwrite of unmanaged services | Phase 20 |
-| Product domain | Official panel/install/docs domain from user | Before real TLS in 16 and installer in 20 |
-| Release signing/hosting | GitHub Releases initially; select signing identity and signed APT hosting before wider distribution | Phase 20 |
-| VM access and DNS | Disposable Ubuntu 24.04 amd64 VM, test DNS and separate restore VM | Host checks from 12; TLS in 16 |
-| License/public beta | Confirm license and distribution terms before publishing releases | Phases 20–21 |
+| App database engine | **Resolved (session 034): MariaDB** | Resolved |
+| Secret and backup keys | Established encryption primitives, key outside DB, rotation and encrypted off-host recovery-key handling | Config in 6; recovery in 19 (deferred) |
+| Existing-host installer | Clean supported VPS beta; no implicit adoption/overwrite of unmanaged services | Phase 20 (Debian/APT deferred) |
+| Installer mechanism (interim) | A **curl + bash bootstrap script** until Debian packages/APT are revisited | Session 034 |
+| Product domain | Official panel/install/docs domain from user | Before installer in 20 |
+| Release signing/hosting | Deferred with Debian packaging; GitHub Releases when packaging resumes | Phase 20 (deferred) |
+| VM access and DNS | Reuse the user's disposable Ubuntu 24.04 **amd64** droplet (recreated per session); test DNS + separate restore VM later | Host checks from 12; TLS in 16 |
+| License/public beta | Confirm license and distribution terms before publishing releases | Phases 20–21 (deferred) |
 
 ## 7. Beta acceptance checklist
 
@@ -1418,6 +1437,22 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 034 — Scope decisions recorded (2026-10-13)
+
+- User confirmed scope decisions (recorded in section 2 and section 6):
+  - **Phase 18 database: MariaDB** (first managed engine).
+  - **Phase 19 backup/restore: deferred** (do later).
+  - **Phase 20 packaging: Debian/APT deferred**; interim install via a **curl + bash
+    bootstrap script**. Signing/APT/hosting decisions deferred with it.
+  - **Phase 21 beta validation: reuse the user's throwaway droplet** (recreated per
+    session).
+  - **Phase 23: PHP/Laravel only for now**; other runtimes deferred.
+  - **Phase 25 (AI): deferred. Phase 26 (platforms/ecosystem): deferred.**
+- Plan: next is **phase 17** (real services/packages/scheduled jobs), then re-run
+  the throwaway-host setup via [`docs/p16-test-host.md`](docs/p16-test-host.md)
+  before its VM-dependent validation.
+- Only `plan.md` changes this session.
 
 ### Session 033 — Pause; disposable host destroyed (2026-10-13)
 
@@ -2617,14 +2652,19 @@ The panel is independently runnable and tested; the agent crate builds, tests an
 runs unprivileged in the Lima VM. See `docs/web-milestone.md` and
 `docs/agent-development.md` for passed gates, blocked checks and acceptance maps.
 
-**Phases 11–16 are complete for their scopes** (sessions 026–033). Phase 16 and
-the socket-driven deploy were validated on a disposable public DigitalOcean host,
-which was then destroyed (session 033). To resume: recreate that host by following
-[`docs/p16-test-host.md`](docs/p16-test-host.md) (baseline → amd64 agent build →
-agent/panel install → DNS/TLS → admin bootstrap → deploy), then continue with
-phase 17. Recorded follow-ups: production-vs-staging issuance already chosen per
-run, per-app `public/` ACLs, the migration recovery-prerequisite gate, a
-dedicated non-root panel identity, and pushing commits to observe CI.
+**Phases 11–16 are complete for their scopes** (sessions 026–033). The next work
+is **phase 17 (real services, packages and scheduled jobs)**: wire the server UI
+to the existing allowlisted agent primitives (service start/stop/restart, approved
+package install, app-owned schedules/timers); firewall stays read-only. After
+that, re-run the throwaway-host setup from
+[`docs/p16-test-host.md`](docs/p16-test-host.md) to validate on the VM.
+
+Scope decisions (session 034): MariaDB for phase 18; phase 19 backup/restore
+deferred; phase 20 Debian/APT deferred in favour of a curl+bash bootstrap script;
+phase 21 reuses the throwaway droplet; PHP/Laravel only (other runtimes deferred);
+phase 25 (AI) and phase 26 (platforms) deferred. Recorded follow-ups: per-app
+`public/` ACLs, the migration recovery-prerequisite gate, a dedicated non-root
+panel identity, and pushing commits to observe CI.
 
 Push the phase-10 commit to observe the agent CI workflow; a real CI run is still
 outstanding. The remaining genuine web gates (real browser keyboard/screen-reader
