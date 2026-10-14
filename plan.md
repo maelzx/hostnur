@@ -1456,6 +1456,27 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ## 8. Current handoff
 
+### Session 043 — Pause checkpoint; droplet to be destroyed (2026-10-14)
+
+- Paused at the user's request; the DigitalOcean droplet is being destroyed.
+  Nothing on the dev machine needs cleanup (Lima VM `hostnur-rust` and the SSH key
+  `~/.ssh/hostnur_p16_ed25519` are kept).
+- End-to-end **validated on the droplet**: the panel deployed a real Laravel app
+  (AssetKOM), provisioned a MariaDB database, and served it over **HTTPS** with a
+  **panel-driven** `certificate.issue` (production Let's Encrypt cert).
+- Fixes landed during the live session (all committed locally, through `a0be938`):
+  queue worker + scheduler added to the installer; task operations wrapped as
+  `accept → receipt → inspect(result)`; `certificate.issue`/`register_certificate`
+  wired through the agent; the recent-password re-confirmation gate removed; the
+  installed panel served by nginx + PHP-FPM under a dedicated `hostnur-panel` user.
+- **All commits are local-only**; the user pushes via GitHub Desktop. Push + tag a
+  new release so a fresh `install.sh` includes the worker/scheduler, FPM panel
+  service and the certificate/agent fixes.
+- Next: the user wants a **full UI/UX revamp** ("let me think first"). Awaiting
+  direction before starting. Remaining deferred items stay: phase 16
+  supplied-certificate install + expiry surfacing; per-app `public/` ACLs; the
+  migration recovery-prerequisite gate; multi-DB deploy picks the first ready DB.
+
 ### Session 042 — Panel-driven certificate issuance + fixes (2026-10-14)
 
 - User hit three real gaps while trying the panel on the droplet:
@@ -2849,13 +2870,13 @@ The panel is independently runnable and tested; the agent crate builds, tests an
 runs unprivileged in the Lima VM. See `docs/web-milestone.md` and
 `docs/agent-development.md` for passed gates, blocked checks and acceptance maps.
 
-**Phases 11–18 are complete and validated on the VM** (sessions 026–039). MariaDB
-provisioning, isolation, deployment credential injection, rotation and bounded
-export/import all pass on the throwaway host. Per session-034 scope decisions,
-**phase 19 (backup/restore) is deferred**; the next build work is the interim
-**curl + bash bootstrap installer** (the phase-20 substitute) plus remaining
-phase-15/16 polish (per-app `public/` ACLs, migration recovery gate, dedicated
-non-root panel identity).
+**Phases 11–18 are complete and validated on the VM** (sessions 026–042); phase 16
+is now panel-wired too. **Paused at the user's request** — the throwaway droplet is
+being destroyed, and the next planned work is a **full UI/UX revamp** (the user is
+deciding scope). The interim **curl + bash installer** and release pipeline exist
+(committed locally; push + tag to publish). Deferred items remain: phase 16
+supplied-certificate install + expiry UI; per-app `public/` ACLs; the migration
+recovery gate; phase 19 backup/restore; Debian/APT packaging.
 
 Scope decisions (session 034): MariaDB for phase 18; phase 19 backup/restore
 deferred; phase 20 Debian/APT deferred in favour of a curl+bash bootstrap script;
