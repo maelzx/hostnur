@@ -1,0 +1,119 @@
+name: Release
+
+# Builds the installable artifacts and attaches them to a GitHub Release:
+#   hostnur-linux-x86_64.tar.gz   agent binary + panel (vendor + built assets) + contracts + units
+#   SHA256SUMS                    checksums
+#   install.sh                    the curl-and-bash installer
+#
+# Public downloads (once the repo is public):
+#   https://github.com/maelzx/hostnur/releases/latest/download/install.sh
+#   https://github.com/maelzx/hostnur/releases/latest/download/hostnur-linux-x86_64.tar.gz
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to publish (e.g. v0.1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      APP_ENV: production
+    steps:
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          rustup default 1.99.0
+          rustc --version
+
+      - name: Build agent (amd64, locked)
+        working-directory: agent
+        run: |
+          cargo build --locked --release --target x86_64-unknown-linux-gnu
+          strip "target/x86_64-unknown-linux-gnu/release/hostnur-agent" || true
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.3'
+          extensions: ctype, curl, dom, fileinfo, filter, hash, iconv, mbstring, openssl, pdo_sqlite, session, sodium, sqlite3, tokenizer, xml, xmlwriter, zip, pcntl, posix
+          coverage: none
+          tools: composer:2.10.3
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: panel/package-lock.json
+
+      - name: Build panel production dependencies and assets
+        working-directory: panel
+        run: |
+          composer install --no-dev --no-interaction --prefer-dist --no-progress
+          npm ci --no-fund
+          npm run build
+
+      - name: Assemble the release bundle
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.version.outputs.tag }}"
+          STAGE="$(mktemp -d)"
+          mkdir -p "$STAGE/hostnur"
+          # Agent binary
+          mkdir -p "$STAGE/hostnur/bin"
+          cp agent/target/x86_64-unknown-linux-gnu/release/hostnur-agent "$STAGE/hostnur/bin/hostnur-agent"
+          # Panel (with vendor + public/build; no dev-only or secret state)
+          rsync -a --delete \
+            --exclude '.git' --exclude 'node_modules' --exclude 'tests' \
+            --exclude '.env' --exclude '.env.example' --exclude 'database/database.sqlite' \
+            --exclude 'storage/logs/*' --exclude 'bootstrap/cache/*.php' \
+            panel/ "$STAGE/hostnur/panel/"
+          # Contracts
+          rsync -a --delete contracts/ "$STAGE/hostnur/contracts/"
+          # systemd units + installer
+          mkdir -p "$STAGE/hostnur/packaging"
+          cp packaging/systemd/hostnur-agent.service "$STAGE/hostnur/packaging/"
+          cp packaging/install.sh "$STAGE/hostnur/packaging/"
+          # Bundle
+          ( cd "$STAGE" && tar czf hostnur-linux-x86_64.tar.gz hostnur )
+          mkdir -p dist
+          cp "$STAGE/hostnur-linux-x86_64.tar.gz" dist/
+          cp packaging/install.sh dist/
+          ( cd dist && sha256sum hostnur-linux-x86_64.tar.gz install.sh > SHA256SUMS )
+          cat dist/SHA256SUMS
+
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.version.outputs.tag }}"
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes "Hostnur $TAG — agent + panel bundle. Install with the attached installer (see packaging/README.md)." \
+            dist/hostnur-linux-x86_64.tar.gz dist/install.sh dist/SHA256SUMS
