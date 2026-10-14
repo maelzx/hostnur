@@ -1,11 +1,7 @@
 <main class="pb-4">
     <header class="mb-6">
         <h1 class="text-2xl font-semibold tracking-tight">Overview</h1>
-        <p class="mt-2 text-sm leading-6 text-slate-600">
-            Signed in as {{ auth()->user()?->name }}. Server metrics come from the
-            configured agent; unavailable values are shown as <span class="font-mono">—</span>,
-            never zero.
-        </p>
+        <p class="mt-2 text-sm leading-6 text-slate-600">Signed in as {{ auth()->user()?->name }}.</p>
     </header>
 
     @if ($snapshot->mode === \App\Enums\AgentMode::Fake)

@@ -1,10 +1,6 @@
 <main>
     <header class="mb-6">
         <h1 class="text-2xl font-semibold tracking-tight">Applications</h1>
-        <p class="mt-2 text-sm leading-6 text-slate-600">
-            Managed Laravel/PHP applications. Configuration is stored desire only;
-            nothing is provisioned on the host until a later phase.
-        </p>
     </header>
 
     <x-ui.panel title="New application" class="mb-6">

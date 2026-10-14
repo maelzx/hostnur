@@ -1,11 +1,6 @@
 <main>
     <header class="mb-6">
         <h1 class="text-2xl font-semibold tracking-tight">Scheduled jobs</h1>
-        <p class="mt-2 text-sm leading-6 text-slate-600">
-            Desired schedule configuration for an application. Saving never installs
-            cron or systemd; hosted commands run later under the application's Linux
-            user through the agent.
-        </p>
     </header>
 
     <x-ui.panel :title="$editJobId ? 'Edit schedule' : 'New schedule'" class="mb-6">

@@ -2,8 +2,7 @@
     <header class="mb-6">
         <h1 class="text-2xl font-semibold tracking-tight">Security settings</h1>
         <p class="mt-2 text-sm leading-6 text-slate-600">
-            Sensitive changes require a recent password confirmation. Rotating your
-            password or multi-factor authentication signs out existing sessions.
+            Rotating your password or MFA signs out other sessions.
         </p>
     </header>
 

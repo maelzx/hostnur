@@ -1,11 +1,6 @@
 <main>
     <header class="mb-6">
         <h1 class="text-2xl font-semibold tracking-tight">Backups</h1>
-        <p class="mt-2 text-sm leading-6 text-slate-600">
-            Backup policy and simulated requests only. A simulated backup is never
-            labelled recoverable, restore is not available, and the panel never
-            exports its own keys or plaintext secrets.
-        </p>
     </header>
 
     <x-ui.panel title="New backup policy" class="mb-6">

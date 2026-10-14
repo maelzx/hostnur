@@ -1,10 +1,6 @@
 <main>
     <header class="mb-6">
         <h1 class="text-2xl font-semibold tracking-tight">Audit history</h1>
-        <p class="mt-2 text-sm leading-6 text-slate-600">
-            Append-only record of authentication and task activity. Secrets, codes and
-            provisioning values are never stored here.
-        </p>
     </header>
 
     <x-ui.panel class="mb-6">

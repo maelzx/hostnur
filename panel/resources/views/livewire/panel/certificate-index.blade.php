@@ -1,11 +1,6 @@
 <main>
     <header class="mb-6">
         <h1 class="text-2xl font-semibold tracking-tight">Domains &amp; TLS</h1>
-        <p class="mt-2 text-sm leading-6 text-slate-600">
-            Domain routing intent and certificates. Managed issuance uses HTTP-01 only
-            (no wildcard/DNS-01). User-supplied keys are validated locally with OpenSSL
-            and stored encrypted and write-only.
-        </p>
     </header>
 
     <div class="grid gap-6 lg:grid-cols-2">

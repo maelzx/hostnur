@@ -1,10 +1,6 @@
 <main>
     <header class="mb-6">
         <h1 class="text-2xl font-semibold tracking-tight">Deployments</h1>
-        <p class="mt-2 text-sm leading-6 text-slate-600">
-            Deployment intent and history. Simulated runs are labelled; a simulated
-            success never replaces a real active release.
-        </p>
     </header>
 
     @if ($deployments->isEmpty())

@@ -23,8 +23,7 @@
     {{-- Progress checklist --}}
     <x-ui.panel title="Setup checklist" class="mb-6">
         <p class="mt-2 text-sm text-slate-600">
-            Work through the numbered steps below, top to bottom. Only <strong>Source</strong> and
-            <strong>Runtime</strong> are required; secrets, domains, workers and scheduler are optional.
+            Only <strong>Source</strong> and <strong>Runtime</strong> are required; the rest is optional.
         </p>
         <ol class="mt-4 grid gap-2 text-sm sm:grid-cols-2">
             @php
@@ -56,10 +55,6 @@
                 <span class="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white">1</span>
                 <div>
                     <h2 class="text-lg font-semibold text-slate-900">Connect your repository</h2>
-                    <p class="mt-1 text-sm text-slate-600">
-                        Where the code lives. For a public repo (like GitHub) leave the credential as
-                        “None (public)”. Saving only stores the values — no download happens until you deploy.
-                    </p>
                 </div>
             </div>
             <form wire:submit="saveSource" class="mt-4 space-y-3">
@@ -142,8 +137,7 @@
                 <div class="flex-1">
                     <h2 class="text-lg font-semibold text-slate-900">Runtime, build &amp; scale</h2>
                     <p class="mt-1 text-sm text-slate-600">
-                        How the app runs. For a Laravel app choose <strong>php</strong>, then click
-                        “Use recommended Laravel settings” to fill the sensible defaults.
+                        For a Laravel app choose <strong>php</strong>, then use the recommended settings.
                     </p>
                 </div>
             </div>
@@ -229,9 +223,7 @@
                 <div>
                     <h2 class="text-lg font-semibold text-slate-900">Environment secrets <span class="text-sm font-normal text-slate-500">(optional)</span></h2>
                     <p class="mt-1 text-sm text-slate-600">
-                        Extra environment variables the app needs (API keys, SMTP, DB credentials).
-                        Values are encrypted and never shown again. Values from the repo’s
-                        <code>.env.example</code> are used automatically.
+                        Encrypted and never shown again. <code>.env.example</code> values apply automatically.
                     </p>
                 </div>
             </div>
@@ -273,8 +265,7 @@
                 <div>
                     <h2 class="text-lg font-semibold text-slate-900">Domain &amp; HTTPS <span class="text-sm font-normal text-slate-500">(optional)</span></h2>
                     <p class="mt-1 text-sm text-slate-600">
-                        The address the app is served on. Point the domain’s DNS A record at this
-                        server first; choose HTTPS to get a certificate automatically.
+                        Point the domain’s A record here, then enable HTTPS.
                     </p>
                 </div>
             </div>
@@ -317,9 +308,7 @@
                 <div>
                     <h2 class="text-lg font-semibold text-slate-900">Deploy</h2>
                     <p class="mt-1 text-sm text-slate-600">
-                        Once the source and runtime are saved, go to <strong>Deploy &amp; operations</strong>
-                        to review the plan and deploy. Progress and logs appear under
-                        <strong>Deployment history</strong>.
+                        Save your changes, then deploy from <strong>Deploy &amp; operations</strong>.
                     </p>
                     <div class="mt-3 flex flex-wrap gap-3">
                         <a href="{{ route('panel.applications.operations', ['application' => $application->id]) }}" class="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-xs transition-colors hover:bg-indigo-700">Deploy &amp; operations</a>

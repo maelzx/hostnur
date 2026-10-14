@@ -4,10 +4,6 @@
             <a href="{{ route('panel.applications.show', ['application' => $application->id]) }}" class="font-medium text-indigo-700 hover:underline">{{ $application->name }}</a>
         </p>
         <h1 class="mt-2 text-2xl font-semibold tracking-tight">Deploy &amp; operations</h1>
-        <p class="mt-2 text-sm leading-6 text-slate-600">
-            Requests are simulated while the agent is unavailable or in fake mode.
-            The panel never runs Composer, Git or Artisan against hosted source.
-        </p>
     </header>
 
     <x-ui.panel title="Preflight (panel configuration only)" class="mb-6">
@@ -65,8 +61,7 @@
     <div class="grid gap-6 lg:grid-cols-2">
         <x-ui.panel title="Restart">
             @error('restart') <p role="alert" class="mt-2 text-sm text-red-700">{{ $message }}</p> @enderror
-            <p class="mt-2 text-sm text-slate-600">Restart the managed application processes.</p>
-            <div class="mt-4">
+            <div class="mt-2">
                 <x-ui.confirm title="Restart this application?" confirm-label="Restart" method="restart" variant="secondary">
                     <x-slot:trigger>Restart application</x-slot:trigger>
                     The request is simulated in fake mode and recorded as a task.

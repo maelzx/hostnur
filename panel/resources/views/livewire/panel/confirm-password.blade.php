@@ -2,8 +2,7 @@
     <header class="mb-8">
         <h1 class="text-2xl font-semibold tracking-tight">Confirm your password</h1>
         <p class="mt-2 text-sm leading-6 text-slate-600">
-            Re-enter your account password to continue. This confirmation lasts a
-            few minutes and is required before sensitive security changes.
+            Required before sensitive security changes.
         </p>
     </header>
 

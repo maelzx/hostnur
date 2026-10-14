@@ -1,10 +1,6 @@
 <main>
     <header class="mb-6">
         <h1 class="text-2xl font-semibold tracking-tight">Server</h1>
-        <p class="mt-2 text-sm leading-6 text-slate-600">
-            Read-only observation plus allowlisted service and package requests.
-            Service and package IDs come from the agent snapshot and approved catalog.
-        </p>
     </header>
 
     <x-ui.capability-notice :snapshot="$snapshot" :stale-after="(int) config('hostnur.dashboard.stale_after_seconds', 120)" />
