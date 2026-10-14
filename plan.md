@@ -1365,11 +1365,51 @@ supported version and recover from injected failure without losing panel/app/key
 state. Ownership/socket isolation, real TLS and restore checks still hold. Published
 verification/update/operator instructions match the exact tested artifacts.
 
+### Phase 20.5 — Observed state reconciliation and truthful application status
+- Status: **planned**. Closes an implied gap left by phases 12 and 15: the agent
+  already reconciles a provisioning lifecycle and an active release, but
+  `applications.observed_state` / `observed_mode` / `observed_at` are reserved in the
+  schema and never written, and no screen distinguishes desired configuration from
+  genuine agent evidence.
+- Depends on: 12, 14, 15, 16, 17, 18.
+
+#### Objective and rules
+
+Persist agent-observed application state into the panel and surface it truthfully and
+separately from desired configuration. An observation includes the provisioning
+lifecycle (`reserved -> account_created -> layout_prepared -> ready`, plus `failed` and
+`drifted`), the observed active release, mode, sample time and resource identity.
+
+- Write observed fields only from validated agent reconciliation/inspect evidence
+  (task completion, `agent.inspect` polling, scheduled reconcile) — never from UI
+  optimism, eligibility or a merely accepted/requested operation.
+- Simulation and fake mode never write real observed fields; unavailable, stale,
+  drifted, partial and failed remain distinct conditions, not zero/healthy/success.
+- Keep observed mode/time with each observation, mark it stale after a bounded age and
+  reconcile on reconnect/restart without replaying mutations.
+- `Application::status()` is the single derivation point, folding the observed
+  lifecycle and active release into the status shown by the list and detail screens;
+  disagreements between desired and observed are exposed, not hidden.
+
+#### Slices and test matrix
+
+| Slice | Deliverable | Required proof |
+|---|---|---|
+| P20.5.1 Observed field writes | Persist lifecycle/release/mode/time from agent evidence | Fake/unavailable/stale observations never overwrite real observed state |
+| P20.5.2 Reconciliation triggers | Sync on task terminal, inspect poll and scheduled reconcile | Reconnect/lost-receipt yields one truthful observation; no mutation replay |
+| P20.5.3 Truthful status UI | List/detail status incl. drift, stale and unavailable | Each screen shows configured vs simulated vs observed, with its timestamp |
+| P20.5.4 Drift/partial surfacing | Distinguish partial/failed/drifted provisioning and recovery | Drift is reported, not silently healed or displayed as ready |
+
+**Exit gate / milestone:** after real deploy, redeploy, restart, rollback and an
+induced drift on the VM, the panel shows the agent's observed lifecycle/release with
+mode and time, clearly distinct from desired configuration, and no simulation or
+unavailable condition writes real observed fields.
+
 ### Phase 21 — Integrated beta validation and release gate
 - Status: planned. Uses the user's **recreated throwaway Ubuntu 24.04 amd64
   droplet** each session (per session 034), plus a separate restore VM when
   phase 19 resumes.
-- Depends on: 1–20 and disposable VM access.
+- Depends on: 1–20.5 and disposable VM access.
 - Slices: full cross-process/VM regression, privilege/path/socket abuse cases,
   app isolation, crashes/disconnects, Nginx/TLS failures, SQLite contention,
   signed release verification, restore/recovery drill and operator documentation.
@@ -1455,6 +1495,32 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 044 — UI/UX revamp + truthful application status (2026-10-15)
+
+- **UI/UX revamp** (using the `ui-ux-pro-max` skill): redesigned the sign-in page
+  (split brand panel, minimal gradient, accessible focus/aria, password show/hide) and
+  gave the panel a cohesive theme — a dark `slate-900` sidebar matching the login,
+  refreshed shared `x-ui.*` components (`button`/`panel`/`stat`/`badge`/`empty-state`/
+  `confirm`/`capability-notice`), consistent `rounded-xl` + `shadow-xs` surfaces, and
+  MFA pages aligned with the login (QR and confirm step kept in one card). Trimmed
+  over-explaining subtitles and in-page micro-copy across every panel screen (user
+  request). Commits: `e1d434d`, `0f437e3`, `279ac1c`, `1128a40`, `e62d6d3`, `eb23cad`,
+  `ed4cf20`.
+- **Truthful application status**: replaced the vague `desired`/`archived` badge with a
+  real status derived from the latest deployment — new `App\Enums\ApplicationStatus`
+  plus `Application::status()` / `latestDeployment()` yielding `not deployed` /
+  `deploying` / `deployed` / `failed` / `cancelled` / `archived`, with a `simulated`
+  tag in fake mode. Shown in the list (column renamed State → Status) and the detail
+  header. Commit `9055c0d`.
+- **Plan**: the wiring of agent-observed state into the panel
+  (`applications.observed_state`/`observed_mode`/`observed_at`) was only implied, not
+  planned. Recorded it as a new not-started phase **Phase 20.5 — Observed state
+  reconciliation and truthful application status**, placed before the beta gate;
+  Phase 21 now depends on `1–20.5`, and the desired-vs-observed section points to it.
+- Local checks: `php artisan view:cache` (all templates compile), `vendor/bin/pint`
+  pass, `npm run build` clean. Panel runs locally on `127.0.0.1:9000` with the demo
+  seeder.
 
 ### Session 043 — Pause checkpoint; droplet to be destroyed (2026-10-14)
 
@@ -3063,6 +3129,8 @@ there is no requirement to add HTMX solely to make it appear in `package.json`.
   `fake`; real applied-state fields remain empty until genuine agent evidence.
 - Offline, unsupported, stale and failed are different conditions. Do not turn
   unavailable data into zero CPU, healthy services or a successful deployment.
+- Persisting and displaying the observed application state (lifecycle, active release,
+  mode and time) is planned work in **Phase 20.5**, not yet implemented.
 
 #### Proposed initial limits
 
