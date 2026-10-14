@@ -6,6 +6,8 @@
 //! operations are cataloged but not yet implemented, so they return a safe
 //! `unsupported_operation` error rather than pretending to run.
 
+use std::path::{Path, PathBuf};
+
 use serde_json::{Value, json};
 
 use crate::clock;
@@ -20,13 +22,13 @@ use crate::git::{GitRef, validate_ref};
 use crate::journal::{ApplicationSource, Journal};
 use crate::observe;
 use crate::packages::{PackageError, PackagePolicy};
-use crate::provider::RuntimePolicy;
 use crate::provider::policy::validate_hostname;
+use crate::provider::{RuntimePolicy, ScheduleUnit, WorkerManager};
 use crate::services::{ServiceAction, ServiceError, ServicePolicy};
 use crate::transport::RequestHandler;
 
 /// Operations this build actually advertises and can serve.
-pub const SUPPORTED_OPERATIONS: [&str; 7] = [
+pub const SUPPORTED_OPERATIONS: [&str; 8] = [
     "agent.capabilities",
     "agent.inspect",
     "agent.cancel",
@@ -34,6 +36,7 @@ pub const SUPPORTED_OPERATIONS: [&str; 7] = [
     "server.snapshot",
     "service.control",
     "package.install",
+    "schedule.apply",
 ];
 
 /// Handler backed by the durable journal.
@@ -44,6 +47,8 @@ pub struct AgentHandler<'a> {
     services: ServicePolicy,
     packages: PackagePolicy,
     firewall: FirewallPolicy,
+    worker: WorkerManager,
+    apps_root: PathBuf,
 }
 
 impl<'a> AgentHandler<'a> {
@@ -55,6 +60,8 @@ impl<'a> AgentHandler<'a> {
             services: ServicePolicy::default(),
             packages: PackagePolicy::default(),
             firewall: FirewallPolicy::default(),
+            worker: WorkerManager::default(),
+            apps_root: PathBuf::from("/opt/hostnur/apps"),
         }
     }
 
@@ -67,7 +74,174 @@ impl<'a> AgentHandler<'a> {
             services: ServicePolicy::default(),
             packages: PackagePolicy::default(),
             firewall: FirewallPolicy::default(),
+            worker: WorkerManager::default(),
+            apps_root: PathBuf::from("/opt/hostnur/apps"),
         }
+    }
+
+    fn schedule_name(&self, application_id: &Uuid, schedule_id: &Uuid) -> String {
+        let app = crate::provision::account_name(application_id);
+        let fragment = schedule_id.as_str().replace('-', "");
+        format!(
+            "hn-{}-sched-{}",
+            app.trim_start_matches("hn_"),
+            &fragment[..8]
+        )
+    }
+
+    fn register_schedule(&self, request: &OperationRequest) -> Value {
+        let string = |key: &str| request.parameters.get(key).and_then(Value::as_str);
+        let Some(schedule_id) = string("schedule").and_then(|value| Uuid::parse(value).ok()) else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "schedule must be a UUID",
+            );
+        };
+        let Some(application_id) = string("application").and_then(|value| Uuid::parse(value).ok())
+        else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "application must be a UUID",
+            );
+        };
+        let Some(program) = string("program") else {
+            return error_body(ContractErrorCode::InvalidParameters, "program is required");
+        };
+        if !Path::new(program).is_absolute() || program.len() > 255 {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "program must be an absolute path",
+            );
+        }
+        let Some(on_calendar) = string("on_calendar") else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "on_calendar is required",
+            );
+        };
+        if on_calendar.is_empty() || on_calendar.len() > 128 || on_calendar.contains(['\n', '\r']) {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "on_calendar is invalid",
+            );
+        }
+
+        let arguments = string("arguments").unwrap_or("[]").to_string();
+        match serde_json::from_str::<Vec<String>>(&arguments) {
+            Ok(args) if args.iter().all(|arg| !arg.contains(['\n', '\r', '\0'])) => {}
+            _ => {
+                return error_body(
+                    ContractErrorCode::InvalidParameters,
+                    "arguments must be a JSON array of strings",
+                );
+            }
+        }
+
+        let record = crate::journal::ScheduleRecord {
+            schedule_id: schedule_id.clone(),
+            application_id,
+            program: program.to_string(),
+            arguments,
+            on_calendar: on_calendar.to_string(),
+        };
+        match self.journal.set_schedule(&record) {
+            Ok(()) => {
+                json!({"protocol_version": 1, "registered": true, "schedule": schedule_id.as_str()})
+            }
+            Err(error) => error_body(ContractErrorCode::OperationFailed, &error.to_string()),
+        }
+    }
+
+    fn schedule_apply(&self, request: &OperationRequest) -> Value {
+        let Some(resource) = request.resource.as_ref() else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "schedule resource is required",
+            );
+        };
+        if resource.kind != "schedule" {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "resource must be a schedule",
+            );
+        }
+        let Ok(schedule_id) = Uuid::parse(&resource.id) else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "schedule id must be a UUID",
+            );
+        };
+        let record = match self.journal.schedule(&schedule_id) {
+            Ok(Some(record)) => record,
+            Ok(None) => {
+                return error_body(
+                    ContractErrorCode::ResourceNotFound,
+                    "schedule is not registered",
+                );
+            }
+            Err(error) => {
+                return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+            }
+        };
+        let app = match self.journal.managed_application(&record.application_id) {
+            Ok(Some(app)) => app,
+            Ok(None) => {
+                return error_body(
+                    ContractErrorCode::ResourceNotFound,
+                    "application is not provisioned",
+                );
+            }
+            Err(error) => {
+                return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+            }
+        };
+        let args: Vec<String> = serde_json::from_str(&record.arguments).unwrap_or_default();
+        let unit = ScheduleUnit {
+            name: self.schedule_name(&record.application_id, &schedule_id),
+            user: app.account_name.clone(),
+            group: app.account_group.clone(),
+            working_dir: self
+                .apps_root
+                .join(record.application_id.as_str())
+                .join("current"),
+            program: PathBuf::from(record.program),
+            args,
+            on_calendar: record.on_calendar,
+        };
+        match self.worker.apply_schedule(&unit) {
+            Ok(timer) => json!({"protocol_version": 1, "applied": true, "timer": timer}),
+            Err(error) => error_body(ContractErrorCode::OperationFailed, &error.to_string()),
+        }
+    }
+
+    fn remove_schedule(&self, request: &OperationRequest) -> Value {
+        let Some(schedule_id) = request
+            .parameters
+            .get("schedule")
+            .and_then(Value::as_str)
+            .and_then(|value| Uuid::parse(value).ok())
+        else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "schedule must be a UUID",
+            );
+        };
+        let record = match self.journal.schedule(&schedule_id) {
+            Ok(record) => record,
+            Err(error) => {
+                return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+            }
+        };
+        if let Some(record) = &record {
+            let name = self.schedule_name(&record.application_id, &schedule_id);
+            if let Err(error) = self.worker.remove(&name) {
+                return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+            }
+        }
+        if let Err(error) = self.journal.remove_schedule(&schedule_id) {
+            return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+        }
+        json!({"protocol_version": 1, "removed": true, "schedule": schedule_id.as_str()})
     }
 
     fn service_control(&self, request: &OperationRequest) -> Value {
@@ -371,6 +545,9 @@ impl RequestHandler for AgentHandler<'_> {
             "application.deploy" => self.deploy_release(request),
             "service.control" => self.service_control(request),
             "package.install" => self.package_install(request),
+            "agent.register_schedule" => self.register_schedule(request),
+            "agent.remove_schedule" => self.remove_schedule(request),
+            "schedule.apply" => self.schedule_apply(request),
             _ => error_body(
                 ContractErrorCode::UnsupportedOperation,
                 "the operation is not implemented by this agent build",

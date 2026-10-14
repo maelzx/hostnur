@@ -191,3 +191,89 @@ fn register_application_stores_and_rejects() {
         .unwrap();
     assert_eq!(body["error"]["code"], "invalid_parameters");
 }
+
+#[test]
+fn service_control_rejects_unmanaged_service() {
+    let journal = Journal::open_in_memory().unwrap();
+    let handler = AgentHandler::new(&journal);
+    let mut params = Map::new();
+    params.insert("action".into(), json!("restart"));
+    let mut req = request("service.control", params);
+    req.resource = Some(hostnur_agent::contract::ResourceRef {
+        kind: "service".to_string(),
+        id: "ssh".to_string(),
+    });
+    let body = handler.handle(&req).unwrap();
+    assert_eq!(body["error"]["code"], "permission_denied");
+}
+
+#[test]
+fn register_schedule_validates_and_stores() {
+    let journal = Journal::open_in_memory().unwrap();
+    let handler = AgentHandler::new(&journal);
+
+    let good = || {
+        let mut p = Map::new();
+        p.insert(
+            "schedule".into(),
+            json!("33333333-3333-4333-8333-333333333333"),
+        );
+        p.insert(
+            "application".into(),
+            json!("224065ac-4bc7-4ba4-a06d-8c8bca950c32"),
+        );
+        p.insert("program".into(), json!("/usr/bin/php8.4"));
+        p.insert("arguments".into(), json!("[\"artisan\",\"schedule:run\"]"));
+        p.insert("on_calendar".into(), json!("*-*-* *:*:00"));
+        request("agent.register_schedule", p)
+    };
+
+    let body = handler.handle(&good()).unwrap();
+    assert_eq!(body["registered"], true);
+
+    let mut bad = Map::new();
+    bad.insert(
+        "schedule".into(),
+        json!("33333333-3333-4333-8333-333333333333"),
+    );
+    bad.insert(
+        "application".into(),
+        json!("224065ac-4bc7-4ba4-a06d-8c8bca950c32"),
+    );
+    bad.insert("program".into(), json!("relative/bin"));
+    bad.insert("on_calendar".into(), json!("* * * * *"));
+    let body = handler
+        .handle(&request("agent.register_schedule", bad))
+        .unwrap();
+    assert_eq!(body["error"]["code"], "invalid_parameters");
+}
+
+#[test]
+fn schedule_apply_requires_registration() {
+    let journal = Journal::open_in_memory().unwrap();
+    let handler = AgentHandler::new(&journal);
+    let mut req = request("schedule.apply", {
+        let mut p = Map::new();
+        p.insert(
+            "revision".into(),
+            json!("44444444-4444-4444-8444-444444444444"),
+        );
+        p
+    });
+    req.resource = Some(hostnur_agent::contract::ResourceRef {
+        kind: "schedule".to_string(),
+        id: "33333333-3333-4333-8333-333333333333".to_string(),
+    });
+    let body = handler.handle(&req).unwrap();
+    assert_eq!(body["error"]["code"], "resource_not_found");
+}
+
+#[test]
+fn package_install_rejects_unapproved() {
+    let journal = Journal::open_in_memory().unwrap();
+    let handler = AgentHandler::new(&journal);
+    let mut p = Map::new();
+    p.insert("package".into(), json!("cowsay"));
+    let body = handler.handle(&request("package.install", p)).unwrap();
+    assert_eq!(body["error"]["code"], "invalid_parameters");
+}

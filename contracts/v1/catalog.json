@@ -37,6 +37,26 @@
             "read_only": false,
             "retry": "capability_declared"
         },
+        "agent.register_schedule": {
+            "resource": null,
+            "parameters": {
+                "schedule": { "type": "uuid", "required": true },
+                "application": { "type": "uuid", "required": true },
+                "program": { "type": "string", "required": true, "max": 255 },
+                "arguments": { "type": "string", "required": false, "max": 4096 },
+                "on_calendar": { "type": "string", "required": true, "max": 128 }
+            },
+            "read_only": false,
+            "retry": "capability_declared"
+        },
+        "agent.remove_schedule": {
+            "resource": null,
+            "parameters": {
+                "schedule": { "type": "uuid", "required": true }
+            },
+            "read_only": false,
+            "retry": "capability_declared"
+        },
         "server.snapshot": {
             "resource": null,
             "parameters": {},

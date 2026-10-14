@@ -15,7 +15,7 @@ use crate::contract::{OperationRequest, OperationStatus, SnapshotEvent, Uuid};
 use crate::ids;
 
 /// Schema version recorded in `schema_meta`.
-pub const SCHEMA_VERSION: &str = "4";
+pub const SCHEMA_VERSION: &str = "5";
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -63,6 +63,16 @@ CREATE TABLE IF NOT EXISTS deployments (
     application_id TEXT NOT NULL,
     commit_id TEXT NOT NULL,
     state TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS schedules (
+    schedule_id TEXT PRIMARY KEY,
+    application_id TEXT NOT NULL,
+    program TEXT NOT NULL,
+    arguments TEXT NOT NULL,
+    on_calendar TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -189,6 +199,18 @@ pub struct ApplicationSource {
     pub provider: String,
     pub runtime: String,
     pub runtime_version: String,
+}
+
+/// A registered application schedule (phase 17.3), supplied by the panel and
+/// installed as an app-owned systemd timer by the agent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScheduleRecord {
+    pub schedule_id: Uuid,
+    pub application_id: Uuid,
+    pub program: String,
+    /// JSON array of argument strings.
+    pub arguments: String,
+    pub on_calendar: String,
 }
 
 /// SQLite-backed journal. One connection; the transport is single-threaded.
@@ -694,6 +716,64 @@ impl Journal {
             )
             .optional()
             .map_err(|err| JournalError::Query(err.to_string()))
+    }
+}
+
+impl Journal {
+    /// Register (or update) an application schedule.
+    pub fn set_schedule(&self, record: &ScheduleRecord) -> Result<(), JournalError> {
+        self.connection
+            .execute(
+                "INSERT INTO schedules (schedule_id, application_id, program, arguments, on_calendar, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
+                 ON CONFLICT(schedule_id) DO UPDATE SET
+                    application_id = excluded.application_id,
+                    program = excluded.program,
+                    arguments = excluded.arguments,
+                    on_calendar = excluded.on_calendar,
+                    updated_at = excluded.updated_at",
+                params![
+                    record.schedule_id.as_str(),
+                    record.application_id.as_str(),
+                    record.program,
+                    record.arguments,
+                    record.on_calendar,
+                    clock::now_rfc3339(),
+                ],
+            )
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+        Ok(())
+    }
+
+    pub fn schedule(&self, schedule_id: &Uuid) -> Result<Option<ScheduleRecord>, JournalError> {
+        self.connection
+            .query_row(
+                "SELECT schedule_id, application_id, program, arguments, on_calendar FROM schedules WHERE schedule_id = ?1",
+                params![schedule_id.as_str()],
+                |row| {
+                    Ok(ScheduleRecord {
+                        schedule_id: Uuid::parse(&row.get::<_, String>(0)?)
+                            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        application_id: Uuid::parse(&row.get::<_, String>(1)?)
+                            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        program: row.get(2)?,
+                        arguments: row.get(3)?,
+                        on_calendar: row.get(4)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|err| JournalError::Query(err.to_string()))
+    }
+
+    pub fn remove_schedule(&self, schedule_id: &Uuid) -> Result<(), JournalError> {
+        self.connection
+            .execute(
+                "DELETE FROM schedules WHERE schedule_id = ?1",
+                params![schedule_id.as_str()],
+            )
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+        Ok(())
     }
 }
 
