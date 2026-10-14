@@ -224,7 +224,8 @@ fn register_schedule_validates_and_stores() {
         );
         p.insert("program".into(), json!("/usr/bin/php8.4"));
         p.insert("arguments".into(), json!("[\"artisan\",\"schedule:run\"]"));
-        p.insert("on_calendar".into(), json!("*-*-* *:*:00"));
+        p.insert("expression".into(), json!("* * * * *"));
+        p.insert("timezone".into(), json!("UTC"));
         request("agent.register_schedule", p)
     };
 
@@ -241,7 +242,8 @@ fn register_schedule_validates_and_stores() {
         json!("224065ac-4bc7-4ba4-a06d-8c8bca950c32"),
     );
     bad.insert("program".into(), json!("relative/bin"));
-    bad.insert("on_calendar".into(), json!("* * * * *"));
+    bad.insert("expression".into(), json!("* * * * *"));
+    bad.insert("timezone".into(), json!("UTC"));
     let body = handler
         .handle(&request("agent.register_schedule", bad))
         .unwrap();

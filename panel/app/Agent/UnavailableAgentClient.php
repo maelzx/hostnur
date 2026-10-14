@@ -65,6 +65,11 @@ final class UnavailableAgentClient implements AgentClient
         throw new AgentUnavailableException('The agent is unavailable, so the application was not registered.');
     }
 
+    public function registerSchedule(OperationRequest $request): void
+    {
+        throw new AgentUnavailableException('The agent is unavailable, so the schedule was not registered.');
+    }
+
     private function protocolVersion(): int
     {
         return (int) config('hostnur.protocol_version', 1);

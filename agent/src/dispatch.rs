@@ -113,18 +113,21 @@ impl<'a> AgentHandler<'a> {
                 "program must be an absolute path",
             );
         }
-        let Some(on_calendar) = string("on_calendar") else {
+        let Some(expression) = string("expression") else {
             return error_body(
                 ContractErrorCode::InvalidParameters,
-                "on_calendar is required",
+                "expression is required",
             );
         };
-        if on_calendar.is_empty() || on_calendar.len() > 128 || on_calendar.contains(['\n', '\r']) {
-            return error_body(
-                ContractErrorCode::InvalidParameters,
-                "on_calendar is invalid",
-            );
-        }
+        let Some(timezone) = string("timezone") else {
+            return error_body(ContractErrorCode::InvalidParameters, "timezone is required");
+        };
+        let on_calendar = match crate::cron::to_on_calendar(expression, timezone) {
+            Ok(lines) => lines.join("\n"),
+            Err(error) => {
+                return error_body(ContractErrorCode::InvalidParameters, &error.to_string());
+            }
+        };
 
         let arguments = string("arguments").unwrap_or("[]").to_string();
         match serde_json::from_str::<Vec<String>>(&arguments) {

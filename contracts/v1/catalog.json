@@ -44,7 +44,8 @@
                 "application": { "type": "uuid", "required": true },
                 "program": { "type": "string", "required": true, "max": 255 },
                 "arguments": { "type": "string", "required": false, "max": 4096 },
-                "on_calendar": { "type": "string", "required": true, "max": 128 }
+                "expression": { "type": "string", "required": true, "max": 255 },
+                "timezone": { "type": "string", "required": true, "max": 64 }
             },
             "read_only": false,
             "retry": "capability_declared"

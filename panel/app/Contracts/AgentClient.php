@@ -41,4 +41,10 @@ interface AgentClient
      * before a real deployment. No-op for adapters without a durable registry.
      */
     public function registerApplication(OperationRequest $request): void;
+
+    /**
+     * Register/refresh an application schedule (command, cron, timezone) in the
+     * agent registry before applying it. No-op without a durable registry.
+     */
+    public function registerSchedule(OperationRequest $request): void;
 }

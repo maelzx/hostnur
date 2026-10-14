@@ -112,7 +112,7 @@ pub fn render_schedule_service(unit: &ScheduleUnit) -> Result<String, WorkerErro
         &unit.working_dir,
         &unit.program,
     )?;
-    if unit.on_calendar.trim().is_empty() || unit.on_calendar.contains('\n') {
+    if unit.on_calendar.trim().is_empty() || unit.on_calendar.contains('\r') {
         return Err(WorkerError::InvalidUnit("invalid OnCalendar".to_string()));
     }
     let mut text = String::new();
@@ -137,7 +137,7 @@ pub fn render_schedule_service(unit: &ScheduleUnit) -> Result<String, WorkerErro
 
 /// Render the paired timer unit (single-instance via the oneshot service).
 pub fn render_schedule_timer(unit: &ScheduleUnit) -> Result<String, WorkerError> {
-    if unit.on_calendar.trim().is_empty() || unit.on_calendar.contains('\n') {
+    if unit.on_calendar.trim().is_empty() || unit.on_calendar.contains('\r') {
         return Err(WorkerError::InvalidUnit("invalid OnCalendar".to_string()));
     }
     let mut text = String::new();
@@ -147,7 +147,13 @@ pub fn render_schedule_timer(unit: &ScheduleUnit) -> Result<String, WorkerError>
         unit.name
     ));
     text.push_str("\n[Timer]\n");
-    text.push_str(&format!("OnCalendar={}\n", unit.on_calendar));
+    for line in unit
+        .on_calendar
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+    {
+        text.push_str(&format!("OnCalendar={}\n", line.trim()));
+    }
     text.push_str("AccuracySec=1s\nPersistent=true\n");
     text.push_str("\n[Install]\nWantedBy=timers.target\n");
     Ok(text)

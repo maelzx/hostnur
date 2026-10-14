@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Agent\Dto\OperationRequest;
 use App\Agent\Dto\ResourceRef;
+use App\Contracts\AgentClient;
 use App\Enums\AuditAction;
 use App\Enums\AuditOutcome;
 use App\Enums\ResourceKind;
@@ -25,6 +26,7 @@ final class ScheduleService
     public function __construct(
         private readonly TaskService $tasks,
         private readonly AuditRecorder $audit,
+        private readonly AgentClient $agent,
     ) {}
 
     /**
@@ -78,6 +80,8 @@ final class ScheduleService
 
     public function apply(User $actor, ScheduledJob $job, string $idempotencyKey): Task
     {
+        $this->registerSchedule($job);
+
         $task = $this->tasks->requestApproved($actor, new OperationRequest(
             protocolVersion: (int) config('hostnur.protocol_version', 1),
             requestId: (string) Str::uuid(),
@@ -121,5 +125,76 @@ final class ScheduleService
         }
 
         return $validated;
+    }
+
+    /**
+     * Register the schedule (program/argv + cron + timezone) with the agent so a
+     * later `schedule.apply` can resolve it. Only in real mode.
+     */
+    private function registerSchedule(ScheduledJob $job): void
+    {
+        if (config('hostnur.agent_mode') !== 'real') {
+            return;
+        }
+
+        $application = $job->application()->first();
+
+        if ($application === null) {
+            throw ValidationException::withMessages(['command_reference' => 'The application is missing.']);
+        }
+
+        [$program, $arguments] = $this->commandParts($application, (string) $job->command_reference);
+
+        $request = new OperationRequest(
+            protocolVersion: (int) config('hostnur.protocol_version', 1),
+            requestId: (string) Str::uuid(),
+            idempotencyKey: (string) Str::uuid(),
+            operation: 'agent.register_schedule',
+            resource: null,
+            parameters: [
+                'schedule' => $job->getKey(),
+                'application' => $job->application_id,
+                'program' => $program,
+                'arguments' => json_encode(array_values($arguments)),
+                'expression' => (string) $job->expression,
+                'timezone' => (string) $job->timezone,
+            ],
+            timeoutSeconds: null,
+        );
+
+        try {
+            $this->agent->registerSchedule($request);
+        } catch (\Throwable $exception) {
+            throw ValidationException::withMessages([
+                'command_reference' => 'Could not register the schedule with the agent: '.$exception->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Map a stored command reference to an absolute program and argument array.
+     * An absolute-path program is used verbatim; otherwise the app's PHP binary
+     * runs `artisan <reference>`.
+     *
+     * @return array{0: string, 1: list<string>}
+     */
+    private function commandParts(Application $application, string $reference): array
+    {
+        $tokens = preg_split('/\s+/', trim($reference)) ?: [];
+        $first = $tokens[0] ?? '';
+
+        if (str_starts_with($first, '/')) {
+            return [$first, array_values(array_slice($tokens, 1))];
+        }
+
+        $php = $application->runtime_version !== null && $application->runtime_version !== ''
+            ? '/usr/bin/php'.$application->runtime_version
+            : '/usr/bin/php';
+
+        if ($first === 'artisan') {
+            return [$php, array_values($tokens)];
+        }
+
+        return [$php, array_merge(['artisan'], array_values($tokens))];
     }
 }
