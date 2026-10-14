@@ -1445,6 +1445,32 @@ ask only when the choice materially changes scope, cost, access, or product beha
 
 ## 8. Current handoff
 
+### Session 036 — Host rebuild and phase 17 VM validation (2026-10-14)
+
+- Recreated the throwaway Droplet (`165.22.241.18`), updated DNS
+  (`hostnur-p16.kom.my`, `assetkom.hostnur-p16.kom.my` → new IP), and re-ran
+  [`docs/p16-test-host.md`](docs/p16-test-host.md): 2 GB swap, UFW, nginx 1.24,
+  PHP 8.3/8.4, Node 20, certbot; amd64 agent built and installed (active);
+  panel installed (`real` mode) behind nginx with a **production** Let's Encrypt
+  cert; first admin created (`admin@kom.my`). HTTPS `/login` served 200.
+- **Phase 17 validated on the VM over the socket:**
+  - `server.snapshot` services = nginx/php8.3-fpm/php8.4-fpm `running`,
+    mariadb/redis-server `stopped`; firewall `{enabled: true, incoming_policy:
+    deny, rule_count: 6}`.
+  - `service.control` restart nginx → `running`; ssh → `permission_denied`.
+  - `package.install` nginx → version `1.24.0-2ubuntu7.18`; cowsay →
+    `invalid_parameters`.
+  - Schedule: `agent.register_schedule` → `schedule.apply` created and activated
+    `hostnur-hn-aaaabbbb-sched-*.timer` with `OnCalendar=*-*-* *:00,05,…,55:00
+    Asia/Kuala_Lumpur`; `remove_schedule` → timer `inactive`.
+  - AssetKOM redeployed over the socket (`application.deploy` succeeded); `/up`
+    → 200.
+- Fixed a bug found on the VM: the firewall probe ran with a cleared environment,
+  so `ufw` (a script) could not find `iptables`; it now sets `PATH` (commit
+  `f4d1834`).
+- Admin credentials for this disposable host were generated per session and are
+  not recorded here.
+
 ### Session 035 — Phase 17 service/package/firewall + schedule machinery (2026-10-14)
 
 - Implemented the agent side of phase 17. `agent/src/services.rs`: an allowlisted

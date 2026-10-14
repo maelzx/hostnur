@@ -298,7 +298,13 @@ Deploying gets the app serving, but to *log in and use it*:
 
 ## Gotchas learned
 
+- On a freshly-created droplet, `apt` is briefly locked by first-boot
+  `cloud-init`/unattended-upgrades; wait for `/var/lib/apt/lists/lock` to free
+  before installing.
 - `scp` over a running binary → `ETXTBSY`; stop the systemd unit first.
+- The firewall probe uses `ufw`, a script that shells out to `iptables`/`sysctl`;
+  the agent runs children with a cleared environment, so the probe must set `PATH`
+  (already handled in `agent/src/firewall.rs`).
 - `hostnur:admin:bootstrap` refuses non-interactive stdin; use `ssh -tt` and feed lines.
 - The agent expects its managed Nginx include dir + the `conf.d` include (step 5).
 - `bootstrap/app.php` needs `trustProxies('*')` when the panel is behind nginx (host-only patch).
