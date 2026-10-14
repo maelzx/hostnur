@@ -9,8 +9,8 @@
     </header>
 
     @if ($user->two_factor_secret === null)
-        <section class="rounded-2xl border border-slate-200 bg-white p-6">
-            <h2 class="text-lg font-semibold">Setup required</h2>
+        <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-xs">
+            <h2 class="text-lg font-semibold tracking-tight text-slate-900">Setup required</h2>
             <p class="mt-2 text-sm leading-6 text-slate-600">
                 Multi-factor authentication is not configured for this account yet.
             </p>
@@ -18,14 +18,14 @@
                 type="button"
                 wire:click="enable"
                 wire:loading.attr="disabled"
-                class="mt-4 rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                class="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
             >
                 Begin setup
             </button>
         </section>
     @elseif ($pending)
         <section class="space-y-6">
-            <div class="rounded-2xl border border-slate-200 bg-white p-6">
+            <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-xs">
                 <h2 class="text-lg font-semibold">Scan this code</h2>
                 <p class="mt-2 text-sm leading-6 text-slate-600">
                     Scan the QR code or enter the key manually in your authenticator
@@ -42,7 +42,7 @@
                 </div>
             </div>
 
-            <div class="rounded-2xl border border-slate-200 bg-white p-6">
+            <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-xs">
                 <h2 class="text-lg font-semibold">Recovery codes</h2>
                 <p class="mt-2 text-sm leading-6 text-slate-600">
                     Store these one-time codes somewhere safe. They are shown only
@@ -55,7 +55,7 @@
                 </ul>
             </div>
 
-            <form wire:submit="confirm" class="rounded-2xl border border-slate-200 bg-white p-6">
+            <form wire:submit="confirm" class="rounded-xl border border-slate-200 bg-white p-6 shadow-xs">
                 <h2 class="text-lg font-semibold">Confirm setup</h2>
                 <p class="mt-2 text-sm leading-6 text-slate-600">
                     Enter the current six-digit code from your authenticator app.
@@ -81,7 +81,7 @@
                     </div>
                     <button
                         type="submit"
-                        class="rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                        class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
                     >
                         Confirm
                     </button>
@@ -89,7 +89,7 @@
             </form>
         </section>
     @else
-        <section class="rounded-2xl border border-emerald-200 bg-emerald-50 p-6">
+        <section class="rounded-xl border border-emerald-200 bg-emerald-50 p-6">
             <h2 class="text-lg font-semibold text-emerald-900">Enabled and confirmed</h2>
             <p class="mt-2 text-sm leading-6 text-emerald-800">
                 Multi-factor authentication was confirmed on

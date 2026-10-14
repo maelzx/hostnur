@@ -44,7 +44,7 @@
             @endforeach
         </ol>
         <div class="mt-4 flex flex-wrap gap-3">
-            <a href="{{ route('panel.applications.operations', ['application' => $application->id]) }}" class="inline-flex rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800">Deploy &amp; operations</a>
+            <a href="{{ route('panel.applications.operations', ['application' => $application->id]) }}" class="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-xs transition-colors hover:bg-indigo-700">Deploy &amp; operations</a>
             <a href="{{ route('panel.deployments.index') }}" class="inline-flex rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Deployment history</a>
         </div>
     </x-ui.panel>
@@ -53,7 +53,7 @@
         {{-- Step 1: Source --}}
         <x-ui.panel>
             <div class="flex items-start gap-3">
-                <span class="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-700 text-sm font-bold text-white">1</span>
+                <span class="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white">1</span>
                 <div>
                     <h2 class="text-lg font-semibold text-slate-900">Connect your repository</h2>
                     <p class="mt-1 text-sm text-slate-600">
@@ -138,7 +138,7 @@
         {{-- Step 2: Runtime, build & scale --}}
         <x-ui.panel>
             <div class="flex items-start gap-3">
-                <span class="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-700 text-sm font-bold text-white">2</span>
+                <span class="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white">2</span>
                 <div class="flex-1">
                     <h2 class="text-lg font-semibold text-slate-900">Runtime, build &amp; scale</h2>
                     <p class="mt-1 text-sm text-slate-600">
@@ -225,7 +225,7 @@
         {{-- Step 3: Secrets --}}
         <x-ui.panel>
             <div class="flex items-start gap-3">
-                <span class="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-700 text-sm font-bold text-white">3</span>
+                <span class="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white">3</span>
                 <div>
                     <h2 class="text-lg font-semibold text-slate-900">Environment secrets <span class="text-sm font-normal text-slate-500">(optional)</span></h2>
                     <p class="mt-1 text-sm text-slate-600">
@@ -269,7 +269,7 @@
         {{-- Step 4: Domains --}}
         <x-ui.panel>
             <div class="flex items-start gap-3">
-                <span class="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-700 text-sm font-bold text-white">4</span>
+                <span class="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white">4</span>
                 <div>
                     <h2 class="text-lg font-semibold text-slate-900">Domain &amp; HTTPS <span class="text-sm font-normal text-slate-500">(optional)</span></h2>
                     <p class="mt-1 text-sm text-slate-600">
@@ -313,7 +313,7 @@
         {{-- Step 5: Deploy --}}
         <x-ui.panel>
             <div class="flex items-start gap-3">
-                <span class="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-700 text-sm font-bold text-white">5</span>
+                <span class="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white">5</span>
                 <div>
                     <h2 class="text-lg font-semibold text-slate-900">Deploy</h2>
                     <p class="mt-1 text-sm text-slate-600">
@@ -322,7 +322,7 @@
                         <strong>Deployment history</strong>.
                     </p>
                     <div class="mt-3 flex flex-wrap gap-3">
-                        <a href="{{ route('panel.applications.operations', ['application' => $application->id]) }}" class="inline-flex rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800">Deploy &amp; operations</a>
+                        <a href="{{ route('panel.applications.operations', ['application' => $application->id]) }}" class="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-xs transition-colors hover:bg-indigo-700">Deploy &amp; operations</a>
                         <a href="{{ route('panel.deployments.index') }}" class="inline-flex rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Deployment history</a>
                     </div>
                 </div>

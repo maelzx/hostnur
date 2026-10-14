@@ -8,7 +8,7 @@
     </header>
 
     @if ($recoveryCodes !== [])
-        <section class="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-6">
+        <section class="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-6">
             <h2 class="text-lg font-semibold text-amber-900">New recovery codes</h2>
             <p class="mt-2 text-sm leading-6 text-amber-900">
                 Store these one-time codes now. They replace all previous recovery

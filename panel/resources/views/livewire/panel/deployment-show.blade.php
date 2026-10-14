@@ -18,13 +18,13 @@
     </header>
 
     @if ($deployment->state === \App\Enums\DeploymentState::Unknown)
-        <p role="status" class="mb-6 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <p role="status" class="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             The outcome is unknown and needs investigation. Unknown is not success.
         </p>
     @endif
 
     @if ($deployment->error_code !== null)
-        <p role="alert" class="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+        <p role="alert" class="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             {{ $deployment->error_code }}: {{ $deployment->error_message }}
         </p>
     @endif

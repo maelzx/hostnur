@@ -38,7 +38,7 @@
     @if ($events->isEmpty())
         <x-ui.empty-state title="No matching audit events">Adjust the filters.</x-ui.empty-state>
     @else
-        <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
             <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-slate-200 text-sm">
                     <caption class="sr-only">Authentication and task audit events</caption>

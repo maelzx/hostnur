@@ -1,130 +1,99 @@
-<nav aria-label="Panel" class="border-b border-slate-200 bg-white lg:w-64 lg:shrink-0 lg:border-b-0 lg:border-r">
-    <div class="flex h-full flex-col gap-6 p-4 sm:p-6">
+@php
+    $item = 'flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400';
+    $active = 'bg-indigo-600 text-white';
+    $inactive = 'text-slate-300 hover:bg-white/5 hover:text-white';
+    $label = 'px-3 text-xs font-semibold uppercase tracking-wider text-slate-500';
+    $is = fn (string ...$patterns): bool => request()->routeIs(...$patterns);
+@endphp
+
+<nav aria-label="Panel" class="flex shrink-0 flex-col bg-slate-900 lg:sticky lg:top-0 lg:h-dvh lg:w-64 lg:overflow-y-auto">
+    <div class="flex items-center gap-2.5 p-4 sm:p-5">
+        <span class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-base font-bold text-white" aria-hidden="true">H</span>
         <div>
-            <p class="text-sm font-semibold uppercase tracking-widest text-indigo-700">{{ config('app.name') }}</p>
-            <p class="mt-1 text-xs text-slate-500">Administrator panel</p>
+            <p class="text-sm font-semibold tracking-tight text-white">{{ config('app.name') }}</p>
+            <p class="text-xs text-slate-400">Administrator panel</p>
+        </div>
+    </div>
+
+    <div class="flex-1 space-y-6 px-3 pb-4">
+        <div>
+            <p class="{{ $label }}">Overview</p>
+            <ul class="mt-2 space-y-1">
+                <li>
+                    <a href="{{ route('panel.dashboard') }}" @if ($is('panel.dashboard')) aria-current="page" @endif
+                       class="{{ $item }} {{ $is('panel.dashboard') ? $active : $inactive }}">Dashboard</a>
+                </li>
+            </ul>
         </div>
 
-        <ul class="space-y-6 text-sm">
-            <li>
-                <p class="px-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Overview</p>
-                <ul class="mt-2 space-y-1">
-                    <li>
-                        <a
-                            href="{{ route('panel.dashboard') }}"
-                            @if (request()->routeIs('panel.dashboard')) aria-current="page" @endif
-                            class="block rounded-lg px-2 py-1.5 font-medium {{ request()->routeIs('panel.dashboard') ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700 hover:bg-slate-100' }}"
-                        >
-                            Dashboard
-                        </a>
-                    </li>
-                </ul>
-            </li>
+        <div>
+            <p class="{{ $label }}">Applications</p>
+            <ul class="mt-2 space-y-1">
+                <li>
+                    <a href="{{ route('panel.applications.index') }}" @if ($is('panel.applications.*')) aria-current="page" @endif
+                       class="{{ $item }} {{ $is('panel.applications.*') ? $active : $inactive }}">Applications</a>
+                </li>
+                <li>
+                    <a href="{{ route('panel.deployments.index') }}" @if ($is('panel.deployments.*')) aria-current="page" @endif
+                       class="{{ $item }} {{ $is('panel.deployments.*') ? $active : $inactive }}">Deployments</a>
+                </li>
+            </ul>
+        </div>
 
-            <li>
-                <p class="px-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Tasks</p>
-                <ul class="mt-2 space-y-1">
+        <div>
+            <p class="{{ $label }}">Server</p>
+            <ul class="mt-2 space-y-1">
+                @foreach ([
+                    'panel.server' => 'Server overview',
+                    'panel.schedules.index' => 'Scheduled jobs',
+                    'panel.certificates.index' => 'Domains & TLS',
+                    'panel.databases.index' => 'Databases',
+                    'panel.backups.index' => 'Backups',
+                ] as $name => $text)
                     <li>
-                        <a
-                            href="{{ route('panel.tasks.index') }}"
-                            @if (request()->routeIs('panel.tasks.*')) aria-current="page" @endif
-                            class="block rounded-lg px-2 py-1.5 font-medium {{ request()->routeIs('panel.tasks.*') ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700 hover:bg-slate-100' }}"
-                        >
-                            Task history
-                        </a>
+                        <a href="{{ route($name) }}" @if ($is($name)) aria-current="page" @endif
+                           class="{{ $item }} {{ $is($name) ? $active : $inactive }}">{{ $text }}</a>
                     </li>
-                    <li>
-                        <a
-                            href="{{ route('panel.audit.index') }}"
-                            @if (request()->routeIs('panel.audit.*')) aria-current="page" @endif
-                            class="block rounded-lg px-2 py-1.5 font-medium {{ request()->routeIs('panel.audit.*') ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700 hover:bg-slate-100' }}"
-                        >
-                            Audit history
-                        </a>
-                    </li>
-                </ul>
-            </li>
+                @endforeach
+            </ul>
+        </div>
 
-            <li>
-                <p class="px-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Security</p>
-                <ul class="mt-2 space-y-1">
-                    <li>
-                        <a
-                            href="{{ route('panel.security') }}"
-                            @if (request()->routeIs('panel.security')) aria-current="page" @endif
-                            class="block rounded-lg px-2 py-1.5 font-medium {{ request()->routeIs('panel.security') ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700 hover:bg-slate-100' }}"
-                        >
-                            Security settings
-                        </a>
-                    </li>
-                    <li>
-                        <a
-                            href="{{ route('panel.security.mfa') }}"
-                            @if (request()->routeIs('panel.security.mfa')) aria-current="page" @endif
-                            class="block rounded-lg px-2 py-1.5 font-medium {{ request()->routeIs('panel.security.mfa') ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700 hover:bg-slate-100' }}"
-                        >
-                            Multi-factor authentication
-                        </a>
-                    </li>
-                </ul>
-            </li>
+        <div>
+            <p class="{{ $label }}">Activity</p>
+            <ul class="mt-2 space-y-1">
+                <li>
+                    <a href="{{ route('panel.tasks.index') }}" @if ($is('panel.tasks.*')) aria-current="page" @endif
+                       class="{{ $item }} {{ $is('panel.tasks.*') ? $active : $inactive }}">Task history</a>
+                </li>
+                <li>
+                    <a href="{{ route('panel.audit.index') }}" @if ($is('panel.audit.*')) aria-current="page" @endif
+                       class="{{ $item }} {{ $is('panel.audit.*') ? $active : $inactive }}">Audit history</a>
+                </li>
+            </ul>
+        </div>
 
-            <li>
-                <p class="px-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Applications</p>
-                <ul class="mt-2 space-y-1">
-                    <li>
-                        <a
-                            href="{{ route('panel.applications.index') }}"
-                            @if (request()->routeIs('panel.applications.*')) aria-current="page" @endif
-                            class="block rounded-lg px-2 py-1.5 font-medium {{ request()->routeIs('panel.applications.*') ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700 hover:bg-slate-100' }}"
-                        >
-                            Applications
-                        </a>
-                    </li>
-                    <li>
-                        <a
-                            href="{{ route('panel.deployments.index') }}"
-                            @if (request()->routeIs('panel.deployments.*')) aria-current="page" @endif
-                            class="block rounded-lg px-2 py-1.5 font-medium {{ request()->routeIs('panel.deployments.*') ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700 hover:bg-slate-100' }}"
-                        >
-                            Deployments
-                        </a>
-                    </li>
-                </ul>
-            </li>
-
-            <li>
-                <p class="px-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Server</p>
-                <ul class="mt-2 space-y-1">
-                    @foreach ([
-                        'panel.server' => 'Server overview',
-                        'panel.schedules.index' => 'Scheduled jobs',
-                        'panel.certificates.index' => 'Domains & TLS',
-                        'panel.databases.index' => 'Databases',
-                        'panel.backups.index' => 'Backups',
-                    ] as $name => $label)
-                        <li>
-                            <a
-                                href="{{ route($name) }}"
-                                @if (request()->routeIs($name)) aria-current="page" @endif
-                                class="block rounded-lg px-2 py-1.5 font-medium {{ request()->routeIs($name) ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700 hover:bg-slate-100' }}"
-                            >
-                                {{ $label }}
-                            </a>
-                        </li>
-                    @endforeach
-                </ul>
-            </li>
-        </ul>
-
-        <form method="POST" action="{{ route('logout') }}" class="mt-auto">
-            @csrf
-            <button
-                type="submit"
-                class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
-            >
-                Sign out
-            </button>
-        </form>
+        <div>
+            <p class="{{ $label }}">Security</p>
+            <ul class="mt-2 space-y-1">
+                <li>
+                    <a href="{{ route('panel.security') }}" @if ($is('panel.security')) aria-current="page" @endif
+                       class="{{ $item }} {{ $is('panel.security') ? $active : $inactive }}">Security settings</a>
+                </li>
+                <li>
+                    <a href="{{ route('panel.security.mfa') }}" @if ($is('panel.security.mfa')) aria-current="page" @endif
+                       class="{{ $item }} {{ $is('panel.security.mfa') ? $active : $inactive }}">Multi-factor authentication</a>
+                </li>
+            </ul>
+        </div>
     </div>
+
+    <form method="POST" action="{{ route('logout') }}" class="border-t border-white/10 p-3">
+        @csrf
+        <button
+            type="submit"
+            class="w-full rounded-lg border border-white/15 px-3 py-2 text-sm font-semibold text-slate-300 transition-colors hover:bg-white/5 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+        >
+            Sign out
+        </button>
+    </form>
 </nav>

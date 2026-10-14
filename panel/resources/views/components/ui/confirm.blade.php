@@ -13,13 +13,13 @@
     <div
         x-show="open"
         x-cloak
-        class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
         role="dialog"
         aria-modal="true"
         :aria-labelledby="titleId"
     >
-        <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <h2 :id="titleId" class="text-lg font-semibold">{{ $title }}</h2>
+        <div class="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
+            <h2 :id="titleId" class="text-lg font-semibold tracking-tight text-slate-900">{{ $title }}</h2>
             <div class="mt-2 text-sm leading-6 text-slate-600">{{ $slot }}</div>
             <div class="mt-6 flex justify-end gap-3">
                 <x-ui.button variant="secondary" type="button" @click="open = false">Cancel</x-ui.button>

@@ -10,25 +10,27 @@
 
         @livewireStyles
     </head>
-    <body class="min-h-screen bg-slate-50 font-sans text-slate-900 antialiased">
+    <body class="min-h-dvh bg-slate-100 font-sans text-slate-900 antialiased">
         <a
             href="#main-content"
-            class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-indigo-700 focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-white"
+            class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-indigo-600 focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-white"
         >
             Skip to content
         </a>
 
-        <div class="mx-auto flex min-h-screen w-full max-w-6xl flex-col lg:flex-row">
+        <div class="lg:flex">
             <x-panel.nav />
 
-            <main id="main-content" class="min-w-0 flex-1 px-4 py-8 sm:px-8">
-                @if (session('status'))
-                    <p role="status" class="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-                        {{ session('status') }}
-                    </p>
-                @endif
+            <main id="main-content" class="min-w-0 flex-1">
+                <div class="mx-auto w-full max-w-6xl px-4 py-8 sm:px-8">
+                    @if (session('status'))
+                        <p role="status" class="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                            {{ session('status') }}
+                        </p>
+                    @endif
 
-                {{ $slot }}
+                    {{ $slot }}
+                </div>
             </main>
         </div>
 
