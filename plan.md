@@ -1077,15 +1077,13 @@ work through the panel with bounded failure/recovery. Unmanaged/root commands an
 firewall mutations remain unavailable; resulting state is observed, not assumed.
 
 ### Phase 18 — Application database provisioning
-- Status: **substantially complete** (sessions 037–038). P18.1, P18.2, P18.3 (panel
-  wiring + the agent injecting the app's managed DB credentials into the release
-  `DB_*` env at deploy time — the credential never reaches the panel) and the
-  isolation/deletion part of P18.5 are implemented and VM-validated: a real
-  Laravel app (AssetKOM) now runs on MariaDB. **Remaining:** credential
-  **rotation** (an `ALTER USER`-based op + panel action; not yet implemented) and
-  **P18.4** (bounded data movement). Known limitation: if an application has more
-  than one ready database, the deploy injects only the first; a Laravel app uses
-  one. Engine: **MariaDB**.
+- Status: **complete (P18.1–P18.5)** (sessions 037–039), VM-validated: MariaDB
+  provisioning with per-app isolation, panel wiring, credential injection into the
+  deployment `DB_*` env (the app-run credential never reaches the panel), rotation,
+  bounded logical export/import, and delete. A real Laravel app (AssetKOM) runs on
+  MariaDB. Known limitation: if an application has more than one ready database the
+  deploy injects the first; the panel-side rotation/export UI is minimal. Engine:
+  **MariaDB**.
 - Depends on: 8, 12, 15.
 
 #### Engine scope and privilege model
@@ -1452,6 +1450,22 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 039 — Phase 18 completion: rotation + export/import (2026-10-14)
+
+- Finished phase 18. Added `database.rotate` (ALTER USER to a fresh hex credential,
+  re-check, update the write-only secret), `database.export` (`mysqldump` as the
+  app principal via `--single-transaction`, bounded, written to a root-owned `0600`
+  artifact under `dumps/`) and `database.import` (bounded dump piped to `mysql` as
+  the app principal — never admin). Extended the process primitive with bounded
+  `stdin`. Panel: `AgentClient::rotateDatabase` + `DatabaseService::rotate`.
+- **VM validation**: rotation changed the credential (rotated=true; the new
+  secret connects as the app principal, exit 0); `export` produced a 20 KB
+  `0600` artifact containing `CREATE TABLE`; `import` of a small dump into a fresh
+  managed database created a table with the expected row; delete cleaned up.
+  Rust fmt/clippy/tests + PHP **256 tests** pass. Commit `7df1c2d`.
+- Phase 18 is complete. Next per scope decisions: phase 19 is deferred; the next
+  build is the remaining phase-15/16 polish or phase 20 (curl+bash installer).
 
 ### Session 038 — Phase 18.3 DB-backed deployment + VM (2026-10-14)
 
@@ -2764,11 +2778,13 @@ The panel is independently runnable and tested; the agent crate builds, tests an
 runs unprivileged in the Lima VM. See `docs/web-milestone.md` and
 `docs/agent-development.md` for passed gates, blocked checks and acceptance maps.
 
-**Phases 11–17 are complete and validated on the VM; phase 18 is in progress**
-(sessions 026–037). MariaDB provisioning, isolation and deletion (P18.1/P18.2 and
-part of P18.5) are implemented and VM-validated. Next slices: **P18.3** (panel
-wiring — deliver DB credential references into a deployment revision; rotation)
-and **P18.4** (bounded data movement), then phase 19 is deferred per session 034.
+**Phases 11–18 are complete and validated on the VM** (sessions 026–039). MariaDB
+provisioning, isolation, deployment credential injection, rotation and bounded
+export/import all pass on the throwaway host. Per session-034 scope decisions,
+**phase 19 (backup/restore) is deferred**; the next build work is the interim
+**curl + bash bootstrap installer** (the phase-20 substitute) plus remaining
+phase-15/16 polish (per-app `public/` ACLs, migration recovery gate, dedicated
+non-root panel identity).
 
 Scope decisions (session 034): MariaDB for phase 18; phase 19 backup/restore
 deferred; phase 20 Debian/APT deferred in favour of a curl+bash bootstrap script;
