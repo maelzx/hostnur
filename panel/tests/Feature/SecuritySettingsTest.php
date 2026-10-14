@@ -81,14 +81,15 @@ class SecuritySettingsTest extends TestCase
         $this->actingAs($user)->get('/panel/security')->assertForbidden();
     }
 
-    public function test_security_settings_requires_recent_password_confirmation(): void
+    public function test_security_settings_is_accessible_after_mfa_without_reconfirming_password(): void
     {
         $administrator = $this->confirmedAdministrator();
 
         $this->actingAs($administrator)
             ->withSession($this->mfaProof($administrator))
             ->get('/panel/security')
-            ->assertRedirect(route('password.confirm'));
+            ->assertOk()
+            ->assertSee('Security settings');
     }
 
     public function test_a_recent_confirmation_grants_access(): void
@@ -102,24 +103,24 @@ class SecuritySettingsTest extends TestCase
             ->assertSee('Security settings');
     }
 
-    public function test_an_expired_confirmation_is_rejected(): void
+    public function test_an_expired_confirmation_still_allows_access(): void
     {
         $administrator = $this->confirmedAdministrator();
 
         $this->actingAs($administrator)
             ->withSession($this->confirmedSession($administrator, ageSeconds: 301))
             ->get('/panel/security')
-            ->assertRedirect(route('password.confirm'));
+            ->assertOk();
     }
 
-    public function test_a_confirmation_bound_to_an_old_mfa_generation_is_rejected(): void
+    public function test_a_confirmation_bound_to_an_old_mfa_generation_still_allows_access(): void
     {
         $administrator = $this->confirmedAdministrator();
 
         $this->actingAs($administrator)
             ->withSession($this->confirmedSession($administrator, version: $administrator->mfa_version - 1))
             ->get('/panel/security')
-            ->assertRedirect(route('password.confirm'));
+            ->assertOk();
     }
 
     public function test_the_confirm_password_screen_records_recent_authentication(): void
@@ -153,7 +154,7 @@ class SecuritySettingsTest extends TestCase
         $this->assertNull(session('auth.password_confirmed_at'));
     }
 
-    public function test_mutating_without_recent_authentication_is_blocked(): void
+    public function test_mutating_after_mfa_without_reconfirming_password_succeeds(): void
     {
         $administrator = $this->confirmedAdministrator();
 
@@ -162,9 +163,9 @@ class SecuritySettingsTest extends TestCase
             ->set('password', 'a-brand-new-password-1')
             ->set('password_confirmation', 'a-brand-new-password-1')
             ->call('changePassword')
-            ->assertStatus(423);
+            ->assertHasNoErrors();
 
-        $this->assertTrue(Hash::check('correct-horse-battery', $administrator->refresh()->password));
+        $this->assertTrue(Hash::check('a-brand-new-password-1', $administrator->refresh()->password));
     }
 
     public function test_changing_the_password_rotates_the_generation_and_logs_out(): void
@@ -226,7 +227,7 @@ class SecuritySettingsTest extends TestCase
         $this->assertGuest();
     }
 
-    public function test_regenerating_recovery_codes_requires_recent_authentication(): void
+    public function test_regenerating_recovery_codes_after_mfa_succeeds(): void
     {
         $administrator = $this->confirmedAdministrator();
         $originalCodes = $administrator->recoveryCodes();
@@ -234,9 +235,9 @@ class SecuritySettingsTest extends TestCase
         Livewire::actingAs($administrator)
             ->test(SecuritySettings::class)
             ->call('regenerateRecoveryCodes')
-            ->assertStatus(423);
+            ->assertHasNoErrors();
 
-        $this->assertSame($originalCodes, $administrator->refresh()->recoveryCodes());
+        $this->assertNotSame($originalCodes, $administrator->refresh()->recoveryCodes());
     }
 
     public function test_regenerating_recovery_codes_replaces_them(): void

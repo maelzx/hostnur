@@ -50,7 +50,7 @@ Route::middleware(['auth:web', 'administrator', 'mfa'])->group(function (): void
     Route::get('/panel/deployments/{deployment}', DeploymentShow::class)->name('panel.deployments.show');
 });
 
-Route::middleware(['auth:web', 'administrator', 'mfa', 'recent-auth'])->group(function (): void {
+Route::middleware(['auth:web', 'administrator', 'mfa'])->group(function (): void {
     Route::get('/panel/security', SecuritySettings::class)->name('panel.security');
     Route::get('/panel/applications/{application}/operations', ApplicationOperations::class)->name('panel.applications.operations');
     Route::get('/panel/server', ServerOverview::class)->name('panel.server');

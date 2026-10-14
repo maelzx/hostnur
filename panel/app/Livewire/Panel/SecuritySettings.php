@@ -26,8 +26,6 @@ class SecuritySettings extends Component
     public function changePassword(): void
     {
         $user = $this->administrator();
-        $this->requireRecentAuthentication($user);
-
         $this->validate([
             'password' => [
                 'bail', 'required', 'string', Password::min(12), 'confirmed',
@@ -55,8 +53,6 @@ class SecuritySettings extends Component
     public function disableTwoFactor(): void
     {
         $user = $this->administrator();
-        $this->requireRecentAuthentication($user);
-
         app(DisableTwoFactorAuthentication::class)($user);
         $user->refresh();
 
@@ -66,8 +62,6 @@ class SecuritySettings extends Component
     public function regenerateRecoveryCodes(): void
     {
         $user = $this->administrator();
-        $this->requireRecentAuthentication($user);
-
         app(GenerateNewRecoveryCodes::class)($user);
         $user->refresh();
 
@@ -84,13 +78,6 @@ class SecuritySettings extends Component
             'user' => $user,
             'recoveryCodes' => session()->pull('recovery_codes', []),
         ]);
-    }
-
-    private function requireRecentAuthentication(User $user): void
-    {
-        if (! app(RecentAuthentication::class)->isConfirmed($user)) {
-            abort(423, 'Password confirmation required.');
-        }
     }
 
     private function revokeSessions(User $user, string $status): void

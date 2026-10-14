@@ -8,7 +8,6 @@ use App\Agent\Dto\ResourceRef;
 use App\Enums\ErrorCode;
 use App\Enums\ResourceKind;
 use App\Enums\TaskStatus;
-use App\Exceptions\TaskNotAuthorizedException;
 use App\Jobs\RunTask;
 use App\Models\User;
 use App\Services\RecentAuthentication;
@@ -64,18 +63,16 @@ class TaskRequestTest extends TestCase
         Queue::assertPushed(RunTask::class, fn (RunTask $job): bool => $job->taskId === $task->getKey());
     }
 
-    public function test_a_consequential_request_requires_recent_authentication(): void
+    public function test_a_consequential_request_does_not_require_recent_authentication(): void
     {
         Queue::fake();
 
-        try {
-            $this->service()->request($this->admin(), $this->operation('application.restart'));
-            $this->fail('Expected recent authentication to be required.');
-        } catch (TaskNotAuthorizedException $exception) {
-            $this->assertSame(ErrorCode::PermissionDenied, $exception->errorCode());
-        }
+        // MFA login is sufficient; the operator is not asked to reconfirm the
+        // password to reach privileged pages or submit consequential requests.
+        $task = $this->service()->request($this->admin(), $this->operation('application.restart'));
 
-        $this->assertDatabaseCount('tasks', 0);
+        $this->assertSame(TaskStatus::AwaitingApproval, $task->status);
+        $this->assertDatabaseCount('tasks', 1);
     }
 
     public function test_a_consequential_request_with_recent_auth_awaits_approval(): void

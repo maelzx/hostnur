@@ -83,14 +83,14 @@ class WebRegressionTest extends TestCase
             ->assertRedirect(route('login'));
     }
 
-    public function test_recent_authentication_is_required_for_sensitive_pages(): void
+    public function test_sensitive_pages_are_accessible_after_mfa_without_reconfirming_password(): void
     {
         $admin = $this->confirmedAdmin();
 
         $this->actingAs($admin)
             ->withSession($this->mfaProof($admin))
             ->get('/panel/security')
-            ->assertRedirect(route('password.confirm'));
+            ->assertOk();
     }
 
     public function test_privileged_livewire_actions_are_denied_without_authorization(): void

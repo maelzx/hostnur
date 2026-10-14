@@ -33,7 +33,6 @@ final class TaskService
     public function __construct(
         private readonly OperationCatalog $catalog,
         private readonly AgentClient $agent,
-        private readonly RecentAuthentication $recentAuthentication,
         private readonly AuditRecorder $audit,
     ) {}
 
@@ -49,10 +48,6 @@ final class TaskService
 
         $fingerprint = $this->fingerprint($request);
         $requiresApproval = $this->requiresApproval($definition);
-
-        if ($requiresApproval && ! $this->recentAuthentication->isConfirmed($actor)) {
-            throw new TaskNotAuthorizedException('Recent password confirmation is required for this operation.');
-        }
 
         $task = DB::transaction(function () use ($actor, $request, $fingerprint, $requiresApproval): Task {
             $existing = Task::query()
@@ -195,10 +190,6 @@ final class TaskService
 
         $definition = $this->catalog->definition($task->operation);
         $requiresApproval = $definition !== null && $this->requiresApproval($definition);
-
-        if ($requiresApproval && ! $this->recentAuthentication->isConfirmed($actor)) {
-            throw new TaskNotAuthorizedException('Recent password confirmation is required for this operation.');
-        }
 
         $new = Task::create([
             'actor_id' => $actor->getKey(),
