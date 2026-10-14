@@ -1077,7 +1077,12 @@ work through the panel with bounded failure/recovery. Unmanaged/root commands an
 firewall mutations remain unavailable; resulting state is observed, not assumed.
 
 ### Phase 18 — Application database provisioning
-- Status: planned; **engine confirmed: MariaDB** (session 034). Implementation pending.
+- Status: **in progress** (session 037). P18.1 (engine/policy + identifier derivation
+  + protected names + credential generation), P18.2 (journaled provisioning: register
+  → create DB/principal/grants → real connection check → write-only credential) and
+  the isolation/deletion part of P18.5 are implemented and VM-validated. **Remaining:**
+  P18.3 (panel wiring: deliver credential references into a deployment revision;
+  rotation) and P18.4 (bounded data movement). Engine: **MariaDB**.
 - Depends on: 8, 12, 15.
 
 #### Engine scope and privilege model
@@ -1444,6 +1449,30 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 037 — Phase 18 MariaDB provisioning + VM isolation (2026-10-14)
+
+- Implemented the agent side of phase 18: `agent/src/database/` with
+  `policy.rs` (engine, `hn_db_<uuid12>`/`hn_u_<uuid12>` identifier derivation,
+  protected/system-name rejection, bounded hex credentials) and `mariadb.rs`
+  (fixed `mysql` client; admin via root unix-socket; `provision` creates the DB
+  and principal with `ALL PRIVILEGES` on that database only — no global/grant
+  option; `check_connection` connects as the app principal over TCP with the
+  password via `MYSQL_PWD`, never argv; `grants`, `remove`). Added a write-only
+  `secrets.rs` store (`0700` dir / `0600` files, root-only) and a `databases`
+  registry table. New control ops `agent.register_database` /
+  `agent.remove_database` and the `database.provision` handler; capabilities
+  advertise `database.provision`.
+- **VM validation** (recreated host `165.22.241.18`): installed `mariadb-server`
+  **via `package.install`** (10.11.14) and started it via `service.control`;
+  registered + provisioned two app databases; credentials stored `0600`; grants
+  show only `USAGE` globally + `ALL` on the app's own schema (no `GRANT OPTION`).
+  Isolation confirmed: app A connected to its own DB, was **denied** B's DB,
+  denied `CREATE DATABASE`, and denied global `GRANT`; remove dropped only the
+  registered DB/user and deleted the secret.
+- Rust: `cargo fmt` / `clippy -D warnings` / `test` pass (**121 unit** + dispatch
+  database tests). Remaining: P18.3 (panel wiring + rotation) and P18.4 (bounded
+  data movement). Commit: `9752086`.
 
 ### Session 036 — Host rebuild and phase 17 VM validation (2026-10-14)
 
@@ -2714,12 +2743,11 @@ The panel is independently runnable and tested; the agent crate builds, tests an
 runs unprivileged in the Lima VM. See `docs/web-milestone.md` and
 `docs/agent-development.md` for passed gates, blocked checks and acceptance maps.
 
-**Phases 11–17 are complete for their scopes** (sessions 026–035). Phase 17 added
-real managed service control, approved package install, a read-only firewall
-snapshot, and app-owned scheduled jobs (agent registry + timer, full
-cron→`OnCalendar` converter, panel wiring). Next: re-run the throwaway-host setup
-from [`docs/p16-test-host.md`](docs/p16-test-host.md) to validate phase 17 on the
-VM, then proceed to **phase 18 (MariaDB provisioning)**.
+**Phases 11–17 are complete and validated on the VM; phase 18 is in progress**
+(sessions 026–037). MariaDB provisioning, isolation and deletion (P18.1/P18.2 and
+part of P18.5) are implemented and VM-validated. Next slices: **P18.3** (panel
+wiring — deliver DB credential references into a deployment revision; rotation)
+and **P18.4** (bounded data movement), then phase 19 is deferred per session 034.
 
 Scope decisions (session 034): MariaDB for phase 18; phase 19 backup/restore
 deferred; phase 20 Debian/APT deferred in favour of a curl+bash bootstrap script;
