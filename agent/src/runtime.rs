@@ -91,6 +91,10 @@ pub fn run(config: &AgentConfig) -> Result<(), AgentError> {
     let listener = Listener::bind(&config.socket_path, config.socket_mode)
         .map_err(|err| AgentError::new(ErrorCode::Transport, format!("binding socket: {err}")))?;
 
+    if let Some(group) = &config.socket_group {
+        grant_socket_group(&listener, group, config.socket_mode)?;
+    }
+
     logging::log(
         Level::Info,
         "startup",
@@ -137,6 +141,52 @@ pub fn run(config: &AgentConfig) -> Result<(), AgentError> {
         None,
         None,
     );
+    Ok(())
+}
+
+/// Chgrp the socket (and its parent directory) to `group` and make the parent
+/// traversable by that group, so an unprivileged panel identity can connect.
+fn grant_socket_group(listener: &Listener, group: &str, mode: u32) -> Result<(), AgentError> {
+    use std::os::unix::fs::{PermissionsExt, chown};
+
+    let gid = nix::unistd::Group::from_name(group)
+        .map_err(|err| AgentError::new(ErrorCode::Transport, format!("resolving group: {err}")))?
+        .ok_or_else(|| AgentError::new(ErrorCode::Transport, format!("group `{group}` not found")))?
+        .gid
+        .as_raw();
+
+    let path = listener.path();
+    chown(path, None, Some(gid)).map_err(|err| {
+        AgentError::new(
+            ErrorCode::Transport,
+            format!("chgrp socket: {}", err.kind()),
+        )
+    })?;
+    if let Some(parent) = path.parent() {
+        chown(parent, None, Some(gid)).map_err(|err| {
+            AgentError::new(
+                ErrorCode::Transport,
+                format!("chgrp socket dir: {}", err.kind()),
+            )
+        })?;
+        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o750)).map_err(
+            |err| {
+                AgentError::new(
+                    ErrorCode::Transport,
+                    format!("chmod socket dir: {}", err.kind()),
+                )
+            },
+        )?;
+    }
+    // Keep the socket mode as configured.
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode & 0o777)).map_err(
+        |err| {
+            AgentError::new(
+                ErrorCode::Transport,
+                format!("chmod socket: {}", err.kind()),
+            )
+        },
+    )?;
     Ok(())
 }
 

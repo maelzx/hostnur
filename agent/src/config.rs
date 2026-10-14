@@ -35,7 +35,7 @@ const MAX_SOCKET_PATH_BYTES: usize = 107;
 
 /// Top-level settings accepted by this schema version. Anything else is an
 /// unknown setting and is rejected.
-const KNOWN_KEYS: [&str; 10] = [
+const KNOWN_KEYS: [&str; 11] = [
     "version",
     "socket_path",
     "state_dir",
@@ -46,6 +46,7 @@ const KNOWN_KEYS: [&str; 10] = [
     "connection_read_timeout_seconds",
     "allowed_peer_uids",
     "php_versions",
+    "socket_group",
 ];
 
 /// Validated agent configuration.
@@ -64,6 +65,9 @@ pub struct AgentConfig {
     pub allowed_peer_uids: Vec<u32>,
     /// Operator-approved PHP runtime versions (native 8.3 by default).
     pub php_versions: Vec<String>,
+    /// Optional group granted access to the socket (and its parent directory),
+    /// e.g. a dedicated panel-access group.
+    pub socket_group: Option<String>,
 }
 
 impl AgentConfig {
@@ -114,6 +118,7 @@ impl AgentConfig {
         )?;
         let allowed_peer_uids = optional_u32_array(table, "allowed_peer_uids")?;
         let php_versions = optional_string_array(table, "php_versions", &["8.3"])?;
+        let socket_group = optional_string(table, "socket_group")?;
 
         let config = AgentConfig {
             version: u32::try_from(version)
@@ -127,6 +132,7 @@ impl AgentConfig {
             connection_read_timeout_seconds,
             allowed_peer_uids,
             php_versions,
+            socket_group,
         };
         config.validate()?;
         Ok(config)
@@ -183,6 +189,17 @@ impl AgentConfig {
             return Err(invalid(format!(
                 "`connection_read_timeout_seconds` must be between {MIN_CONNECTION_READ_TIMEOUT_SECONDS} and {MAX_CONNECTION_READ_TIMEOUT_SECONDS}"
             )));
+        }
+
+        if let Some(group) = &self.socket_group {
+            let valid = !group.is_empty()
+                && group.len() <= 32
+                && group
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'));
+            if !valid {
+                return Err(invalid("`socket_group` must be a valid group name"));
+            }
         }
 
         for version in &self.php_versions {
@@ -292,6 +309,19 @@ fn optional_bounded_u32(
             u32::try_from(raw)
                 .map_err(|_| invalid(format!("setting `{key}` must be a non-negative integer")))
         }
+    }
+}
+
+fn optional_string(
+    table: &toml::map::Map<String, toml::Value>,
+    key: &str,
+) -> Result<Option<String>, AgentError> {
+    match table.get(key) {
+        None => Ok(None),
+        Some(value) => value
+            .as_str()
+            .map(|text| Some(text.to_string()))
+            .ok_or_else(|| invalid(format!("setting `{key}` must be a string"))),
     }
 }
 
