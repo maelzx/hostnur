@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\ApplicationStatus;
+use App\Enums\DeploymentState;
 use App\Enums\SourceStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -113,5 +114,16 @@ class Application extends Model
         return $this->latestDeployment === null
             ? ApplicationStatus::NotDeployed
             : ApplicationStatus::fromDeploymentState($this->latestDeployment->state);
+    }
+
+    /**
+     * A successful deployment marks the application as provisioned, which locks
+     * identity-bearing configuration (the source repository).
+     */
+    public function hasSuccessfulDeployment(): bool
+    {
+        return $this->deployments()
+            ->where('state', DeploymentState::Succeeded->value)
+            ->exists();
     }
 }

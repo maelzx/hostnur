@@ -142,6 +142,12 @@ final class ApplicationService
             }
         }
 
+        if ($application->hasSuccessfulDeployment() && $normalized !== $application->repository_url) {
+            throw ValidationException::withMessages([
+                'repository_url' => 'The source repository is locked after the first successful deployment. Create a new application to use a different repository.',
+            ]);
+        }
+
         $validated = Validator::make([
             'git_ref' => $data['git_ref'] ?? null,
             'source_credential_id' => $data['source_credential_id'] ?? null,

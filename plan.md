@@ -1405,11 +1405,46 @@ induced drift on the VM, the panel shows the agent's observed lifecycle/release 
 mode and time, clearly distinct from desired configuration, and no simulation or
 unavailable condition writes real observed fields.
 
+### Phase 20.6 — Application logs, per-app metrics and lifecycle controls
+- Status: **planned**. The application detail page cannot yet show the app's own logs,
+  its storage/bandwidth usage, or start/stop it — the contract has no such operations
+  (`contracts/v1/catalog.json` exposes only `application.restart`, and host metrics are
+  host-wide, not per app).
+- Depends on: 15, 17, 20.5.
+
+#### Objective and rules
+
+Add bounded, strictly typed agent operations and panel surfaces for application-scoped
+observability and lifecycle, without turning the agent into a generic file reader or
+command runner.
+
+- **Application logs**: a read-only operation that returns a bounded, redacted tail of
+  the application's own log files under its managed tree (e.g. `storage/logs`),
+  scoped by registered application identity; never an arbitrary path or root read.
+- **Per-application metrics**: storage usage (bytes) and, where available, traffic;
+  each value carries mode, sample time and resource identity, and is labelled
+  simulated when it is not real evidence.
+- **Start/stop**: application-scoped start and stop in addition to restart, with
+  health verification and the same approval/audit path as restart.
+- Simulated/unavailable values remain explicit; missing metrics are shown as unknown,
+  never as zero.
+
+| Slice | Deliverable | Required proof |
+|---|---|---|
+| P20.6.1 Application log read | Bounded, redacted log tail scoped to the registered app | Arbitrary paths/other apps' logs are refused; secret values are redacted |
+| P20.6.2 Per-app metrics | Storage usage and traffic with mode/time/identity | Unavailable is unknown, not zero; fake values are labelled |
+| P20.6.3 Start/stop/restart | Application-scoped lifecycle actions with health checks | Cross-app targets refused; outcome matches the managed service |
+| P20.6.4 Detail-page surfaces | Logs, resource usage and lifecycle controls in the UI | Values match agent evidence; unavailable states stay truthful |
+
+**Exit gate / milestone:** on the VM, an operator can view the running application's
+log tail and resource usage and start, stop or restart it from the panel, with
+cross-application access refused and simulated/unavailable results clearly marked.
+
 ### Phase 21 — Integrated beta validation and release gate
 - Status: planned. Uses the user's **recreated throwaway Ubuntu 24.04 amd64
   droplet** each session (per session 034), plus a separate restore VM when
   phase 19 resumes.
-- Depends on: 1–20.5 and disposable VM access.
+- Depends on: 1–20.6 and disposable VM access.
 - Slices: full cross-process/VM regression, privilege/path/socket abuse cases,
   app isolation, crashes/disconnects, Nginx/TLS failures, SQLite contention,
   signed release verification, restore/recovery drill and operator documentation.
@@ -1522,6 +1557,15 @@ ask only when the choice materially changes scope, cost, access, or product beha
   to hop between screens. Every optional step can be left blank. Feature tests added
   (`ApplicationWizardTest`); `phpunit.xml` now pins `HOSTNUR_AGENT_MODE=unavailable`
   so the local `.env` cannot leak into tests. Full suite: 259 passing.
+- **Application detail page redesign**: rebuilt `application-show` — header now shows
+  the primary URL with copy/open, plus Deploy and (once deployed) Restart actions;
+  an overview stats row (last deploy, runtime, domains, database, workers, mode);
+  reorganized sections (Configuration, Domains & HTTPS, Database, Secrets, Logs); the
+  setup checklist now appears only until the first successful deployment; the
+  "recent revisions" list was removed. The **source repository** (and provider/slug)
+  is now locked after the first successful deployment (`Application::hasSuccessfulDeployment()`
+  + guard in `ApplicationService::updateSource`); Git ref and credentials stay
+  editable. Logs are the application's task/deployment events for now.
 - **Plan**: the wiring of agent-observed state into the panel
   (`applications.observed_state`/`observed_mode`/`observed_at`) was only implied, not
   planned. Recorded it as a new not-started phase **Phase 20.5 — Observed state

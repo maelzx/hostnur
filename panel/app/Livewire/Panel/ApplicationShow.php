@@ -4,11 +4,18 @@ namespace App\Livewire\Panel;
 
 use App\Enums\DomainHttpsPolicy;
 use App\Exceptions\ApplicationConflictException;
+use App\Exceptions\DeploymentPreflightException;
 use App\Models\Application;
+use App\Models\Certificate;
 use App\Models\SourceCredential;
+use App\Models\Task;
+use App\Models\TaskEvent;
 use App\Models\User;
 use App\Services\ApplicationService;
+use App\Services\DeploymentService;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -61,9 +68,12 @@ class ApplicationShow extends Component
 
     public string $https_policy = 'auto';
 
+    public string $restartKey = '';
+
     public function mount(string $application): void
     {
         $this->applicationId = $application;
+        $this->restartKey = (string) Str::uuid();
         $application = $this->application();
 
         $this->authorize('view', $application);
@@ -233,19 +243,66 @@ class ApplicationShow extends Component
         $this->redirect(route('panel.applications.show', ['application' => $this->applicationId]));
     }
 
+    public function restart(DeploymentService $deployments): void
+    {
+        $application = $this->application();
+        $this->authorize('update', $application);
+
+        try {
+            $deployments->restart($this->actor(), $application->refresh(), $this->restartKey);
+        } catch (DeploymentPreflightException $exception) {
+            $this->addError('restart', $exception->getMessage());
+
+            return;
+        }
+
+        session()->flash('status', 'Restart requested.');
+        $this->redirect(route('panel.applications.show', ['application' => $this->applicationId]));
+    }
+
     public function render(): View
     {
         $application = $this->application();
+        $application->loadMissing('latestDeployment');
+        $domainIds = $application->domains()->pluck('id');
 
         return view('livewire.panel.application-show', [
             'application' => $application,
-            'revisions' => $application->revisions()->limit(10)->get(),
+            'latestDeployment' => $application->latestDeployment,
+            'database' => $application->databaseRequests()->latest('created_at')->first(),
+            'certificates' => Certificate::query()->whereIn('application_domain_id', $domainIds)->latest('created_at')->get(),
+            'logs' => $this->logs(),
+            'locked' => $application->hasSuccessfulDeployment(),
             'secrets' => $application->secrets()->get(),
             'domains' => $application->domains()->get(),
             'credentials' => SourceCredential::query()->latest('created_at')->get(),
             'runtimes' => config('hostnur.applications.runtimes'),
             'policies' => DomainHttpsPolicy::cases(),
         ]);
+    }
+
+    /**
+     * Recent task events for this application, newest first.
+     *
+     * @return Collection<int, TaskEvent>
+     */
+    private function logs(): Collection
+    {
+        $taskIds = Task::query()
+            ->where('resource_kind', 'application')
+            ->where('resource_id', $this->applicationId)
+            ->pluck('id');
+
+        if ($taskIds->isEmpty()) {
+            return collect();
+        }
+
+        return TaskEvent::query()
+            ->whereIn('task_id', $taskIds)
+            ->with('task')
+            ->orderByDesc('recorded_at')
+            ->limit(50)
+            ->get();
     }
 
     private function application(): Application

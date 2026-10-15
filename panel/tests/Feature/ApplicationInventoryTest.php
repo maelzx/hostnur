@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\AuditAction;
+use App\Enums\DeploymentState;
 use App\Enums\DomainHttpsPolicy;
 use App\Enums\SourceStatus;
 use App\Enums\TaskStatus;
@@ -10,6 +11,7 @@ use App\Exceptions\ApplicationConflictException;
 use App\Livewire\Panel\ApplicationShow;
 use App\Models\Application;
 use App\Models\ApplicationRevision;
+use App\Models\Deployment;
 use App\Models\Task;
 use App\Models\User;
 use App\Services\ApplicationService;
@@ -176,6 +178,38 @@ class ApplicationInventoryTest extends TestCase
 
         $this->expectException(ValidationException::class);
         $this->service()->updateSource($admin, $application, ['repository_url' => 'file:///etc/passwd']);
+    }
+
+    public function test_the_source_repository_is_locked_after_a_successful_deployment(): void
+    {
+        $admin = $this->admin();
+        $application = $this->application($admin);
+        $this->service()->updateSource($admin, $application, ['repository_url' => 'https://github.com/org/one.git']);
+
+        Deployment::create([
+            'application_id' => $application->getKey(),
+            'operation' => 'application.deploy',
+            'runtime' => $application->runtime,
+            'mode' => 'fake',
+            'state' => DeploymentState::Succeeded,
+            'idempotency_key' => (string) Str::uuid(),
+        ]);
+
+        // A different repository is refused once deployed...
+        try {
+            $this->service()->updateSource($admin, $application->refresh(), ['repository_url' => 'https://github.com/org/two.git']);
+            $this->fail('Expected the locked repository to be refused.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('repository_url', $exception->errors());
+        }
+
+        // ...but the Git ref and credential remain editable.
+        $this->service()->updateSource($admin, $application->refresh(), [
+            'repository_url' => 'https://github.com/org/one.git',
+            'git_ref' => 'release',
+        ]);
+
+        $this->assertSame('release', $application->refresh()->git_ref);
     }
 
     public function test_credentials_are_encrypted_hidden_and_rotatable(): void
