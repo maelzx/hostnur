@@ -59,6 +59,8 @@ impl Default for MariaDbAdmin {
 
 impl MariaDbAdmin {
     /// Run SQL as the agent-owned local admin (`root` via unix socket).
+    /// The statement is delivered on stdin, never argv: admin DDL embeds
+    /// credentials and `/proc/<pid>/cmdline` is world-readable.
     fn admin_sql(&self, sql: &str) -> Result<String, DatabaseError> {
         let mut spec = CommandSpec::new(&self.mysql, self.deadline);
         spec.args = vec![
@@ -66,10 +68,9 @@ impl MariaDbAdmin {
             "-uroot".to_string(),
             "--batch".to_string(),
             "--skip-column-names".to_string(),
-            "-e".to_string(),
-            sql.to_string(),
         ];
         spec.env = tool_env();
+        spec.stdin = Some(sql.as_bytes().to_vec());
         spec.output_cap_bytes = 65_536;
         let outcome = run(&spec).map_err(|error| DatabaseError::Tool(error.to_string()))?;
         if !outcome.succeeded() {
@@ -218,6 +219,12 @@ impl MariaDbAdmin {
         let outcome = run(&spec).map_err(|error| DatabaseError::Tool(error.to_string()))?;
         if !outcome.succeeded() {
             return Err(DatabaseError::Tool("export failed".to_string()));
+        }
+        if outcome.stdout_truncated {
+            return Err(DatabaseError::Conflict(
+                "database dump exceeds the export cap; the artifact would be incomplete"
+                    .to_string(),
+            ));
         }
         Ok(outcome.stdout)
     }

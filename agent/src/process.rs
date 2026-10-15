@@ -147,6 +147,20 @@ pub fn validate_spec(spec: &CommandSpec) -> Result<(), ProcessError> {
             ));
         }
     }
+    for (key, value) in &spec.env {
+        if key.contains('\0') || value.contains('\0') {
+            return Err(ProcessError::Invalid(
+                "environment must not contain NUL".into(),
+            ));
+        }
+    }
+    // Half-specified identity must fail loudly: silently keeping only one of
+    // uid/gid would run the child as the agent's own (possibly root) identity.
+    if spec.uid.is_some() != spec.gid.is_some() {
+        return Err(ProcessError::Invalid(
+            "uid and gid must be set together or not at all".into(),
+        ));
+    }
     if let Some(working_dir) = &spec.working_dir
         && !working_dir.is_absolute()
     {

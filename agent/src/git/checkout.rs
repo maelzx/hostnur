@@ -92,6 +92,9 @@ impl GitRunner {
             ));
         }
         if request.repository_url.contains(char::is_whitespace) {
+            // The staging tree was created for this checkout; remove it here
+            // too so early rejections leave nothing behind, like later errors.
+            let _ = std::fs::remove_dir_all(request.staging_dir);
             return Err(CheckoutError::InvalidRequest(
                 "repository URL contains whitespace".to_string(),
             ));

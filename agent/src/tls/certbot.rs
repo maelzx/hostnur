@@ -120,6 +120,8 @@ fn is_valid_email(email: &str) -> bool {
         && email.contains('@')
         && !email.starts_with('@')
         && !email.ends_with('@')
+        // Never option-like: the value follows `--email` in argv.
+        && !email.starts_with('-')
         && !email.chars().any(|c| c.is_control() || c.is_whitespace())
 }
 

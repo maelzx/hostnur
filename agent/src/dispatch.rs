@@ -1,12 +1,14 @@
 //! Request dispatch: maps a validated operation to a response body.
 //!
-//! Only a narrow, tested set is supported in this phase. Control operations
-//! (`agent.capabilities`, `agent.inspect`, `agent.cancel`) back the panel's
-//! read-only agent-client methods; `server.snapshot` is read-only. Mutation
-//! operations are cataloged but not yet implemented, so they return a safe
-//! `unsupported_operation` error rather than pretending to run.
+//! Control operations (`agent.capabilities`, `agent.inspect`, `agent.cancel`)
+//! back the panel's agent-client methods; `server.snapshot` is read-only.
+//! Mutation operations run through the durable journal's accept→execute→
+//! receipt pipeline. An operation outside `SUPPORTED_OPERATIONS` and the
+//! `handle` match returns a safe `unsupported_operation` error rather than
+//! pretending to run.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
 
@@ -35,8 +37,10 @@ use crate::services::{ServiceAction, ServiceError, ServicePolicy};
 use crate::tls::{CertbotClient, CertbotRequest, CertificateManager, from_live_dir};
 use crate::transport::RequestHandler;
 
-/// Operations this build actually advertises and can serve.
-pub const SUPPORTED_OPERATIONS: [&str; 13] = [
+/// Operations this build actually advertises and can serve. Must stay in sync
+/// with the match arms in `RequestHandler::handle` (minus the conditional
+/// `application.deploy`, added in `capabilities`).
+pub const SUPPORTED_OPERATIONS: [&str; 18] = [
     "agent.capabilities",
     "agent.inspect",
     "agent.cancel",
@@ -45,12 +49,43 @@ pub const SUPPORTED_OPERATIONS: [&str; 13] = [
     "service.control",
     "package.install",
     "schedule.apply",
+    "agent.register_schedule",
+    "agent.remove_schedule",
     "database.provision",
     "database.rotate",
     "database.export",
     "database.import",
+    "agent.register_database",
+    "agent.remove_database",
     "certificate.issue",
+    "agent.register_certificate",
 ];
+
+/// Upper bound on concurrent deploy workers. Extra deploys are refused with
+/// `agent_unavailable` (backpressure) rather than spawning unbounded root-
+/// supervised OS threads from a misbehaving or compromised panel identity.
+pub const MAX_CONCURRENT_DEPLOYS: usize = 4;
+
+static DEPLOY_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+
+/// RAII deploy ticket: releases the slot even if the worker panics.
+struct DeployTicket;
+
+impl DeployTicket {
+    fn try_acquire() -> Option<Self> {
+        if DEPLOY_IN_FLIGHT.fetch_add(1, Ordering::AcqRel) >= MAX_CONCURRENT_DEPLOYS {
+            DEPLOY_IN_FLIGHT.fetch_sub(1, Ordering::AcqRel);
+            return None;
+        }
+        Some(Self)
+    }
+}
+
+impl Drop for DeployTicket {
+    fn drop(&mut self) {
+        DEPLOY_IN_FLIGHT.fetch_sub(1, Ordering::AcqRel);
+    }
+}
 
 /// Handler backed by the durable journal.
 pub struct AgentHandler<'a> {
@@ -608,10 +643,10 @@ impl<'a> AgentHandler<'a> {
         let Some(program) = string("program") else {
             return error_body(ContractErrorCode::InvalidParameters, "program is required");
         };
-        if !Path::new(program).is_absolute() || program.len() > 255 {
+        if !crate::provider::worker::is_safe_path_token(program) {
             return error_body(
                 ContractErrorCode::InvalidParameters,
-                "program must be an absolute path",
+                "program must be an absolute path of safe printable characters",
             );
         }
         let Some(expression) = string("expression") else {
@@ -902,6 +937,13 @@ impl<'a> AgentHandler<'a> {
             .and_then(Value::as_bool)
             .unwrap_or(false);
 
+        let Some(ticket) = DeployTicket::try_acquire() else {
+            return error_body(
+                ContractErrorCode::AgentUnavailable,
+                "the deployment concurrency limit is reached; retry shortly",
+            );
+        };
+
         let acceptance = match self.journal.accept(request) {
             Ok(acceptance) => acceptance,
             Err(error) => return error_body(ContractErrorCode::Conflict, &error.to_string()),
@@ -911,6 +953,8 @@ impl<'a> AgentHandler<'a> {
             let runtime = runtime.clone();
             let execution_id = acceptance.execution_id.clone();
             std::thread::spawn(move || {
+                // The ticket is returned when the worker finishes or panics.
+                let _ticket = ticket;
                 runtime.run_worker(execution_id, application_id, git_ref, run_migrations);
             });
         }
@@ -970,9 +1014,16 @@ impl<'a> AgentHandler<'a> {
                 );
             }
         };
-        if let Err(error) = validate_repository_url(repository_url, &NetworkPolicy::default()) {
-            return error_body(ContractErrorCode::InvalidParameters, &error.to_string());
-        }
+        // Validate then persist the normalized, credential-free, trimmed URL so
+        // the stored value cannot differ from the validated one by whitespace,
+        // case or a legacy numeric host form.
+        let repository_url =
+            match validate_repository_url(repository_url, &NetworkPolicy::default()) {
+                Ok(normalized) => normalized.url,
+                Err(error) => {
+                    return error_body(ContractErrorCode::InvalidParameters, &error.to_string());
+                }
+            };
         let server_name = match parameter("server_name") {
             Some(value) => value,
             None => {
@@ -999,7 +1050,7 @@ impl<'a> AgentHandler<'a> {
 
         let source = ApplicationSource {
             application_id: application.clone(),
-            repository_url: repository_url.to_string(),
+            repository_url,
             server_name: server_name.to_string(),
             provider: provider.to_string(),
             runtime: runtime.to_string(),
@@ -1071,6 +1122,9 @@ impl<'a> AgentHandler<'a> {
                 ) {
                     return error_body(ContractErrorCode::OperationFailed, &error.to_string());
                 }
+                let _ = self
+                    .journal
+                    .append_event(&execution_id, "Cancellation requested by the panel.");
                 json!({
                     "protocol_version": 1,
                     "execution_id": execution_id.as_str(),

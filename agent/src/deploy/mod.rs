@@ -41,6 +41,9 @@ pub struct DeployInput<'a> {
     /// Run the unprivileged Composer build when `composer.json` is present.
     pub build: bool,
     pub env: BTreeMap<String, String>,
+    /// When set (execution-driven deploy), cancellation of that accepted
+    /// execution is checked at safe boundaries before activation.
+    pub execution_id: Option<Uuid>,
 }
 
 /// Deployment failure.
@@ -52,6 +55,7 @@ pub enum DeployError {
     Build(String),
     MigrationPrerequisiteMissing,
     MissingLayout,
+    Cancelled,
     Health(HealthResult),
     Io(String),
 }
@@ -67,6 +71,7 @@ impl std::fmt::Display for DeployError {
                 f.write_str("migrations require a recovery prerequisite that is not configured")
             }
             DeployError::MissingLayout => f.write_str("managed layout is missing"),
+            DeployError::Cancelled => f.write_str("deployment was cancelled before activation"),
             DeployError::Health(result) => write!(f, "health check failed: {}", result.detail),
             DeployError::Io(m) => write!(f, "io: {m}"),
         }
@@ -131,6 +136,15 @@ impl<'a> Deployer<'a> {
         let release_dir = self.apps_root.join(&release_rel);
 
         // Source: check out the pinned ref as the app user.
+        // Cancellation boundary: abort before any network/source work starts.
+        if let Some(execution_id) = &input.execution_id
+            && matches!(
+                self.journal.execution_status(execution_id),
+                Ok(Some(crate::contract::OperationStatus::Cancelled))
+            )
+        {
+            return Err(DeployError::Cancelled);
+        }
         let checkout = CheckoutRequest {
             repository_url: input.repository_url,
             git_ref: &input.git_ref,
@@ -177,6 +191,16 @@ impl<'a> Deployer<'a> {
             .map_err(|error| DeployError::Provider(error.to_string()))?;
 
         // Activation: atomically switch `current`, then reload and health-gate.
+        // Cancellation boundary: a cancel request stops the run here, before
+        // anything is published, and the journal status is left `cancelled`.
+        if let Some(execution_id) = &input.execution_id
+            && matches!(
+                self.journal.execution_status(execution_id),
+                Ok(Some(crate::contract::OperationStatus::Cancelled))
+            )
+        {
+            return Err(DeployError::Cancelled);
+        }
         let previous = self.current_target(&input.application_id);
         self.switch_current(&input.application_id, &release_dir)?;
 
@@ -251,9 +275,24 @@ impl<'a> Deployer<'a> {
             .map(|source| source.runtime_version)
             .unwrap_or_default();
         self.switch_current(application_id, &release_dir)?;
-        self.reload_all(&version)?;
-        let result = HealthClient::new(server_name).probe();
+        if let Err(error) = self.reload_all(&version) {
+            self.restore_current(application_id, previous.as_deref())?;
+            let _ = self.reload_all(&version);
+            return Err(error);
+        }
+        let mut health = HealthClient::new(server_name);
+        health.expect_body_contains = None;
+        let mut result = health.probe();
+        for _ in 0..20 {
+            if result.healthy {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+            result = health.probe();
+        }
         if !result.healthy {
+            self.restore_current(application_id, previous.as_deref())?;
+            let _ = self.reload_all(&version);
             return Err(DeployError::Health(result));
         }
         let record = |release_id: &Uuid, state: &str| {
@@ -479,18 +518,11 @@ impl<'a> Deployer<'a> {
                 }
             }
 
+            // Fail closed: migrations mutate shared state before activation
+            // and there is no recovery prerequisite implemented yet, so the
+            // documented refusal is enforced here.
             if input.run_migrations {
-                let outcome = self.run_app(
-                    &php,
-                    &["artisan", "migrate", "--force"],
-                    release_dir,
-                    uid,
-                    gid,
-                    &[],
-                )?;
-                if !outcome.succeeded() {
-                    return Err(DeployError::Build("php artisan migrate failed".to_string()));
-                }
+                return Err(DeployError::MigrationPrerequisiteMissing);
             }
 
             let _ = self.run_app(
@@ -516,10 +548,27 @@ impl<'a> Deployer<'a> {
 
     fn switch_current(&self, application_id: &Uuid, release_dir: &Path) -> Result<(), DeployError> {
         let current = self.current_path(application_id);
-        let temp = self.app_root(application_id).join(".current.tmp");
-        let _ = std::fs::remove_file(&temp);
+        // The staging symlink name must be unique per switch: concurrent
+        // deployments (and rollbacks) of the same application share only the
+        // final `current` path, never the temp path.
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_nanos())
+            .unwrap_or(0);
+        let temp = self.app_root(application_id).join(format!(
+            ".current.{}.{}.{}.tmp",
+            release_dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("switch"),
+            std::process::id(),
+            nonce
+        ));
         std::os::unix::fs::symlink(release_dir, &temp).map_err(io)?;
-        std::fs::rename(&temp, &current).map_err(io)?;
+        if let Err(error) = std::fs::rename(&temp, &current) {
+            let _ = std::fs::remove_file(&temp);
+            return Err(io(error));
+        }
         Ok(())
     }
 
@@ -546,21 +595,41 @@ impl<'a> Deployer<'a> {
         } else {
             php_version
         };
-        let fpm = std::process::Command::new("/usr/bin/systemctl")
-            .args(["reload", &format!("php{version}-fpm")])
-            .status()
-            .map_err(|error| DeployError::Provider(error.to_string()))?;
-        if !fpm.success() {
-            return Err(DeployError::Provider("fpm reload failed".to_string()));
+        Self::run_bounded(
+            Path::new("/usr/bin/systemctl"),
+            &["reload", &format!("php{version}-fpm")],
+            "fpm reload failed",
+        )?;
+        Self::run_bounded(
+            Path::new("/usr/sbin/nginx"),
+            &["-s", "reload"],
+            "nginx reload failed",
+        )
+    }
+
+    /// Run a fixed reload command through the bounded process primitive
+    /// (deadline, cleared environment, capped output) like every other spawn.
+    fn run_bounded(
+        program: &Path,
+        args: &[&str],
+        failure: &'static str,
+    ) -> Result<(), DeployError> {
+        let mut spec = CommandSpec::new(program, Duration::from_secs(30));
+        spec.args = args.iter().map(|arg| (*arg).to_string()).collect();
+        let mut env = BTreeMap::new();
+        env.insert(
+            "PATH".to_string(),
+            "/usr/sbin:/usr/bin:/sbin:/bin".to_string(),
+        );
+        env.insert("LC_ALL".to_string(), "C".to_string());
+        spec.env = env;
+        spec.output_cap_bytes = 32_768;
+        let outcome = run(&spec).map_err(|error| DeployError::Provider(error.to_string()))?;
+        if outcome.succeeded() {
+            Ok(())
+        } else {
+            Err(DeployError::Provider(failure.to_string()))
         }
-        let nginx = std::process::Command::new("/usr/sbin/nginx")
-            .args(["-s", "reload"])
-            .status()
-            .map_err(|error| DeployError::Provider(error.to_string()))?;
-        if !nginx.success() {
-            return Err(DeployError::Provider("nginx reload failed".to_string()));
-        }
-        Ok(())
     }
 }
 
@@ -595,8 +664,19 @@ impl DeployRuntime {
         git_ref: crate::git::GitRef,
         run_migrations: bool,
     ) {
-        let Ok(journal) = Journal::open(&self.db_path) else {
-            return;
+        let journal = match Journal::open(&self.db_path) {
+            Ok(journal) => journal,
+            Err(error) => {
+                crate::logging::log(
+                    crate::logging::Level::Error,
+                    "deploy",
+                    "worker.journal_unavailable",
+                    &format!("execution {execution_id} could not be started: {error}"),
+                    Some("journal"),
+                    None,
+                );
+                return;
+            }
         };
         let _ = journal.set_status(
             &execution_id,
@@ -605,28 +685,64 @@ impl DeployRuntime {
         );
         let _ = journal.append_event(&execution_id, "Deployment started.");
 
-        match self.execute(&journal, &application_id, git_ref, run_migrations) {
+        let cancelled_midrun = matches!(
+            journal.execution_status(&execution_id),
+            Ok(Some(crate::contract::OperationStatus::Cancelled))
+        );
+        match self.execute(
+            &journal,
+            &application_id,
+            git_ref,
+            run_migrations,
+            execution_id.clone(),
+        ) {
             Ok((release_id, commit)) => {
                 let _ = journal.append_event(
                     &execution_id,
                     &format!("Activated release {release_id} ({commit})."),
                 );
-                let _ = journal.set_status(
+                if cancelled_midrun {
+                    let _ = journal.append_event(
+                        &execution_id,
+                        "A cancellation was requested during the run, but activation had already begun; the true outcome is recorded.",
+                    );
+                }
+                if let Err(error) = journal.set_status(
                     &execution_id,
                     crate::contract::OperationStatus::Succeeded,
                     Some(100),
+                ) {
+                    Self::log_terminal_write_failure(&execution_id, &error);
+                }
+            }
+            Err(DeployError::Cancelled) => {
+                let _ = journal.append_event(
+                    &execution_id,
+                    "Deployment cancelled at a safe boundary before activation; nothing was published.",
                 );
             }
-            Err(message) => {
-                let _ =
-                    journal.append_event(&execution_id, &format!("Deployment failed: {message}"));
-                let _ = journal.set_status(
+            Err(error) => {
+                let _ = journal.append_event(&execution_id, &format!("Deployment failed: {error}"));
+                if let Err(write_error) = journal.set_status(
                     &execution_id,
                     crate::contract::OperationStatus::Failed,
                     Some(100),
-                );
+                ) {
+                    Self::log_terminal_write_failure(&execution_id, &write_error);
+                }
             }
         }
+    }
+
+    fn log_terminal_write_failure(execution_id: &Uuid, error: &crate::journal::JournalError) {
+        crate::logging::log(
+            crate::logging::Level::Error,
+            "deploy",
+            "worker.terminal_write_failed",
+            &format!("execution {execution_id}: {error}"),
+            Some("journal"),
+            None,
+        );
     }
 
     fn execute(
@@ -635,12 +751,14 @@ impl DeployRuntime {
         application_id: &Uuid,
         git_ref: crate::git::GitRef,
         run_migrations: bool,
-    ) -> Result<(Uuid, String), String> {
+        execution_id: Uuid,
+    ) -> Result<(Uuid, String), DeployError> {
         let source = journal
             .application_source(application_id)
-            .map_err(|error| error.to_string())?
-            .ok_or_else(|| "no source registered for this application".to_string())?;
-        let root = ManagedRoot::open(&self.apps_root).map_err(|error| error.to_string())?;
+            .map_err(|error| DeployError::Io(error.to_string()))?
+            .ok_or(DeployError::MissingLayout)?;
+        let root = ManagedRoot::open(&self.apps_root)
+            .map_err(|error| DeployError::Io(error.to_string()))?;
         let deployer = Deployer {
             journal,
             accounts: &self.accounts,
@@ -665,14 +783,20 @@ impl DeployRuntime {
             run_migrations,
             build: true,
             env: BTreeMap::new(),
+            execution_id: Some(execution_id),
         };
-        let outcome = deployer.deploy(&input).map_err(|error| error.to_string())?;
+        let outcome = deployer.deploy(&input)?;
         Ok((outcome.release_id, outcome.commit))
     }
 }
 
-/// Set or replace `KEY=value` in a dotenv-style text buffer.
+/// Set or replace `KEY=value` in a dotenv-style text buffer. Values
+/// containing newlines are dropped so a supplied environment can never inject
+/// additional dotenv keys.
 fn upsert_env(text: &str, key: &str, value: &str) -> String {
+    if key.contains(['\n', '\r']) || value.contains(['\n', '\r']) {
+        return text.to_string();
+    }
     let prefix = format!("{key}=");
     let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
     let mut replaced = false;

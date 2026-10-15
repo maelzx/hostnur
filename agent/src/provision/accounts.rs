@@ -86,32 +86,67 @@ impl Accounts for SystemAccounts {
         })
     }
 
+    /// Idempotent against partial failures: a group that already exists (or a
+    /// user created after a lost race) is adopted after read-back verification,
+    /// so a retried provision never wedges on `groupadd` exit 9/10.
     fn create(&self, name: &str) -> Result<AccountIds, ProvisionError> {
         if !policy::is_valid_account_name(name) {
             return Err(ProvisionError::InvalidIdentifier);
         }
 
-        self.run_tool(&self.groupadd, &["--system".to_string(), name.to_string()])?;
-        self.run_tool(
-            &self.useradd,
-            &[
-                "--system".to_string(),
-                "--no-create-home".to_string(),
-                "--shell".to_string(),
-                self.shell.clone(),
-                "--gid".to_string(),
-                name.to_string(),
-                name.to_string(),
-            ],
-        )?;
+        let group = nix::unistd::Group::from_name(name).map_err(|error| {
+            ProvisionError::AccountToolFailed {
+                tool: "getgrnam".to_string(),
+                detail: error.to_string(),
+            }
+        })?;
+        if group.is_none() {
+            self.run_tool(&self.groupadd, &["--system".to_string(), name.to_string()])?;
+        }
 
-        self.lookup(name)
+        if self.lookup(name).is_none() {
+            self.run_tool(
+                &self.useradd,
+                &[
+                    "--system".to_string(),
+                    "--no-create-home".to_string(),
+                    "--shell".to_string(),
+                    self.shell.clone(),
+                    "--gid".to_string(),
+                    name.to_string(),
+                    name.to_string(),
+                ],
+            )?;
+        }
+
+        // The result is verified from NSS, not trusted from tool output: the
+        // primary group must be the derived one and the shell must be no-login.
+        let user = nix::unistd::User::from_name(name)
+            .ok()
+            .flatten()
             .ok_or_else(|| ProvisionError::AccountMissing {
                 name: name.to_string(),
-            })
+            })?;
+        let group = nix::unistd::Group::from_name(name).ok().flatten();
+        let group_matches = group
+            .as_ref()
+            .is_some_and(|group| group.gid == user.gid && group.name == *name);
+        let shell_matches = user.shell == std::path::Path::new(&self.shell);
+        if !group_matches || !shell_matches {
+            return Err(ProvisionError::IdentityDrift {
+                name: name.to_string(),
+            });
+        }
+        Ok(AccountIds {
+            uid: user.uid.as_raw(),
+            gid: user.gid.as_raw(),
+        })
     }
 
     fn delete(&self, name: &str) -> Result<(), ProvisionError> {
+        if !policy::is_valid_account_name(name) {
+            return Err(ProvisionError::InvalidIdentifier);
+        }
         // Best-effort removal of a partially created identity.
         let _ = self.run_tool(&self.userdel, &[name.to_string()]);
         let _ = self.run_tool(&self.groupdel, &[name.to_string()]);

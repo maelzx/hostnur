@@ -1,14 +1,14 @@
 //! Hostnur agent core library.
 //!
-//! The foundation scaffold for the privileged Hostnur agent. This crate is
-//! intentionally independent of the Laravel panel: it builds, tests and runs
-//! without PHP, Node or any host mutation. Phase 10 provides a thin, testable
-//! process foundation (configuration, diagnostics, lifecycle and logging);
-//! transport and privileged operation handlers arrive in phase 11 and later.
+//! The privileged Hostnur agent, intentionally independent of the Laravel
+//! panel: it builds, tests and runs without PHP or Node. It serves a
+//! peer-checked, length-prefixed JSON protocol on a local Unix socket and
+//! executes cataloged operations (snapshot, deployment, providers, TLS,
+//! databases) through the durable journal's accept→execute→receipt pipeline.
 //!
-//! Nothing here binds a socket, provisions users, writes server configuration or
-//! starts hosted applications. The default `run` path is an idle, non-root
-//! process that waits for a shutdown signal.
+//! Callers are only ever the panel process whose uid is on the configured
+//! allowlist; identities, paths and unit names are derived from canonical
+//! UUIDs, and every external tool runs through the bounded process primitive.
 
 pub mod cli;
 pub mod clock;

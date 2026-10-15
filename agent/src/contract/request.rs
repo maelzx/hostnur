@@ -202,10 +202,8 @@ fn assert_parameter_type(
         }),
         "string_array" => {
             let max_items = rule.max_items.unwrap_or(100);
-            match value.as_object() {
-                Some(map) => {
-                    map.len() <= max_items && map.values().all(serde_json::Value::is_string)
-                }
+            match value.as_array() {
+                Some(items) => items.len() <= max_items && items.iter().all(Value::is_string),
                 None => false,
             }
         }

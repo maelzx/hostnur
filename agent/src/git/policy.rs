@@ -172,6 +172,23 @@ fn is_host_allowed(host: &str, policy: &NetworkPolicy) -> bool {
     if let Ok(ip) = IpAddr::from_str(candidate) {
         return is_ip_allowed(ip, policy.allow_private_networks);
     }
+    // A non-canonical string built only from the IPv4 numeric alphabet
+    // (decimal, octal, hex, abbreviated forms like `127.1`, `0177.0.0.1`,
+    // `0x7f000001`, `2130706433`) is not a real DNS name but is nonetheless
+    // resolved to an address by `getaddrinfo`/`inet_aton`. Such forms always
+    // begin with a digit; refuse them rather than let a legacy numeric host
+    // reach a loopback/metadata destination.
+    let starts_with_digit = candidate.chars().next().is_some_and(|c| c.is_ascii_digit());
+    if starts_with_digit
+        && candidate
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() || c == '.' || c == 'x' || c == 'X')
+    {
+        return false;
+    }
+    // A genuine DNS hostname. Destination cannot be resolved at policy time
+    // (no resolver here); the allowlist or a network egress policy must bound
+    // a hostile DNS record pointing at an internal address.
     true
 }
 
@@ -181,6 +198,10 @@ fn is_ip_allowed(ip: IpAddr, allow_private: bool) -> bool {
             let octets = v4.octets();
             // Loopback, link-local, unspecified, broadcast, metadata.
             if v4.is_loopback() || v4.is_link_local() || v4.is_unspecified() || v4.is_broadcast() {
+                return false;
+            }
+            // 0.0.0.0/8 is "this host" on Linux; never a legitimate destination.
+            if octets[0] == 0 {
                 return false;
             }
             // 169.254.169.254 is covered by link-local; 100.100.100.200 (aliyun).
@@ -194,7 +215,17 @@ fn is_ip_allowed(ip: IpAddr, allow_private: bool) -> bool {
             if v6.is_loopback() || v6.is_unspecified() {
                 return false;
             }
+            // IPv4-mapped (::ffff:a.b.c.d) and IPv4-compatible destinations are
+            // re-checked under the IPv4 rules so a mapped loopback/metadata
+            // address cannot bypass the v4 guard above.
+            if let Some(mapped) = v6.to_ipv4() {
+                return is_ip_allowed(IpAddr::V4(mapped), allow_private);
+            }
             let segments = v6.segments();
+            // AWS IPv6 IMDS (fd00:ec2::/64) is refused even with private nets on.
+            if segments[0] == 0xfd00 && segments[1] == 0xec2 {
+                return false;
+            }
             // Unique-local fc00::/7 and link-local fe80::/10.
             let is_unique_local = (segments[0] & 0xfe00) == 0xfc00;
             let is_link_local = (segments[0] & 0xffc0) == 0xfe80;
@@ -305,6 +336,26 @@ mod tests {
             "https://[::1]/a/b.git",
             "https://10.0.0.5/a/b.git",
             "https://192.168.1.10/a/b.git",
+        ] {
+            let error = validate_repository_url(url, &policy).unwrap_err();
+            assert!(
+                matches!(error, GitPolicyError::ForbiddenHost(_)),
+                "{url} -> {error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn refuses_legacy_numeric_and_mapped_forms() {
+        let policy = NetworkPolicy::default();
+        for url in [
+            "https://2130706433/a/b.git",         // decimal loopback
+            "https://0x7f000001/a/b.git",         // hex loopback
+            "https://0177.0.0.1/a/b.git",         // octal loopback
+            "https://127.1/a/b.git",              // abbreviated loopback
+            "https://0251.0376.0251.0376/x",      // octal metadata
+            "https://[::ffff:127.0.0.1]/a/b.git", // mapped loopback
+            "https://[::ffff:169.254.169.254]/x", // mapped metadata
         ] {
             let error = validate_repository_url(url, &policy).unwrap_err();
             assert!(

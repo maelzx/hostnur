@@ -203,8 +203,12 @@ fn service_control_rejects_unmanaged_service() {
         kind: "service".to_string(),
         id: "ssh".to_string(),
     });
-    let body = handler.handle(&req).unwrap();
-    assert_eq!(body["error"]["code"], "permission_denied");
+    let receipt = handler.handle(&req).unwrap();
+    assert_eq!(receipt["status"], "accepted");
+    let execution_id = receipt["execution_id"].as_str().unwrap();
+    let body = handler.handle(&inspect_request(execution_id)).unwrap();
+    assert_eq!(body["status"], "failed");
+    assert_eq!(body["result"]["error"]["code"], "permission_denied");
 }
 
 #[test]
@@ -266,8 +270,12 @@ fn schedule_apply_requires_registration() {
         kind: "schedule".to_string(),
         id: "33333333-3333-4333-8333-333333333333".to_string(),
     });
-    let body = handler.handle(&req).unwrap();
-    assert_eq!(body["error"]["code"], "resource_not_found");
+    let receipt = handler.handle(&req).unwrap();
+    assert_eq!(receipt["status"], "accepted");
+    let execution_id = receipt["execution_id"].as_str().unwrap();
+    let body = handler.handle(&inspect_request(execution_id)).unwrap();
+    assert_eq!(body["status"], "failed");
+    assert_eq!(body["result"]["error"]["code"], "resource_not_found");
 }
 
 #[test]
@@ -276,8 +284,12 @@ fn package_install_rejects_unapproved() {
     let handler = AgentHandler::new(&journal);
     let mut p = Map::new();
     p.insert("package".into(), json!("cowsay"));
-    let body = handler.handle(&request("package.install", p)).unwrap();
-    assert_eq!(body["error"]["code"], "invalid_parameters");
+    let receipt = handler.handle(&request("package.install", p)).unwrap();
+    assert_eq!(receipt["status"], "accepted");
+    let execution_id = receipt["execution_id"].as_str().unwrap();
+    let body = handler.handle(&inspect_request(execution_id)).unwrap();
+    assert_eq!(body["status"], "failed");
+    assert_eq!(body["result"]["error"]["code"], "invalid_parameters");
 }
 
 #[test]
@@ -322,13 +334,16 @@ fn provision_and_remove_require_registration() {
 
     let mut provision = Map::new();
     provision.insert("request".into(), json!(database));
-    assert_eq!(
-        handler
-            .handle(&request("database.provision", provision))
-            .unwrap()["error"]["code"],
-        "resource_not_found"
-    );
+    let receipt = handler
+        .handle(&request("database.provision", provision))
+        .unwrap();
+    assert_eq!(receipt["status"], "accepted");
+    let execution_id = receipt["execution_id"].as_str().unwrap();
+    let body = handler.handle(&inspect_request(execution_id)).unwrap();
+    assert_eq!(body["status"], "failed");
+    assert_eq!(body["result"]["error"]["code"], "resource_not_found");
 
+    // Removal is immediate (not task-wrapped).
     let mut remove = Map::new();
     remove.insert("database".into(), json!(database));
     assert_eq!(

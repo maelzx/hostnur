@@ -3,7 +3,7 @@
 //! `run` binds the local socket, installs SIGTERM/SIGINT handlers and serves
 //! bounded connections until shutdown. The wait loop is factored out so
 //! lifecycle behaviour can be tested without launching a daemon or sending real
-//! signals. No privileged operation handlers are enabled in this build.
+//! signals.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -63,9 +63,8 @@ pub fn wait_for_shutdown(shutdown: &AtomicBool, max: Option<Duration>) -> bool {
 /// Run the agent process until a shutdown signal is received.
 ///
 /// Binds the local socket (refusing symlink substitution, restrictive mode),
-/// then serves peer-checked, framed, bounded connections. Operation handlers are
-/// still placeholders, so a valid request is accepted and closed without a
-/// mutation.
+/// then serves peer-checked, framed, bounded connections through the journal
+/// handler.
 pub fn run(config: &AgentConfig) -> Result<(), AgentError> {
     logging::init(config.log_level);
     logging::log(
@@ -99,7 +98,7 @@ pub fn run(config: &AgentConfig) -> Result<(), AgentError> {
         Level::Info,
         "startup",
         "agent.ready",
-        "agent listening; read-only operations only in this build",
+        "agent listening for panel operations",
         None,
         None,
     );

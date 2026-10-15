@@ -198,9 +198,27 @@ fn run_checked(program: &Path, args: &[&str], deadline: Duration) -> Result<(), 
 }
 
 fn write_atomic(path: &Path, content: &str) -> Result<(), FpmError> {
-    let temp = path.with_extension("conf.tmp");
-    std::fs::write(&temp, content).map_err(io)?;
-    std::fs::rename(&temp, path).map_err(io)?;
+    // Unique per-writer temp name (see the nginx manager for the rationale).
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| FpmError::InvalidPool("pool path is not representable".to_string()))?;
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or(0);
+    let temp = path.parent().unwrap_or(Path::new(".")).join(format!(
+        ".{file_name}.{}.{}.tmp",
+        std::process::id(),
+        nonce
+    ));
+    if let Err(error) = std::fs::write(&temp, content) {
+        return Err(io(error));
+    }
+    if let Err(error) = std::fs::rename(&temp, path) {
+        let _ = std::fs::remove_file(&temp);
+        return Err(io(error));
+    }
     Ok(())
 }
 

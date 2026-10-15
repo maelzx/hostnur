@@ -5,10 +5,10 @@
 //! parsed, and a handler is only reached once the request has parsed. A failure
 //! at any earlier stage must not reach dispatch.
 
-use std::io::Write;
+use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::contract::{
     Catalog, ContractError, MAX_MESSAGE_BYTES, OperationRequest, encode_frame, parse_request,
@@ -66,6 +66,40 @@ pub enum ConnectionOutcome {
     Io(String),
 }
 
+/// Wall-clock bound for reading one complete request frame. The socket read
+/// timeout applies per syscall, so a peer dripping one byte at a time could
+/// otherwise hold the single-threaded serve loop open for the full declared
+/// body size times the per-read timeout.
+const FRAME_READ_DEADLINE: Duration = Duration::from_secs(30);
+
+/// Reader that hands out per-syscall timeouts but enforces one overall
+/// deadline for the whole frame.
+struct DeadlineReader<'a> {
+    stream: &'a UnixStream,
+    deadline: Instant,
+}
+
+impl Read for DeadlineReader<'_> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        loop {
+            match self.stream.read(buffer) {
+                Err(err)
+                    if matches!(
+                        err.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                    ) =>
+                {
+                    if Instant::now() >= self.deadline {
+                        return Err(err);
+                    }
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                result => return result,
+            }
+        }
+    }
+}
+
 /// Handle a single accepted connection to completion.
 pub fn handle_connection(stream: &UnixStream, context: &ServerContext<'_>) -> ConnectionOutcome {
     let peer = match peer_credentials(stream) {
@@ -77,10 +111,19 @@ pub fn handle_connection(stream: &UnixStream, context: &ServerContext<'_>) -> Co
         return ConnectionOutcome::UnauthorizedPeer { uid: peer.uid };
     }
 
-    let _ = stream.set_read_timeout(Some(context.read_timeout));
-    let _ = stream.set_write_timeout(Some(context.read_timeout));
+    // Without a socket timeout a stalled peer would block the single-threaded
+    // loop indefinitely, so failure to install one closes the connection.
+    if let Err(err) = stream.set_read_timeout(Some(context.read_timeout)) {
+        return ConnectionOutcome::Io(format!("setting read timeout failed: {err}"));
+    }
+    if let Err(err) = stream.set_write_timeout(Some(context.read_timeout)) {
+        return ConnectionOutcome::Io(format!("setting write timeout failed: {err}"));
+    }
 
-    let mut reader = stream;
+    let mut reader = DeadlineReader {
+        stream,
+        deadline: Instant::now() + FRAME_READ_DEADLINE,
+    };
     let bytes = match read_frame(&mut reader, context.max_message_bytes) {
         Ok(bytes) => bytes,
         Err(FrameError::ConnectionClosed) => return ConnectionOutcome::Closed,

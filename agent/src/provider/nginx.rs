@@ -315,9 +315,29 @@ impl NginxManager {
 }
 
 fn write_atomic(path: &Path, content: &str) -> Result<(), NginxError> {
-    let temp = path.with_extension("conf.tmp");
-    std::fs::write(&temp, content).map_err(io)?;
-    std::fs::rename(&temp, path).map_err(io)?;
+    // Unique per-writer temp name: a config apply on the transport thread and a
+    // deploy worker may write the same site concurrently; a shared temp path
+    // would let one rename the other's contents into place.
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| NginxError::InvalidSite("site path is not representable".to_string()))?;
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or(0);
+    let temp = path.parent().unwrap_or(Path::new(".")).join(format!(
+        ".{file_name}.{}.{}.tmp",
+        std::process::id(),
+        nonce
+    ));
+    if let Err(error) = std::fs::write(&temp, content) {
+        return Err(io(error));
+    }
+    if let Err(error) = std::fs::rename(&temp, path) {
+        let _ = std::fs::remove_file(&temp);
+        return Err(io(error));
+    }
     Ok(())
 }
 

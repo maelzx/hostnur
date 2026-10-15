@@ -79,7 +79,15 @@ impl CertificateManager {
                 "subjectAltName",
             ])
             .unwrap_or_default();
-        if !san.contains(host) && !subject.contains(host) {
+        // Match by name, not substring: `evil-app.example.com` must not cover
+        // `app.example.com`, and `*.example.com` must cover `app.example.com`.
+        let names = dns_names(&san);
+        let covered = if names.is_empty() {
+            subject_common_name(&subject).is_some_and(|cn| cn.eq_ignore_ascii_case(host.trim()))
+        } else {
+            names.iter().any(|name| matches_name(name, host))
+        };
+        if !covered {
             return Err(TlsError::Certificate(format!(
                 "certificate does not cover `{host}`"
             )));
@@ -187,6 +195,55 @@ fn path(value: &Path) -> String {
     value.display().to_string()
 }
 
+/// Extract the `DNS:` entries from an openssl `subjectAltName` dump.
+fn dns_names(extension: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut rest = extension;
+    while let Some(position) = rest.find("DNS:") {
+        let after = &rest[position + "DNS:".len()..];
+        let name: String = after
+            .chars()
+            .take_while(|c| !c.is_whitespace() && *c != ',')
+            .collect();
+        let consumed = name.len();
+        if consumed == 0 {
+            rest = after;
+            continue;
+        }
+        names.push(name);
+        rest = &after[consumed..];
+    }
+    names
+}
+
+/// Whether a certificate name (exact or `*.` wildcard) covers `host`.
+/// A wildcard covers exactly one extra leftmost label.
+fn matches_name(name: &str, host: &str) -> bool {
+    let name = name.trim().to_ascii_lowercase();
+    let host = host.trim().to_ascii_lowercase();
+    if let Some(suffix) = name.strip_prefix("*.") {
+        return match host.strip_suffix(&format!(".{suffix}")) {
+            Some(prefix) => !prefix.is_empty() && !prefix.contains('.') && !prefix.contains('*'),
+            None => false,
+        };
+    }
+    name == host
+}
+
+/// The CN from an openssl `-subject` line (`CN = x` or legacy `/CN=x`).
+fn subject_common_name(subject: &str) -> Option<&str> {
+    let position = subject.find("CN")?;
+    let tail = subject[position + 2..].trim_start();
+    let tail = tail.strip_prefix('=')?;
+    let value = tail
+        .split(['\r', '\n', ','])
+        .next()?
+        .split('/')
+        .next()?
+        .trim();
+    (!value.is_empty()).then_some(value)
+}
+
 fn set_mode(path: &Path, mode: u32) -> Result<(), TlsError> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).map_err(io)
@@ -210,6 +267,37 @@ mod tests {
         assert_eq!(
             paths.key,
             PathBuf::from("/etc/letsencrypt/live/app.example.com/privkey.pem")
+        );
+    }
+
+    #[test]
+    fn san_names_are_matched_exactly_not_as_substrings() {
+        let san =
+            "X509v3 Subject Alternative Name: \n    DNS:evil-app.example.com, DNS:app.example.net";
+        let names = dns_names(san);
+        assert_eq!(names, vec!["evil-app.example.com", "app.example.net"]);
+        assert!(!matches_name(&names[0], "app.example.com"));
+        assert!(matches_name(&names[0], "evil-app.example.com"));
+    }
+
+    #[test]
+    fn wildcards_cover_one_leftmost_label() {
+        assert!(matches_name("*.example.com", "app.example.com"));
+        assert!(matches_name("*.example.com", "APP.Example.COM"));
+        assert!(!matches_name("*.example.com", "example.com"));
+        assert!(!matches_name("*.example.com", "a.b.example.com"));
+        assert!(!matches_name("*", "anything"));
+    }
+
+    #[test]
+    fn subject_common_name_parsing() {
+        assert_eq!(
+            subject_common_name("subject=CN = app.example.com"),
+            Some("app.example.com")
+        );
+        assert_eq!(
+            subject_common_name("subject= /CN=app.example.com/OU=x"),
+            Some("app.example.com")
         );
     }
 }

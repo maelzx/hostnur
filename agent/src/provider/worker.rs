@@ -97,6 +97,11 @@ pub fn render_worker(unit: &WorkerUnit) -> Result<String, WorkerError> {
             .iter()
             .map(|path| path.display().to_string())
             .collect();
+        if !paths.iter().all(|path| is_safe_path_token(path)) {
+            return Err(WorkerError::InvalidUnit(
+                "read-write path contains unsafe characters".to_string(),
+            ));
+        }
         text.push_str(&format!("ReadWritePaths={}\n", paths.join(" ")));
     }
     text.push_str("\n[Install]\nWantedBy=multi-user.target\n");
@@ -174,14 +179,17 @@ fn validate_common(
             "user/group must be managed accounts".to_string(),
         ));
     }
-    if !working_dir.is_absolute() || working_dir == Path::new("/") {
+    if !working_dir.is_absolute()
+        || working_dir == Path::new("/")
+        || !working_dir.to_str().is_some_and(is_safe_path_token)
+    {
         return Err(WorkerError::InvalidUnit(
-            "working directory must be absolute".to_string(),
+            "working directory must be absolute and free of unsafe characters".to_string(),
         ));
     }
-    if !program.is_absolute() {
+    if !program.is_absolute() || !is_safe_program_path(program) {
         return Err(WorkerError::InvalidUnit(
-            "program must be absolute".to_string(),
+            "program must be an absolute path free of unsafe characters".to_string(),
         ));
     }
     Ok(())
@@ -195,16 +203,42 @@ fn is_safe_name(name: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
 }
 
+/// Strict allowlist for program/working-dir strings interpolated into unit
+/// files: absolute, printable ASCII, no whitespace, no `%` (systemd
+/// specifier), no quotes/backslashes and no control characters, so a value
+/// can never open a new directive line or alter tokenization.
+pub fn is_safe_path_token(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 255
+        && value.starts_with('/')
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "/-_.:@+".contains(c))
+}
+
+/// Validate a program path before it is used as a unit `ExecStart` token.
+pub fn is_safe_program_path(path: &Path) -> bool {
+    path.to_str().is_some_and(is_safe_path_token)
+}
+
 /// Build a systemd `ExecStart` value; args are quoted, never shell-expanded.
+/// Program and args escape `%` as `%%` so systemd specifier expansion cannot
+/// reinterpret operator-supplied text.
 fn exec_line(program: &Path, args: &[String]) -> Result<String, WorkerError> {
-    let mut parts = vec![program.display().to_string()];
+    if !is_safe_program_path(program) {
+        return Err(WorkerError::InvalidUnit(
+            "program path contains unsafe characters".to_string(),
+        ));
+    }
+    let mut parts = vec![program.display().to_string().replace('%', "%%")];
     for arg in args {
-        if arg.contains('\n') || arg.contains('\r') || arg.contains('\0') {
+        if arg.contains(['\n', '\r', '\0']) {
             return Err(WorkerError::InvalidUnit(
                 "argument contains a control character".to_string(),
             ));
         }
-        parts.push(systemd_quote(arg));
+        let escaped = arg.replace('%', "%%");
+        parts.push(systemd_quote(&escaped));
     }
     Ok(parts.join(" "))
 }
@@ -251,12 +285,12 @@ impl WorkerManager {
         Ok(self.unit_dir.join(format!("hostnur-{name}{suffix}")))
     }
 
-    /// Write, verify, enable and start a worker unit.
+    /// Write, verify, enable and start a worker unit. A verify failure
+    /// restores the previous unit file so a broken unit never lingers.
     pub fn apply_worker(&self, unit: &WorkerUnit) -> Result<String, WorkerError> {
         let content = render_worker(unit)?;
         let path = self.unit_path(&unit.name, ".service")?;
-        std::fs::write(&path, content).map_err(io)?;
-        self.verify(&path)?;
+        self.write_verified(&path, &content)?;
         self.systemctl(&["daemon-reload"])?;
         let unit_name = format!("hostnur-{}.service", unit.name);
         self.systemctl(&["enable", "--now", &unit_name])?;
@@ -269,13 +303,27 @@ impl WorkerManager {
         let timer = render_schedule_timer(unit)?;
         let service_path = self.unit_path(&unit.name, ".service")?;
         let timer_path = self.unit_path(&unit.name, ".timer")?;
-        std::fs::write(&service_path, service).map_err(io)?;
-        std::fs::write(&timer_path, timer).map_err(io)?;
-        self.verify(&service_path)?;
-        self.verify(&timer_path)?;
+        let service_previous = std::fs::read(&service_path).ok();
+        self.write_verified(&service_path, &service)?;
+        if let Err(error) = self.write_verified(&timer_path, &timer) {
+            restore_unit(&service_path, service_previous.as_deref());
+            return Err(error);
+        }
         self.systemctl(&["daemon-reload"])?;
         self.systemctl(&["enable", "--now", &format!("hostnur-{}.timer", unit.name)])?;
         Ok(format!("hostnur-{}.timer", unit.name))
+    }
+
+    /// Write a unit file, verify it, and restore the previous content (or
+    /// remove the file) when verification fails.
+    fn write_verified(&self, path: &Path, content: &str) -> Result<(), WorkerError> {
+        let previous = std::fs::read(path).ok();
+        std::fs::write(path, content).map_err(io)?;
+        if let Err(error) = self.verify(path) {
+            restore_unit(path, previous.as_deref());
+            return Err(error);
+        }
+        Ok(())
     }
 
     /// Stop and remove a managed unit (service and/or timer).
@@ -323,6 +371,19 @@ impl WorkerManager {
 
 fn io(error: std::io::Error) -> WorkerError {
     WorkerError::Io(error.to_string())
+}
+
+/// Put a unit file back to its previous content, or remove it when there was
+/// no previous file.
+fn restore_unit(path: &Path, previous: Option<&[u8]>) {
+    match previous {
+        Some(contents) => {
+            let _ = std::fs::write(path, contents);
+        }
+        None => {
+            let _ = std::fs::remove_file(path);
+        }
+    }
 }
 
 #[cfg(test)]

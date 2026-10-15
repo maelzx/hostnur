@@ -87,19 +87,27 @@ impl RuntimePolicy {
     }
 }
 
-/// Validate a domain name for a managed server block.
+/// Validate a domain name for a managed server block. The exact value passed
+/// in is what later gets interpolated, so leading/trailing whitespace is
+/// rejected rather than silently trimmed, and the first/last characters must
+/// be alphanumeric — which also blocks option-like tokens (`-agree-tos`) from
+/// reaching certbot and wildcard names the panel itself refuses.
 pub fn validate_hostname(host: &str) -> Result<(), RuntimeError> {
-    let host = host.trim();
     if host.is_empty() || host.len() > 253 || host.contains(char::is_whitespace) {
         return Err(RuntimeError::InvalidHostname(host.to_string()));
     }
     if host
         .chars()
-        .any(|c| !(c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '*'))
+        .any(|c| !(c.is_ascii_alphanumeric() || c == '.' || c == '-'))
     {
         return Err(RuntimeError::InvalidHostname(host.to_string()));
     }
-    if host.starts_with('.') || host.ends_with('.') || host.contains("..") {
+    if !host.starts_with(|c: char| c.is_ascii_alphanumeric())
+        || !host.ends_with(|c: char| c.is_ascii_alphanumeric())
+    {
+        return Err(RuntimeError::InvalidHostname(host.to_string()));
+    }
+    if host.contains("..") || host.contains(".-") || host.contains("-.") {
         return Err(RuntimeError::InvalidHostname(host.to_string()));
     }
     Ok(())
@@ -134,7 +142,19 @@ mod tests {
     #[test]
     fn hostnames_are_restricted() {
         assert!(validate_hostname("app.example.com").is_ok());
-        for bad in ["", "a b", "app..com", ".app", "app.", "app;rm", "app/../x"] {
+        for bad in [
+            "",
+            "a b",
+            "app..com",
+            ".app",
+            "app.",
+            "app;rm",
+            "app/../x",
+            "-agree-tos",
+            " app.example.com ",
+            "*.example.com",
+            "app-.example.com",
+        ] {
             assert!(validate_hostname(bad).is_err(), "{bad:?} should be invalid");
         }
     }

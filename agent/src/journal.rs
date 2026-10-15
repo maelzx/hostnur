@@ -280,6 +280,11 @@ impl Journal {
     }
 
     fn init(connection: Connection) -> Result<Journal, JournalError> {
+        // Deploy workers open a second connection to the same file; wait for
+        // the write lock instead of failing immediately with SQLITE_BUSY.
+        connection
+            .busy_timeout(std::time::Duration::from_millis(5_000))
+            .map_err(|err| JournalError::Open(err.to_string()))?;
         let _ = connection.pragma_update(None, "journal_mode", "WAL");
         connection
             .pragma_update(None, "foreign_keys", "ON")
@@ -410,41 +415,59 @@ impl Journal {
     }
 
     /// Append an event, returning it with its assigned sequence.
+    ///
+    /// The sequence read and the two writes are one immediate transaction:
+    /// a second connection (deploy worker) can then never interleave and
+    /// collide on the `(execution_id, sequence)` primary key.
     pub fn append_event(
         &self,
         execution_id: &Uuid,
         message: &str,
     ) -> Result<SnapshotEvent, JournalError> {
-        let next: i64 = self
-            .connection
-            .query_row(
-                "SELECT COALESCE(MAX(sequence), 0) + 1 FROM execution_events WHERE execution_id = ?1",
-                params![execution_id.as_str()],
-                |row| row.get(0),
-            )
-            .map_err(|err| JournalError::Query(err.to_string()))?;
-
         let at = clock::now_rfc3339();
         self.connection
-            .execute(
-                "INSERT INTO execution_events (execution_id, sequence, at, message)
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![execution_id.as_str(), next, at, message],
-            )
+            .execute("BEGIN IMMEDIATE", [])
             .map_err(|err| JournalError::Query(err.to_string()))?;
-
-        self.connection
-            .execute(
-                "UPDATE executions SET updated_at = ?2 WHERE execution_id = ?1",
-                params![execution_id.as_str(), at],
-            )
-            .map_err(|err| JournalError::Query(err.to_string()))?;
-
-        Ok(SnapshotEvent {
-            sequence: next,
-            at,
-            message: message.to_string(),
-        })
+        let result = (|| -> Result<i64, JournalError> {
+            let next: i64 = self
+                .connection
+                .query_row(
+                    "SELECT COALESCE(MAX(sequence), 0) + 1 FROM execution_events WHERE execution_id = ?1",
+                    params![execution_id.as_str()],
+                    |row| row.get(0),
+                )
+                .map_err(|err| JournalError::Query(err.to_string()))?;
+            self.connection
+                .execute(
+                    "INSERT INTO execution_events (execution_id, sequence, at, message)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![execution_id.as_str(), next, at, message],
+                )
+                .map_err(|err| JournalError::Query(err.to_string()))?;
+            self.connection
+                .execute(
+                    "UPDATE executions SET updated_at = ?2 WHERE execution_id = ?1",
+                    params![execution_id.as_str(), at],
+                )
+                .map_err(|err| JournalError::Query(err.to_string()))?;
+            Ok(next)
+        })();
+        match result {
+            Ok(next) => {
+                self.connection
+                    .execute("COMMIT", [])
+                    .map_err(|err| JournalError::Query(err.to_string()))?;
+                Ok(SnapshotEvent {
+                    sequence: next,
+                    at,
+                    message: message.to_string(),
+                })
+            }
+            Err(error) => {
+                let _ = self.connection.execute("ROLLBACK", []);
+                Err(error)
+            }
+        }
     }
 
     /// Events with a sequence greater than `cursor` (bounded by `limit`).
@@ -477,6 +500,23 @@ impl Journal {
             events.push(row.map_err(|err| JournalError::Query(err.to_string()))?);
         }
         Ok(events)
+    }
+
+    /// Current status of an execution, without loading events.
+    pub fn execution_status(
+        &self,
+        execution_id: &Uuid,
+    ) -> Result<Option<OperationStatus>, JournalError> {
+        self.connection
+            .query_row(
+                "SELECT status FROM executions WHERE execution_id = ?1",
+                params![execution_id.as_str()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|err| JournalError::Query(err.to_string()))?
+            .map(|status| parse_status(&status))
+            .transpose()
     }
 
     /// Update the status (and optional progress) of an execution.

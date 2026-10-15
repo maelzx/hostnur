@@ -173,6 +173,7 @@ fn deploy_activate_health_redeploy_and_rollback() {
         run_migrations: false,
         build: true,
         env: BTreeMap::new(),
+        execution_id: None,
     };
 
     // Deploy v1.

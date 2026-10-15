@@ -143,6 +143,11 @@ impl PackagePolicy {
         if !outcome.succeeded() {
             return Err(PackageError::ToolFailed("dpkg-query failed".to_string()));
         }
+        if outcome.stdout_truncated {
+            return Err(PackageError::ToolFailed(
+                "dpkg-query output exceeded the cap".to_string(),
+            ));
+        }
         Ok(String::from_utf8_lossy(&outcome.stdout).trim().to_string())
     }
 }

@@ -6,7 +6,8 @@
 //! token is never formatted, logged or included in error messages.
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
+use std::io::Write;
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use nix::unistd::{Gid, Uid, chown};
@@ -45,32 +46,16 @@ impl CredentialFile {
             .collect::<String>();
         let dir = std::env::temp_dir().join(format!("hostnur-cred-{name}"));
 
-        fs::create_dir(&dir).map_err(io)?;
-        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).map_err(io)?;
-        chown(&dir, Some(Uid::from_raw(uid)), Some(Gid::from_raw(gid))).map_err(nix_io)?;
-
-        let token_path = dir.join("token");
-        fs::write(&token_path, token.as_bytes()).map_err(io)?;
-        fs::set_permissions(&token_path, fs::Permissions::from_mode(0o600)).map_err(io)?;
-        chown(
-            &token_path,
-            Some(Uid::from_raw(uid)),
-            Some(Gid::from_raw(gid)),
-        )
-        .map_err(nix_io)?;
-
-        // The token value is read from the file by the helper; it never appears
-        // in the script text.
-        let askpass = dir.join("askpass.sh");
-        let script = format!(
-            "#!/bin/sh\ncase \"$1\" in\n  *[Uu]sername*) printf '%s\\n' x-access-token ;;\n  *) cat {} ;;\nesac\n",
-            shell_quote(&token_path)
-        );
-        fs::write(&askpass, script).map_err(io)?;
-        fs::set_permissions(&askpass, fs::Permissions::from_mode(0o700)).map_err(io)?;
-        chown(&askpass, Some(Uid::from_raw(uid)), Some(Gid::from_raw(gid))).map_err(nix_io)?;
-
-        Ok(CredentialFile { dir })
+        // The directory is created 0700 (no umask-readable window), and every
+        // failure after this point removes it so a half-written token never
+        // lingers in /tmp outside the Drop guard.
+        fs::DirBuilder::new().mode(0o700).create(&dir).map_err(io)?;
+        let guard = CredentialFile { dir };
+        if let Err(error) = populate(&guard.dir, token, uid, gid) {
+            let _ = fs::remove_dir_all(&guard.dir);
+            return Err(error);
+        }
+        Ok(guard)
     }
 
     /// Path to pass as `GIT_ASKPASS`.
@@ -87,6 +72,43 @@ impl Drop for CredentialFile {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.dir);
     }
+}
+
+/// Write the 0600 token file and the askpass helper with their final modes
+/// and ownership; any error here is cleaned up by the caller.
+fn populate(dir: &Path, token: &str, uid: u32, gid: u32) -> Result<(), CredentialError> {
+    fs::set_permissions(dir, fs::Permissions::from_mode(0o700)).map_err(io)?;
+    chown(dir, Some(Uid::from_raw(uid)), Some(Gid::from_raw(gid))).map_err(nix_io)?;
+
+    // Created with the final 0600 mode so the token is never group/world
+    // readable between creation and the first chown.
+    let token_path = dir.join("token");
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&token_path)
+        .map_err(io)?;
+    file.write_all(token.as_bytes()).map_err(io)?;
+    drop(file);
+    chown(
+        &token_path,
+        Some(Uid::from_raw(uid)),
+        Some(Gid::from_raw(gid)),
+    )
+    .map_err(nix_io)?;
+
+    // The token value is read from the file by the helper; it never appears
+    // in the script text.
+    let askpass = dir.join("askpass.sh");
+    let script = format!(
+        "#!/bin/sh\ncase \"$1\" in\n  *[Uu]sername*) printf '%s\\n' x-access-token ;;\n  *) cat {} ;;\nesac\n",
+        shell_quote(&token_path)
+    );
+    fs::write(&askpass, script).map_err(io)?;
+    fs::set_permissions(&askpass, fs::Permissions::from_mode(0o700)).map_err(io)?;
+    chown(&askpass, Some(Uid::from_raw(uid)), Some(Gid::from_raw(gid))).map_err(nix_io)?;
+    Ok(())
 }
 
 fn io(error: std::io::Error) -> CredentialError {

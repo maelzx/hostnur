@@ -41,6 +41,8 @@ impl HealthClient {
     pub fn probe(&self) -> HealthResult {
         match self.try_probe() {
             Ok((status, body)) => {
+                // 2xx and 3xx are healthy: a Laravel front controller answers
+                // `/` with a redirect (e.g. to /login) while still being up.
                 let mut healthy = (200..400).contains(&status);
                 if let Some(expected) = &self.expect_body_contains
                     && !body.contains(expected)
@@ -62,8 +64,11 @@ impl HealthClient {
     }
 
     fn try_probe(&self) -> Result<(u16, String), String> {
-        let addr = format!("127.0.0.1:{}", self.port);
-        let mut stream = TcpStream::connect(&addr).map_err(|error| error.to_string())?;
+        // Bound the connect itself: a firewall rule that DROPs (rather than
+        // rejects) loopback would otherwise block each attempt for minutes.
+        let addr = std::net::SocketAddr::from(([127, 0, 0, 1], self.port));
+        let mut stream =
+            TcpStream::connect_timeout(&addr, self.timeout).map_err(|error| error.to_string())?;
         stream
             .set_read_timeout(Some(self.timeout))
             .map_err(|error| error.to_string())?;

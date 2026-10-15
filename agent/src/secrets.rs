@@ -5,8 +5,8 @@
 //! in task payloads; the panel receives credential references, not values, and a
 //! real connection check is performed as the application principal instead.
 
-use std::io;
-use std::os::unix::fs::PermissionsExt;
+use std::io::{self, Write};
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 /// Store `value` at `<dir>/<id>` with directory `0700` and file `0600`.
@@ -15,12 +15,25 @@ pub fn write_secret(dir: &Path, id: &str, value: &str) -> io::Result<PathBuf> {
 }
 
 /// Store bounded bytes at `<dir>/<id>` with directory `0700` and file `0600`.
+/// Modes are applied *at creation* so there is no window where the file or
+/// directory exists with umask-default (group/world-readable) permissions.
 pub fn write_bytes(dir: &Path, id: &str, value: &[u8]) -> io::Result<PathBuf> {
-    std::fs::create_dir_all(dir)?;
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)?;
     std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
     let path = dir.join(id);
-    std::fs::write(&path, value)?;
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&path)?;
+    file.write_all(value)?;
+    file.flush()?;
+    // Re-assert on the (rare) path where the file pre-existed with looser modes.
+    file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
     Ok(path)
 }
 
