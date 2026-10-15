@@ -1,51 +1,16 @@
 <main>
-    <header class="mb-6">
+    <header class="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 class="text-2xl font-semibold tracking-tight">Applications</h1>
+        <a
+            href="{{ route('panel.applications.create') }}"
+            class="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-xs transition-colors hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+        >
+            Create new application
+        </a>
     </header>
 
-    <x-ui.panel title="New application" class="mb-6">
-        <form wire:submit="create" class="grid gap-4 sm:grid-cols-2">
-            <div>
-                <label for="name" class="block text-sm font-medium text-slate-700">Display name</label>
-                <input id="name" type="text" wire:model="name" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500">
-                @error('name') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
-            </div>
-            <div>
-                <label for="slug" class="block text-sm font-medium text-slate-700">Slug (immutable)</label>
-                <input id="slug" type="text" wire:model="slug" placeholder="my-app" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500">
-                @error('slug') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
-            </div>
-            <div>
-                <label for="provider" class="block text-sm font-medium text-slate-700">Provider</label>
-                <select id="provider" wire:model="provider" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
-                    @foreach ($providers as $option)
-                        <option value="{{ $option }}">{{ $option }}</option>
-                    @endforeach
-                </select>
-                @error('provider') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
-            </div>
-            <div>
-                <label for="runtime" class="block text-sm font-medium text-slate-700">Runtime</label>
-                <select id="runtime" wire:model="runtime" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
-                    @foreach ($runtimes as $option)
-                        <option value="{{ $option }}">{{ $option }}</option>
-                    @endforeach
-                </select>
-                @error('runtime') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
-            </div>
-            <div>
-                <label for="runtime_version" class="block text-sm font-medium text-slate-700">Runtime version</label>
-                <input id="runtime_version" type="text" wire:model="runtime_version" placeholder="8.3" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                @error('runtime_version') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
-            </div>
-            <div class="flex items-end">
-                <x-ui.button type="submit">Create application</x-ui.button>
-            </div>
-        </form>
-    </x-ui.panel>
-
     @if ($applications->isEmpty())
-        <x-ui.empty-state title="No applications yet">Create your first application above.</x-ui.empty-state>
+        <x-ui.empty-state title="No applications yet">Create your first application to get started.</x-ui.empty-state>
     @else
         <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
             <div class="overflow-x-auto">

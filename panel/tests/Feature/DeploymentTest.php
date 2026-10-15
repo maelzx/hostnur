@@ -279,7 +279,7 @@ class DeploymentTest extends TestCase
             ->withSession(array_merge($this->mfaProof($admin), $this->recentAuth($admin)))
             ->get(route('panel.applications.operations', ['application' => $application->getKey()]))
             ->assertOk()
-            ->assertSee('Code rollback is not database rollback')
+            ->assertSee('Does not revert the database or uploads.')
             ->assertSee('Run database migrations')
             ->assertSee('Workers / scheduler');
     }

@@ -23,7 +23,7 @@ class AuthenticationTest extends TestCase
     {
         $this->get('/login')
             ->assertOk()
-            ->assertSee('Administrator sign in')
+            ->assertSee('Sign in')
             ->assertSee('name="email"', false)
             ->assertSee('name="password"', false);
     }

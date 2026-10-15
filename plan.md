@@ -1513,6 +1513,15 @@ ask only when the choice materially changes scope, cost, access, or product beha
   `deploying` / `deployed` / `failed` / `cancelled` / `archived`, with a `simulated`
   tag in fake mode. Shown in the list (column renamed State → Status) and the detail
   header. Commit `9055c0d`.
+- **Application creation wizard**: the applications screen is now list-first with a
+  **Create new application** button; creation moved to a guided `/panel/applications/create`
+  wizard (`App\Livewire\Panel\ApplicationCreate`) with steps Basics, Source, Runtime,
+  Domain & TLS, Database, Review. It persists the application, source, runtime/build,
+  domain (+ optional HTTP-01 certificate) and an optional managed database in one pass
+  through the existing services, and can optionally deploy — so the operator never has
+  to hop between screens. Every optional step can be left blank. Feature tests added
+  (`ApplicationWizardTest`); `phpunit.xml` now pins `HOSTNUR_AGENT_MODE=unavailable`
+  so the local `.env` cannot leak into tests. Full suite: 259 passing.
 - **Plan**: the wiring of agent-observed state into the panel
   (`applications.observed_state`/`observed_mode`/`observed_at`) was only implied, not
   planned. Recorded it as a new not-started phase **Phase 20.5 — Observed state

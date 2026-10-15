@@ -4,6 +4,7 @@ use App\Http\Controllers\HomeController;
 use App\Livewire\Auth\Login;
 use App\Livewire\Auth\MfaChallenge;
 use App\Livewire\Auth\MfaEnrollment;
+use App\Livewire\Panel\ApplicationCreate;
 use App\Livewire\Panel\ApplicationIndex;
 use App\Livewire\Panel\ApplicationOperations;
 use App\Livewire\Panel\ApplicationShow;
@@ -43,6 +44,7 @@ Route::middleware(['auth:web', 'administrator', 'mfa'])->group(function (): void
     Route::get('/panel/tasks', TaskIndex::class)->name('panel.tasks.index');
     Route::get('/panel/tasks/{task}', TaskShow::class)->name('panel.tasks.show');
     Route::get('/panel/applications', ApplicationIndex::class)->name('panel.applications.index');
+    Route::get('/panel/applications/create', ApplicationCreate::class)->name('panel.applications.create');
     Route::get('/panel/applications/{application}', ApplicationShow::class)->name('panel.applications.show');
     Route::get('/panel/audit', AuditIndex::class)->name('panel.audit.index');
     Route::get('/panel/audit/{event}', AuditShow::class)->name('panel.audit.show');
