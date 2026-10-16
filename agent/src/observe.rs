@@ -39,9 +39,8 @@ pub fn server_snapshot() -> ServerSnapshot {
     if let Ok(count) = std::thread::available_parallelism() {
         push_u64(&mut metrics, "cpu_count", count.get() as u64, None);
     }
-    if let Some(percent) = cpu_percent() {
-        push_float(&mut metrics, "cpu_percent", percent, Some("percent"));
-    }
+    // `cpu_percent` is computed by the dispatcher from the interval between
+    // snapshots (a single instantaneous sample is meaningless).
 
     ServerSnapshot {
         protocol_version: 1,
@@ -123,26 +122,8 @@ fn root_disk_used_percent() -> Option<f64> {
     Some((used as f64 / total as f64) * 100.0)
 }
 
-/// Estimate CPU utilisation over a short interval by sampling `/proc/stat`
-/// twice (there is no instantaneous CPU percentage in Linux).
-fn cpu_percent() -> Option<f64> {
-    let first = read_cpu_times()?;
-    std::thread::sleep(std::time::Duration::from_millis(150));
-    let second = read_cpu_times()?;
-
-    let total = second.0.checked_sub(first.0)?;
-    let idle = second.1.checked_sub(first.1)?;
-
-    if total == 0 {
-        return None;
-    }
-
-    let busy = total.saturating_sub(idle);
-    Some((busy as f64 / total as f64) * 100.0)
-}
-
 /// `(total_ticks, idle_ticks)` from the aggregate `cpu` line of `/proc/stat`.
-fn read_cpu_times() -> Option<(u64, u64)> {
+pub fn cpu_times() -> Option<(u64, u64)> {
     let text = std::fs::read_to_string("/proc/stat").ok()?;
     let line = text.lines().find(|line| line.starts_with("cpu "))?;
     let ticks: Vec<u64> = line

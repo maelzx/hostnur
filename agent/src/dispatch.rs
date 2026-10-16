@@ -9,7 +9,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -18,7 +18,7 @@ use crate::process::{CommandSpec, run};
 
 use crate::clock;
 use crate::contract::{
-    AgentMode, CapabilitySnapshot, ContractErrorCode, OperationReceipt, OperationRequest,
+    AgentMode, CapabilitySnapshot, ContractErrorCode, Metric, OperationReceipt, OperationRequest,
     OperationSnapshot, OperationStatus, Uuid,
 };
 use crate::database::{
@@ -129,6 +129,8 @@ pub struct AgentHandler<'a> {
     backup_recipient: Option<String>,
     backup_dir: PathBuf,
     s3: Option<crate::s3::S3Config>,
+    cpu_last_total: AtomicU64,
+    cpu_last_idle: AtomicU64,
 }
 
 impl<'a> AgentHandler<'a> {
@@ -154,6 +156,8 @@ impl<'a> AgentHandler<'a> {
             backup_recipient: None,
             backup_dir: PathBuf::from("/var/lib/hostnur/backups"),
             s3: None,
+            cpu_last_total: AtomicU64::new(0),
+            cpu_last_idle: AtomicU64::new(0),
         }
     }
 
@@ -180,6 +184,8 @@ impl<'a> AgentHandler<'a> {
             backup_recipient: None,
             backup_dir: PathBuf::from("/var/lib/hostnur/backups"),
             s3: None,
+            cpu_last_total: AtomicU64::new(0),
+            cpu_last_idle: AtomicU64::new(0),
         }
     }
 
@@ -1590,7 +1596,46 @@ impl<'a> AgentHandler<'a> {
         let mut snapshot = observe::server_snapshot();
         snapshot.services = self.services.observations();
         snapshot.firewall = self.firewall.snapshot();
+
+        if let Some(percent) = self.cpu_percent()
+            && let Some(value) = serde_json::Number::from_f64(percent)
+        {
+            snapshot.metrics.push(Metric {
+                name: "cpu_percent".to_string(),
+                value,
+                unit: Some("percent".to_string()),
+            });
+        }
+
         to_value(snapshot)
+    }
+
+    /// CPU utilisation over the interval since the previous snapshot (a single
+    /// instantaneous sample is meaningless). The first call takes a short sample.
+    fn cpu_percent(&self) -> Option<f64> {
+        let (total, idle) = observe::cpu_times()?;
+        let last_total = self.cpu_last_total.swap(total, Ordering::Relaxed);
+        let last_idle = self.cpu_last_idle.swap(idle, Ordering::Relaxed);
+
+        if last_total == 0 || total <= last_total {
+            std::thread::sleep(Duration::from_millis(200));
+            let (total2, idle2) = observe::cpu_times()?;
+            self.cpu_last_total.store(total2, Ordering::Relaxed);
+            self.cpu_last_idle.store(idle2, Ordering::Relaxed);
+            let delta_total = total2.saturating_sub(total);
+            let delta_idle = idle2.saturating_sub(idle);
+            if delta_total == 0 {
+                return None;
+            }
+            return Some(((delta_total - delta_idle) as f64 / delta_total as f64) * 100.0);
+        }
+
+        let delta_total = total - last_total;
+        let delta_idle = idle - last_idle;
+        if delta_total == 0 {
+            return None;
+        }
+        Some(((delta_total - delta_idle) as f64 / delta_total as f64) * 100.0)
     }
 
     fn server_updates(&self) -> Value {

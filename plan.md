@@ -1732,6 +1732,9 @@ ask only when the choice materially changes scope, cost, access, or product beha
   migrations run (`php artisan migrate --force` as the app user) only when it is set.
   Panel `DeploymentService` forwards the acknowledgement. Validated: AssetKOM redeploy
   migrated and the app serves (`/login` 200). Rust 143 tests + clippy; PHP 267 tests.
+- **Dashboard CPU**: the agent now computes `cpu_percent` over the **interval
+  between snapshots** (a single 150 ms sample on an idle box is always ~0). Verified
+  on the host: idle 0, under load 100, calm ~10.
 - **App TLS (Phase 21)**: issued a real Let's Encrypt cert for AssetKOM via
   `register_certificate` + `certificate.issue`; the agent re-rendered the managed site
   with `:443` and the app serves over HTTPS (`/login` 200, cert `CN=assetkom…`).
