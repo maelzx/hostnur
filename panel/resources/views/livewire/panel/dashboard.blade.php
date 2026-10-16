@@ -1,3 +1,22 @@
+@php
+    use App\Enums\ApplicationStatus;
+
+    $cpu = $metrics->get('cpu_percent');
+    $disk = $metrics->get('disk_used_percent');
+    $load = $metrics->get('load_1m');
+    $uptime = $metrics->get('uptime_seconds');
+    $memUsed = $metrics->get('memory_used_bytes');
+    $memTotal = $metrics->get('memory_total_bytes');
+    $memPercent = ($memUsed && $memTotal && $memTotal['value'] > 0)
+        ? round($memUsed['value'] / $memTotal['value'] * 100, 1)
+        : null;
+    $dash = '—';
+    $sampleHint = $snapshot->available ? 'Sampled '.$snapshot->sampledAt : 'No observation';
+    $uptimeText = $uptime ? floor($uptime['value'] / 86400).'d '.floor(($uptime['value'] % 86400) / 3600).'h' : $dash;
+    $deployedCount = $applicationCounts[ApplicationStatus::Deployed->value] ?? 0;
+    $toneBg = ['success' => 'bg-emerald-500', 'info' => 'bg-indigo-500', 'danger' => 'bg-red-500', 'warning' => 'bg-amber-500', 'neutral' => 'bg-slate-400'];
+@endphp
+
 <main class="pb-4">
     <header class="mb-6">
         <h1 class="text-2xl font-semibold tracking-tight">Overview</h1>
@@ -21,28 +40,58 @@
         </p>
     @endif
 
-    @php
-        $cpu = $metrics->get('cpu_percent');
-        $disk = $metrics->get('disk_used_percent');
-        $load = $metrics->get('load_1m');
-        $uptime = $metrics->get('uptime_seconds');
-        $memUsed = $metrics->get('memory_used_bytes');
-        $memTotal = $metrics->get('memory_total_bytes');
-        $memPercent = ($memUsed && $memTotal && $memTotal['value'] > 0)
-            ? round($memUsed['value'] / $memTotal['value'] * 100, 1)
-            : null;
-        $dash = '—';
-        $sampleHint = $snapshot->available ? 'Sampled '.$snapshot->sampledAt : 'No observation available';
-        $uptimeText = $uptime ? floor($uptime['value'] / 86400).'d '.floor(($uptime['value'] % 86400) / 3600).'h' : $dash;
-    @endphp
+    {{-- Server resources --}}
+    <section aria-label="Server resources" class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <x-ui.gauge label="CPU" :value="$cpu['value'] ?? null" :hint="$sampleHint" />
+        <x-ui.gauge label="Memory" :value="$memPercent" :hint="$sampleHint" />
+        <x-ui.gauge label="Disk" :value="$disk['value'] ?? null" :hint="$sampleHint" />
+    </section>
 
-    <section aria-label="Server metrics" class="grid grid-cols-2 gap-4 lg:grid-cols-3">
-        <x-ui.stat label="CPU" :value="$cpu ? $cpu['value'] : $dash" unit="{{ $cpu ? '%' : null }}" :hint="$sampleHint" />
-        <x-ui.stat label="Memory" :value="$memPercent ?? $dash" unit="{{ $memPercent !== null ? '%' : null }}" :hint="$sampleHint" />
-        <x-ui.stat label="Disk" :value="$disk ? $disk['value'] : $dash" unit="{{ $disk ? '%' : null }}" :hint="$sampleHint" />
+    <section aria-label="Server summary" class="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-3">
         <x-ui.stat label="Load (1m)" :value="$load ? $load['value'] : $dash" :hint="$sampleHint" />
         <x-ui.stat label="Uptime" :value="$uptimeText" :hint="$sampleHint" />
         <x-ui.stat label="Active tasks" :value="$activeTasks" hint="Pending, queued or running" />
+    </section>
+
+    {{-- Applications --}}
+    <section class="mt-6">
+        <x-ui.panel title="Applications">
+            @if ($applicationsTotal === 0)
+                <p class="mt-2 text-sm text-slate-600">No applications yet.</p>
+                <p class="mt-3 text-sm"><a href="{{ route('panel.applications.create') }}" class="font-medium text-indigo-700 hover:underline">Create your first application</a></p>
+            @else
+                <p class="mt-2 text-sm text-slate-600">
+                    <span class="font-semibold text-slate-900">{{ $applicationsTotal }}</span> total ·
+                    <span class="font-semibold text-slate-900">{{ $deployedCount }}</span> deployed
+                </p>
+
+                <div class="mt-4 flex h-2 overflow-hidden rounded-full bg-slate-100">
+                    @foreach ($applicationStatuses as $status)
+                        @php $count = $applicationCounts[$status->value] ?? 0; @endphp
+                        @if ($count > 0)
+                            <div class="{{ $toneBg[$status->tone()] ?? 'bg-slate-400' }}" style="width: {{ $count / $applicationsTotal * 100 }}%"></div>
+                        @endif
+                    @endforeach
+                </div>
+
+                <ul class="mt-4 grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
+                    @foreach ($applicationStatuses as $status)
+                        @php $count = $applicationCounts[$status->value] ?? 0; @endphp
+                        @if ($count > 0)
+                            <li class="flex items-center gap-2">
+                                <span class="h-2.5 w-2.5 rounded-full {{ $toneBg[$status->tone()] ?? 'bg-slate-400' }}"></span>
+                                <span class="text-slate-600">{{ $status->label() }}</span>
+                                <span class="ml-auto font-semibold text-slate-900">{{ $count }}</span>
+                            </li>
+                        @endif
+                    @endforeach
+                </ul>
+
+                <p class="mt-4 text-sm">
+                    <a href="{{ route('panel.applications.index') }}" class="font-medium text-indigo-700 hover:underline">View all applications</a>
+                </p>
+            @endif
+        </x-ui.panel>
     </section>
 
     <section aria-label="Host and services" class="mt-6 grid gap-4 lg:grid-cols-2">
@@ -79,7 +128,14 @@
         </x-ui.panel>
     </section>
 
-    <section class="mt-6">
+    <section class="mt-6 grid gap-4 lg:grid-cols-2">
+        <x-ui.panel title="Server updates">
+            <p class="mt-2 text-sm text-slate-600">
+                Update status isn’t reported by the agent yet. Pending <code>apt</code>
+                updates will appear here once supported.
+            </p>
+        </x-ui.panel>
+
         <x-ui.panel title="Recent failures">
             @if ($recentFailures->isEmpty())
                 <p class="mt-4 text-sm text-slate-600">No recent failed tasks.</p>

@@ -1440,11 +1440,39 @@ command runner.
 log tail and resource usage and start, stop or restart it from the panel, with
 cross-application access refused and simulated/unavailable results clearly marked.
 
+### Phase 20.7 — Server package update awareness
+- Status: **planned**. The dashboard cannot yet tell whether the host has pending
+  `apt` updates: the snapshot exposes metrics, services and firewall only, and no
+  operation queries or previews upgrades.
+- Depends on: 17.
+
+#### Objective and rules
+
+Report available package updates from the agent and let the operator preview and
+apply them safely, reusing the existing approved package/allowlist path.
+
+- A read-only observation lists pending upgrades (package, current → candidate,
+  security flag) with mode and sample time; unavailable stays unknown, never
+  "up to date".
+- Applying updates is an explicit, audited operation with a bounded preview; no
+  unbounded `apt full-upgrade` and no unreviewed third-party repositories.
+- Security updates are distinguished; nothing is applied automatically.
+
+| Slice | Deliverable | Required proof |
+|---|---|---|
+| P20.7.1 Update observation | Pending upgrades (name/current/candidate/security) with mode/time | Unavailable ≠ "no updates"; fake values are labelled |
+| P20.7.2 Bounded upgrade | Preview and apply approved upgrades, audited | No unreviewed repos; failure is reported, not hidden |
+| P20.7.3 Dashboard surface | Pending-update status on the overview | Values match agent evidence; unavailable stays truthful |
+
+**Exit gate / milestone:** on the VM the dashboard shows the true pending-update
+count, an operator can preview and apply updates with audit evidence, and an
+unavailable agent never reports "up to date".
+
 ### Phase 21 — Integrated beta validation and release gate
 - Status: planned. Uses the user's **recreated throwaway Ubuntu 24.04 amd64
   droplet** each session (per session 034), plus a separate restore VM when
   phase 19 resumes.
-- Depends on: 1–20.6 and disposable VM access.
+- Depends on: 1–20.7 and disposable VM access.
 - Slices: full cross-process/VM regression, privilege/path/socket abuse cases,
   app isolation, crashes/disconnects, Nginx/TLS failures, SQLite contention,
   signed release verification, restore/recovery drill and operator documentation.
@@ -1566,6 +1594,12 @@ ask only when the choice materially changes scope, cost, access, or product beha
   is now locked after the first successful deployment (`Application::hasSuccessfulDeployment()`
   + guard in `ApplicationService::updateSource`); Git ref and credentials stay
   editable. Logs are the application's task/deployment events for now.
+- **Dashboard redesign**: server metrics are now donut gauges (CPU, memory, disk, via
+  a dependency-free SVG `x-ui.gauge`) with load/uptime/active-task stats; added an
+  **Applications** panel (total, deployed count, a status distribution bar and legend)
+  and a **Server updates** panel. Server package-update status is not available from
+  the agent, so it is shown as not-yet-reported and recorded as planned
+  **Phase 20.7 — Server package update awareness**.
 - **Plan**: the wiring of agent-observed state into the panel
   (`applications.observed_state`/`observed_mode`/`observed_at`) was only implied, not
   planned. Recorded it as a new not-started phase **Phase 20.5 — Observed state

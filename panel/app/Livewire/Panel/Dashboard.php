@@ -4,7 +4,9 @@ namespace App\Livewire\Panel;
 
 use App\Agent\Dto\ServerSnapshot;
 use App\Contracts\AgentClient;
+use App\Enums\ApplicationStatus;
 use App\Enums\TaskStatus;
+use App\Models\Application;
 use App\Models\Task;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Cache;
@@ -18,9 +20,21 @@ class Dashboard extends Component
     {
         $snapshot = $this->snapshot();
 
+        $applications = Application::query()->with('latestDeployment')->get();
+        $applicationCounts = collect(ApplicationStatus::cases())
+            ->mapWithKeys(fn (ApplicationStatus $status): array => [$status->value => 0]);
+
+        foreach ($applications as $application) {
+            $key = $application->status()->value;
+            $applicationCounts[$key] = ($applicationCounts[$key] ?? 0) + 1;
+        }
+
         return view('livewire.panel.dashboard', [
             'snapshot' => $snapshot,
             'metrics' => collect($snapshot->metrics)->keyBy('name'),
+            'applicationsTotal' => $applications->count(),
+            'applicationCounts' => $applicationCounts,
+            'applicationStatuses' => ApplicationStatus::cases(),
             'staleAfter' => (int) config('hostnur.dashboard.stale_after_seconds', 120),
             'activeTasks' => Task::query()->whereIn('status', [
                 TaskStatus::Pending->value,
