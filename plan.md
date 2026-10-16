@@ -1478,8 +1478,12 @@ count, an operator can preview and apply updates with audit evidence, packages c
 added to the approved catalog, and an unavailable agent never reports "up to date".
 
 ### Phase 20.8 — Firewall rule management
-- Status: **planned**. The firewall page is read-only; the agent reports a summary
-  only and exposes no mutation, so rules cannot be added yet.
+- Status: **implemented, VM validation pending**. Contract (`firewall.rule.add`,
+  `firewall.rule.remove`, `firewall.web`, and a `rules[]` list on the snapshot),
+  Rust (`firewall.rs` guarded `ufw` mutations), and the panel page (list/add/remove
+  + HTTPS-only toggle) are done and unit-tested (Rust `cargo test`/`clippy`; PHP 263
+  tests). Real-host validation with `ufw` as root on the disposable VM is still
+  required before the phase is complete.
 - Depends on: 17.
 
 #### Objective and rules
@@ -1651,6 +1655,13 @@ ask only when the choice materially changes scope, cost, access, or product beha
   certificate) actions to the application detail page; extended the create-app
   **wizard** with optional **Secrets** and **Schedule** steps; and a
   focus/accessibility polish pass on the application detail forms. Tests: 263 passing.
+- **Phase 20.8 (firewall) implemented**: added `firewall.rule.add` /
+  `firewall.rule.remove` / `firewall.web` to the contract (catalog, snapshot
+  `firewall.rules[]`, request fixtures), implemented guarded `ufw` mutations in the
+  Rust agent (`agent/src/firewall.rs`) with ports 80/443 protected and 80 closable
+  only while 443 is open, and rebuilt the panel firewall page (rule list, add/remove,
+  HTTPS-only toggle) via `ServerService`. Rust lib tests 128 pass + clippy clean;
+  PHP 263 tests pass. Real-host `ufw` validation still pending.
 - **Plan**: the wiring of agent-observed state into the panel
   (`applications.observed_state`/`observed_mode`/`observed_at`) was only implied, not
   planned. Recorded it as a new not-started phase **Phase 20.5 — Observed state
