@@ -124,6 +124,9 @@ pub fn run(config: &AgentConfig) -> Result<(), AgentError> {
     let mut handler = AgentHandler::with_deploy(&journal, deploy, policy);
     handler.configure_acme(config.acme_email.clone(), config.acme_staging);
     handler.configure_backup(config.backup_recipient.clone(), config.backup_dir.clone());
+    handler.configure_s3(crate::s3::S3Config::load(std::path::Path::new(
+        "/etc/hostnur/s3.toml",
+    )));
     let context = ServerContext {
         catalog: &catalog,
         handler: &handler,

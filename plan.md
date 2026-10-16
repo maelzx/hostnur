@@ -1181,9 +1181,16 @@ pass on the VM. Only tested engine/version/data-movement capabilities are advert
   `/var/lib/hostnur/backups`, and the artifact **decrypted with the operator age key**
   to the original file. A bug (sealed_bytes reported the copied plaintext instead of
   the artifact size) was fixed during validation.
-- **Remaining**: control_state/server capture scopes; the S3-compatible transfer +
-  retention/prune (P19.3/P19.6); restore orchestration (P19.4); separate-VM drill
-  (P19.5).
+- **S3-compatible destination (P19.3/P19.6 part) landed**: `agent/src/s3.rs` implements
+  a minimal **SigV4 `PUT Object`** client (path-style or virtual-host, over `ureq`);
+  `backup.create` uploads the sealed artifact + manifest after local capture, driven by
+  an operator `/etc/hostnur/s3.toml` (mode 0600). The signer is cross-checked against
+  an independent SigV4 reference. **Validated on the droplet**: with an unreachable
+  endpoint, `backup.create` sealed locally then attempted the correct path-style URL
+  (`http://…/bucket/<id>.tar.gz.age`) and surfaced a clear error; upload path confirmed.
+- **Remaining**: retention/prune + SFTP (P19.6), live end-to-end upload to a real S3
+  destination (needs operator credentials), control_state/server capture scopes,
+  restore orchestration (P19.4), separate-VM drill (P19.5).
 - Depends on: 15, 16, 17; include 18 for managed databases.
 
 #### Backup scope and trust

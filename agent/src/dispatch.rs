@@ -127,6 +127,7 @@ pub struct AgentHandler<'a> {
     acme_staging: bool,
     backup_recipient: Option<String>,
     backup_dir: PathBuf,
+    s3: Option<crate::s3::S3Config>,
 }
 
 impl<'a> AgentHandler<'a> {
@@ -151,6 +152,7 @@ impl<'a> AgentHandler<'a> {
             acme_staging: false,
             backup_recipient: None,
             backup_dir: PathBuf::from("/var/lib/hostnur/backups"),
+            s3: None,
         }
     }
 
@@ -176,6 +178,7 @@ impl<'a> AgentHandler<'a> {
             acme_staging: false,
             backup_recipient: None,
             backup_dir: PathBuf::from("/var/lib/hostnur/backups"),
+            s3: None,
         }
     }
 
@@ -331,6 +334,11 @@ impl<'a> AgentHandler<'a> {
     pub fn configure_backup(&mut self, recipient: Option<String>, dir: PathBuf) {
         self.backup_recipient = recipient;
         self.backup_dir = dir;
+    }
+
+    /// Configure the S3-compatible backup destination, if any.
+    pub fn configure_s3(&mut self, s3: Option<crate::s3::S3Config>) {
+        self.s3 = s3;
     }
 
     fn site_name(&self, application_id: &Uuid) -> String {
@@ -1087,17 +1095,64 @@ impl<'a> AgentHandler<'a> {
                     &hash,
                 );
 
-                match crate::backup::write_manifest(&self.backup_dir, &manifest) {
-                    Ok(path) => json!({
-                        "protocol_version": 1,
-                        "artifact_id": backup_id.as_str(),
-                        "scope": "application_data",
-                        "sealed_bytes": sealed_bytes,
-                        "sha256": hash,
-                        "manifest": path.display().to_string(),
-                    }),
-                    Err(message) => error_body(ContractErrorCode::OperationFailed, &message),
+                let manifest_path = match crate::backup::write_manifest(&self.backup_dir, &manifest)
+                {
+                    Ok(path) => path,
+                    Err(message) => {
+                        return error_body(ContractErrorCode::OperationFailed, &message);
+                    }
+                };
+
+                let mut destination = Value::Null;
+                if let Some(s3) = &self.s3 {
+                    let artifact_key = format!("{backup_id}.tar.gz.age");
+                    let manifest_key = format!("{backup_id}.manifest.json");
+                    let artifact_bytes = std::fs::read(&sealed_path).unwrap_or_default();
+                    let manifest_bytes = std::fs::read(&manifest_path).unwrap_or_default();
+
+                    let uploaded = crate::s3::put_object(
+                        s3,
+                        &artifact_key,
+                        &artifact_bytes,
+                        &clock::now_rfc3339(),
+                    )
+                    .and_then(|_| {
+                        crate::s3::put_object(
+                            s3,
+                            &manifest_key,
+                            &manifest_bytes,
+                            &clock::now_rfc3339(),
+                        )
+                        .map(|_| ())
+                    });
+
+                    match uploaded {
+                        Ok(()) => {
+                            destination = json!({
+                                "kind": "s3",
+                                "bucket": s3.bucket,
+                                "artifact_key": s3.object_key(&artifact_key),
+                                "manifest_key": s3.object_key(&manifest_key),
+                            });
+                        }
+                        Err(message) => {
+                            return error_body(
+                                ContractErrorCode::OperationFailed,
+                                &format!("S3 upload failed: {message}"),
+                            );
+                        }
+                    }
                 }
+
+                json!({
+                    "protocol_version": 1,
+                    "artifact_id": backup_id.as_str(),
+                    "scope": "application_data",
+                    "sealed_bytes": sealed_bytes,
+                    "sha256": hash,
+                    "manifest": manifest_path.display().to_string(),
+                    "destination": destination,
+                })
             }
             other => error_body(
                 ContractErrorCode::UnsupportedOperation,
