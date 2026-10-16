@@ -6,10 +6,15 @@
 //! integrity hash of the sealed bytes. Destination transfer (S3-compatible,
 //! then SFTP) and restore orchestration build on this module.
 
+use std::collections::BTreeMap;
 use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+
+use crate::process::{CommandSpec, run};
 
 /// Manifest/artifact format version understood by this build.
 pub const BACKUP_FORMAT_VERSION: u32 = 1;
@@ -106,6 +111,84 @@ pub fn open(identity: &str, sealed: &[u8]) -> Result<Vec<u8>, String> {
     Ok(plaintext)
 }
 
+/// Create a gzip tar archive of `source_dir` at `archive_path` using the system
+/// `tar` (bounded process; creating an archive, never extracting as root).
+pub fn archive_directory(source_dir: &Path, archive_path: &Path) -> Result<(), String> {
+    if !source_dir.is_dir() {
+        return Err("backup source directory does not exist".to_string());
+    }
+
+    let mut spec = CommandSpec::new(Path::new("/usr/bin/tar"), Duration::from_secs(1800));
+    spec.args = vec![
+        "-C".to_string(),
+        source_dir.display().to_string(),
+        "-czf".to_string(),
+        archive_path.display().to_string(),
+        ".".to_string(),
+    ];
+    spec.output_cap_bytes = 8_192;
+    let mut env = BTreeMap::new();
+    env.insert("PATH".to_string(), "/usr/bin:/bin".to_string());
+    env.insert("LC_ALL".to_string(), "C".to_string());
+    spec.env = env;
+
+    let outcome = run(&spec).map_err(|error| error.to_string())?;
+    if outcome.succeeded() {
+        Ok(())
+    } else {
+        Err(format!("tar exited with code {:?}", outcome.exit_code))
+    }
+}
+
+/// Stream `input` through age into `output_path`, returning the sealed byte
+/// count and its SHA-256. Content is never buffered in memory wholesale.
+pub fn seal_file(
+    input: &Path,
+    output_path: &Path,
+    recipient: &str,
+) -> Result<(u64, String), String> {
+    let parsed = recipient
+        .parse::<age::x25519::Recipient>()
+        .map_err(|_| "backup recipient is not a valid age public key".to_string())?;
+    let encryptor = age::Encryptor::with_recipients(vec![Box::new(parsed)])
+        .ok_or_else(|| "no backup recipient was provided".to_string())?;
+
+    let mut reader = std::fs::File::open(input).map_err(|error| error.to_string())?;
+    let output = std::fs::File::create(output_path).map_err(|error| error.to_string())?;
+    let mut writer = encryptor
+        .wrap_output(output)
+        .map_err(|error| error.to_string())?;
+    let sealed_bytes =
+        std::io::copy(&mut reader, &mut writer).map_err(|error| error.to_string())?;
+    writer.finish().map_err(|error| error.to_string())?;
+
+    let hash = file_sha256(output_path)?;
+    Ok((sealed_bytes, hash))
+}
+
+/// SHA-256 of a file, read in bounded chunks.
+pub fn file_sha256(path: &Path) -> Result<String, String> {
+    let mut file = std::fs::File::open(path).map_err(|error| error.to_string())?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 65536];
+    loop {
+        let read = file.read(&mut buffer).map_err(|error| error.to_string())?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+/// Write a manifest as pretty JSON next to the artifact.
+pub fn write_manifest(dir: &Path, manifest: &BackupManifest) -> Result<PathBuf, String> {
+    let path = dir.join(format!("{}.manifest.json", manifest.artifact_id));
+    let json = serde_json::to_string_pretty(manifest).map_err(|error| error.to_string())?;
+    std::fs::write(&path, json).map_err(|error| error.to_string())?;
+    Ok(path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,6 +211,46 @@ mod tests {
     #[test]
     fn rejects_invalid_recipient() {
         assert!(seal("not-a-key", b"x").is_err());
+    }
+
+    #[test]
+    fn archives_seals_and_writes_a_manifest() {
+        let work = tempfile::tempdir().unwrap();
+        let source = work.path().join("shared");
+        std::fs::create_dir_all(source.join("storage/app")).unwrap();
+        std::fs::write(source.join("storage/app/file.txt"), b"hello").unwrap();
+
+        let archive = work.path().join("data.tar.gz");
+        archive_directory(&source, &archive).unwrap();
+        let archive_len = std::fs::metadata(&archive).unwrap().len();
+
+        let identity = age::x25519::Identity::generate();
+        let recipient = identity.to_public().to_string();
+        let sealed = work.path().join("data.tar.gz.age");
+        let (sealed_bytes, hash) = seal_file(&archive, &sealed, &recipient).unwrap();
+        assert!(sealed_bytes > 0);
+        assert_eq!(hash, file_sha256(&sealed).unwrap());
+
+        let m = manifest(
+            "11111111-1111-4111-8111-111111111111",
+            "application-data",
+            &recipient,
+            "quiesced",
+            "2026-10-16T00:00:00Z",
+            archive_len as usize,
+            &std::fs::read(&sealed).unwrap(),
+        );
+        let manifest_path = write_manifest(work.path(), &m).unwrap();
+        assert!(manifest_path.exists());
+
+        // The archive is recoverable with the matching identity.
+        let identity_str = identity.to_string();
+        let opened = open(
+            identity_str.expose_secret(),
+            &std::fs::read(&sealed).unwrap(),
+        )
+        .unwrap();
+        assert!(!opened.is_empty());
     }
 
     #[test]
