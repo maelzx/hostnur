@@ -147,6 +147,24 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Panel host integration
+    |--------------------------------------------------------------------------
+    |
+    | Paths the panel's own TLS setup command manages on the host (nginx site,
+    | PHP-FPM socket, ACME webroot). Overridable for non-default layouts.
+    |
+    */
+
+    'panel' => [
+        'root' => env('HOSTNUR_PANEL_ROOT', '/opt/hostnur-panel'),
+        'php_fpm_socket' => env('HOSTNUR_PANEL_FPM_SOCKET', '/run/php/hostnur-panel.sock'),
+        'nginx_site' => env('HOSTNUR_PANEL_NGINX_SITE', '/etc/nginx/sites-available/hostnur-panel'),
+        'acme_webroot' => env('HOSTNUR_PANEL_ACME_WEBROOT', '/var/www/hostnur-acme'),
+        'php_version' => env('HOSTNUR_PANEL_PHP_VERSION', '8.3'),
+    ],
+
     'server' => [
         'packages' => ['nginx', 'mariadb-server', 'php8.3-fpm', 'redis-server', 'certbot'],
         'database_engines' => ['mariadb', 'postgresql'],

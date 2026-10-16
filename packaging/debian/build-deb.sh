@@ -74,6 +74,7 @@ build_panel() {
     install -D -m 0644 "$DEB_DIR/hostnur/hostnur-panel.nginx" "$root/etc/nginx/sites-available/hostnur-panel"
     install -D -m 0644 "$DEB_DIR/hostnur/hostnur-sites.conf" "$root/etc/nginx/conf.d/hostnur-sites.conf"
     install -D -m 0644 "$DEB_DIR/hostnur/hostnur-panel.fpm.conf" "$root/etc/php/8.3/fpm/pool.d/hostnur-panel.conf"
+    install -D -m 0644 "$DEB_DIR/hostnur/panel-tls.conf.example" "$root/etc/hostnur/panel-tls.conf.example"
     mkdir -p "$root/DEBIAN"
     render_control "$DEB_DIR/hostnur/DEBIAN/control" "$root/DEBIAN/control"
     copy_maintainer_scripts "$DEB_DIR/hostnur/DEBIAN" "$root/DEBIAN"

@@ -81,4 +81,15 @@ if [ -d /run/systemd/system ]; then
     systemctl reload nginx.service 2>/dev/null || true
 fi
 
+# Optional install-time TLS: if /etc/hostnur/panel-tls.conf defines DOMAIN and
+# EMAIL, enable HTTPS via the panel's own idempotent command. Without the file the
+# panel is served over HTTP; TLS can be enabled later with the same command.
+if [ -f /etc/hostnur/panel-tls.conf ]; then
+    # shellcheck disable=SC1091
+    . /etc/hostnur/panel-tls.conf
+    if [ -n "${DOMAIN:-}" ] && [ -n "${EMAIL:-}" ]; then
+        php "$PANEL_DIR/artisan" hostnur:panel:setup-tls --domain "$DOMAIN" --email "$EMAIL" || true
+    fi
+fi
+
 exit 0

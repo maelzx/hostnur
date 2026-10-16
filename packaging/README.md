@@ -32,6 +32,26 @@ Maintainer scripts create the identities, initialise `.env`/database once, point
 the agent's `allowed_peer_uids` at the panel user, and reload services. The panel
 SQLite database and `.env` are intentionally preserved on purge.
 
+## HTTPS / TLS
+
+TLS is configured by one idempotent command, `hostnur:panel:setup-tls`, used by
+both install paths (and safe to re-run for renewals, domain changes or recovery):
+
+```bash
+sudo php /opt/hostnur-panel/artisan hostnur:panel:setup-tls \
+  --domain panel.example.com --email you@example.com
+```
+
+It serves ACME challenges on `:80`, requests a Let's Encrypt certificate via the
+webroot, writes the `:80 → :443` redirect + TLS vhost, and sets `APP_URL`.
+
+- **Interim installer**: pass `--domain`/`--email` (or `--no-tls`) to configure TLS
+  at install time; the installer calls the command.
+- **Debian package**: copy `panel-tls.conf.example` to `/etc/hostnur/panel-tls.conf`
+  with `DOMAIN=`/`EMAIL=` set *before* installing `hostnur`; the post-install script
+  calls the command. Without the file the panel is served over HTTP, and TLS can be
+  enabled later with the same command.
+
 ## APT repository
 
 `packaging/apt/build-repo.sh` assembles a flat repository and (with `--key`) signs

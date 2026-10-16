@@ -1,0 +1,14 @@
+# Enable HTTPS for the panel.
+#
+# At package install time: copy this file to /etc/hostnur/panel-tls.conf and set
+# both values before installing the `hostnur` package, e.g.:
+#
+#   DOMAIN=panel.example.com
+#   EMAIL=you@example.com
+#
+# The post-install script then runs (idempotently):
+#   php /opt/hostnur-panel/artisan hostnur:panel:setup-tls --domain "$DOMAIN" --email "$EMAIL"
+#
+# You can also enable or re-run TLS at any time with that same command.
+DOMAIN=
+EMAIL=

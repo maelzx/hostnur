@@ -258,20 +258,14 @@ EOF
 
 if [ -n "$DOMAIN" ] && [ "$ENABLE_TLS" -eq 1 ] && [ -n "$EMAIL" ]; then
   apt-get install -y -qq certbot >/dev/null
-  cat > /etc/nginx/sites-available/hostnur-acme <<EOF
-server {
-    listen 80;
-    server_name ${DOMAIN};
-    location ^~ /.well-known/acme-challenge/ { root /var/www/hostnur-acme; }
-    location / { return 200 "ok\n"; }
-}
-EOF
-  ln -sf /etc/nginx/sites-available/hostnur-acme /etc/nginx/sites-enabled/hostnur-acme
-  nginx -t && systemctl reload nginx
-  certbot certonly --webroot -w /var/www/hostnur-acme -d "$DOMAIN" \
-    --agree-tos --non-interactive --email "$EMAIL" || warn "certificate issuance failed; serving HTTP only"
-  write_panel_site on
-  rm -f /etc/nginx/sites-enabled/hostnur-acme
+  # One implementation for TLS: the panel's own idempotent command (also used by
+  # the Debian package post-install and for later renewals/domain changes).
+  if php "$PANEL_DIR/artisan" hostnur:panel:setup-tls --domain "$DOMAIN" --email "$EMAIL"; then
+    rm -f /etc/nginx/sites-enabled/hostnur-acme
+  else
+    warn "TLS setup failed; serving the panel over HTTP."
+    write_panel_site off
+  fi
 else
   write_panel_site off
   [ -n "$DOMAIN" ] || warn "no --domain/--email: serving the panel on :80 (use an IP or add a domain + TLS later)."
