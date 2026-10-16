@@ -64,14 +64,16 @@ pub fn seal_hash(sealed: &[u8]) -> String {
 }
 
 /// Build a manifest describing a sealed artifact.
+#[allow(clippy::too_many_arguments)]
 pub fn manifest(
     artifact_id: &str,
     scope: &str,
     recipient: &str,
     consistency: &str,
     created_at: &str,
-    plaintext_bytes: usize,
-    sealed: &[u8],
+    plaintext_bytes: u64,
+    sealed_bytes: u64,
+    sealed_sha256: &str,
 ) -> BackupManifest {
     BackupManifest {
         format_version: BACKUP_FORMAT_VERSION,
@@ -81,9 +83,9 @@ pub fn manifest(
         encryption: "age-x25519".to_string(),
         recipient: recipient.to_string(),
         consistency: consistency.to_string(),
-        plaintext_bytes: plaintext_bytes as u64,
-        sealed_bytes: sealed.len() as u64,
-        sealed_sha256: seal_hash(sealed),
+        plaintext_bytes,
+        sealed_bytes,
+        sealed_sha256: sealed_sha256.to_string(),
     }
 }
 
@@ -158,10 +160,13 @@ pub fn seal_file(
     let mut writer = encryptor
         .wrap_output(output)
         .map_err(|error| error.to_string())?;
-    let sealed_bytes =
-        std::io::copy(&mut reader, &mut writer).map_err(|error| error.to_string())?;
+    std::io::copy(&mut reader, &mut writer).map_err(|error| error.to_string())?;
     writer.finish().map_err(|error| error.to_string())?;
 
+    // The sealed artifact's on-disk size (age adds a header/stream overhead).
+    let sealed_bytes = std::fs::metadata(output_path)
+        .map_err(|error| error.to_string())?
+        .len();
     let hash = file_sha256(output_path)?;
     Ok((sealed_bytes, hash))
 }
@@ -237,8 +242,9 @@ mod tests {
             &recipient,
             "quiesced",
             "2026-10-16T00:00:00Z",
-            archive_len as usize,
-            &std::fs::read(&sealed).unwrap(),
+            archive_len,
+            sealed_bytes,
+            &hash,
         );
         let manifest_path = write_manifest(work.path(), &m).unwrap();
         assert!(manifest_path.exists());
@@ -263,7 +269,8 @@ mod tests {
             "quiesced",
             "2026-10-16T00:00:00Z",
             10,
-            &sealed,
+            4,
+            &seal_hash(&sealed),
         );
         assert_eq!(m.format_version, BACKUP_FORMAT_VERSION);
         assert_eq!(m.sealed_bytes, 4);

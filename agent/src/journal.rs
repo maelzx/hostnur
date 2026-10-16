@@ -105,6 +105,14 @@ CREATE TABLE IF NOT EXISTS approved_packages (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS backups (
+    backup_id TEXT PRIMARY KEY,
+    scope TEXT NOT NULL,
+    application_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS application_sources (
     application_id TEXT PRIMARY KEY,
     repository_url TEXT NOT NULL,
@@ -241,6 +249,14 @@ pub struct ScheduleRecord {
     /// JSON array of argument strings.
     pub arguments: String,
     pub on_calendar: String,
+}
+
+/// A registered backup intent (scope + owning application).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackupRecord {
+    pub backup_id: Uuid,
+    pub scope: String,
+    pub application_id: Option<Uuid>,
 }
 
 /// A managed application database allocation (phase 18).
@@ -907,6 +923,53 @@ impl Journal {
             )
             .map_err(|err| JournalError::Query(err.to_string()))?;
         Ok(())
+    }
+
+    /// Register (or update) a backup intent.
+    pub fn set_backup(&self, record: &BackupRecord) -> Result<(), JournalError> {
+        self.connection
+            .execute(
+                "INSERT INTO backups (backup_id, scope, application_id, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?4)
+                 ON CONFLICT(backup_id) DO UPDATE SET
+                    scope = excluded.scope,
+                    application_id = excluded.application_id,
+                    updated_at = excluded.updated_at",
+                params![
+                    record.backup_id.as_str(),
+                    record.scope,
+                    record
+                        .application_id
+                        .as_ref()
+                        .map(|id| id.as_str().to_string()),
+                    clock::now_rfc3339(),
+                ],
+            )
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+        Ok(())
+    }
+
+    pub fn backup(&self, backup_id: &Uuid) -> Result<Option<BackupRecord>, JournalError> {
+        self.connection
+            .query_row(
+                "SELECT backup_id, scope, application_id FROM backups WHERE backup_id = ?1",
+                params![backup_id.as_str()],
+                |row| {
+                    let backup_id = Uuid::parse(&row.get::<_, String>(0)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+                    let scope: String = row.get(1)?;
+                    let application_id = row
+                        .get::<_, Option<String>>(2)?
+                        .and_then(|value| Uuid::parse(&value).ok());
+                    Ok(BackupRecord {
+                        backup_id,
+                        scope,
+                        application_id,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|err| JournalError::Query(err.to_string()))
     }
 
     /// Operator-approved package names (excludes the built-in catalog).

@@ -1172,10 +1172,18 @@ pass on the VM. Only tested engine/version/data-movement capabilities are advert
   (scope, sizes, consistency, SHA-256 of the sealed bytes), integrity hashing, and the
   capture pipeline (`archive_directory` via system tar, streaming `seal_file`,
   `write_manifest`) writing to `backup_dir` staging; config `backup_recipient` +
-  `backup_dir` (validated). Unit-tested (round-trip, invalid recipient, manifest,
-  archive→seal→manifest→recover). **Remaining**: `agent.register_backup` +
-  `backup.create` operation wiring, the S3 transfer + retention/prune (P19.3/P19.6),
-  restore orchestration (P19.4), and the separate-VM drill/runbook (P19.5).
+  `backup_dir` (validated). Operations `agent.register_backup` + `backup.create`
+  (scope `application_data`) are wired (agent journal `backups` registry; the panel's
+  `BackupService` registers the intent). Unit-tested (round-trip, invalid recipient,
+  manifest, archive→seal→manifest→recover).
+- **Validated on the droplet (session 045)**: `register_backup` → `backup.create`
+  produced a tar→age-sealed artifact + manifest with correct sizes/hash in
+  `/var/lib/hostnur/backups`, and the artifact **decrypted with the operator age key**
+  to the original file. A bug (sealed_bytes reported the copied plaintext instead of
+  the artifact size) was fixed during validation.
+- **Remaining**: control_state/server capture scopes; the S3-compatible transfer +
+  retention/prune (P19.3/P19.6); restore orchestration (P19.4); separate-VM drill
+  (P19.5).
 - Depends on: 15, 16, 17; include 18 for managed databases.
 
 #### Backup scope and trust

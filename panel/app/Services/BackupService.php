@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Agent\Dto\OperationRequest;
 use App\Agent\Dto\ResourceRef;
+use App\Contracts\AgentClient;
 use App\Enums\AuditAction;
 use App\Enums\AuditOutcome;
 use App\Enums\BackupScope;
@@ -30,6 +31,7 @@ final class BackupService
     public function __construct(
         private readonly TaskService $tasks,
         private readonly AuditRecorder $audit,
+        private readonly AgentClient $agent,
     ) {}
 
     /**
@@ -96,6 +98,22 @@ final class BackupService
             'state' => RequestState::Requested,
             'verification_status' => 'unverified',
         ]);
+
+        if (config('hostnur.agent_mode') === 'real') {
+            $this->agent->registerBackup(new OperationRequest(
+                protocolVersion: (int) config('hostnur.protocol_version', 1),
+                requestId: (string) Str::uuid(),
+                idempotencyKey: (string) Str::uuid(),
+                operation: 'agent.register_backup',
+                resource: null,
+                parameters: array_filter([
+                    'backup' => $backup->getKey(),
+                    'scope' => $policy->scope === BackupScope::Application ? 'application_data' : 'server',
+                    'application' => $policy->application_id,
+                ], static fn (mixed $value): bool => $value !== null),
+                timeoutSeconds: null,
+            ));
+        }
 
         $task = $this->tasks->requestApproved($actor, new OperationRequest(
             protocolVersion: (int) config('hostnur.protocol_version', 1),

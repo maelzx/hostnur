@@ -106,4 +106,9 @@ interface AgentClient
      * Remove an operator-approved package from the agent registry.
      */
     public function removePackage(OperationRequest $request): void;
+
+    /**
+     * Register a backup intent (scope + owning application) with the agent.
+     */
+    public function registerBackup(OperationRequest $request): void;
 }

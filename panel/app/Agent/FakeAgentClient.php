@@ -113,6 +113,11 @@ final class FakeAgentClient implements AgentClient
         // No durable registry in the fake adapter.
     }
 
+    public function registerBackup(OperationRequest $request): void
+    {
+        // No durable registry in the fake adapter.
+    }
+
     /**
      * @param  array<string, mixed>  $fallback
      */

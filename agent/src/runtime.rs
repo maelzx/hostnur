@@ -123,6 +123,7 @@ pub fn run(config: &AgentConfig) -> Result<(), AgentError> {
     let policy = RuntimePolicy::default().allow_versions("php", &extra_php);
     let mut handler = AgentHandler::with_deploy(&journal, deploy, policy);
     handler.configure_acme(config.acme_email.clone(), config.acme_staging);
+    handler.configure_backup(config.backup_recipient.clone(), config.backup_dir.clone());
     let context = ServerContext {
         catalog: &catalog,
         handler: &handler,

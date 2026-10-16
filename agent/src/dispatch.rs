@@ -44,7 +44,7 @@ use crate::transport::RequestHandler;
 /// Operations this build actually advertises and can serve. Must stay in sync
 /// with the match arms in `RequestHandler::handle` (minus the conditional
 /// `application.deploy`, added in `capabilities`).
-pub const SUPPORTED_OPERATIONS: [&str; 31] = [
+pub const SUPPORTED_OPERATIONS: [&str; 33] = [
     "agent.capabilities",
     "agent.inspect",
     "agent.cancel",
@@ -76,6 +76,8 @@ pub const SUPPORTED_OPERATIONS: [&str; 31] = [
     "agent.remove_database",
     "certificate.issue",
     "agent.register_certificate",
+    "agent.register_backup",
+    "backup.create",
 ];
 
 /// Upper bound on concurrent deploy workers. Extra deploys are refused with
@@ -123,6 +125,8 @@ pub struct AgentHandler<'a> {
     acme_webroot: PathBuf,
     acme_email: Option<String>,
     acme_staging: bool,
+    backup_recipient: Option<String>,
+    backup_dir: PathBuf,
 }
 
 impl<'a> AgentHandler<'a> {
@@ -145,6 +149,8 @@ impl<'a> AgentHandler<'a> {
             acme_webroot: PathBuf::from("/var/www/hostnur-acme"),
             acme_email: None,
             acme_staging: false,
+            backup_recipient: None,
+            backup_dir: PathBuf::from("/var/lib/hostnur/backups"),
         }
     }
 
@@ -168,6 +174,8 @@ impl<'a> AgentHandler<'a> {
             acme_webroot: PathBuf::from("/var/www/hostnur-acme"),
             acme_email: None,
             acme_staging: false,
+            backup_recipient: None,
+            backup_dir: PathBuf::from("/var/lib/hostnur/backups"),
         }
     }
 
@@ -317,6 +325,12 @@ impl<'a> AgentHandler<'a> {
     pub fn configure_acme(&mut self, email: Option<String>, staging: bool) {
         self.acme_email = email;
         self.acme_staging = staging;
+    }
+
+    /// Configure the backup recipient (age public key) and local staging dir.
+    pub fn configure_backup(&mut self, recipient: Option<String>, dir: PathBuf) {
+        self.backup_recipient = recipient;
+        self.backup_dir = dir;
     }
 
     fn site_name(&self, application_id: &Uuid) -> String {
@@ -953,6 +967,145 @@ impl<'a> AgentHandler<'a> {
         }
     }
 
+    fn register_backup(&self, request: &OperationRequest) -> Value {
+        let string = |key: &str| request.parameters.get(key).and_then(Value::as_str);
+        let Some(backup_id) = string("backup").and_then(|value| Uuid::parse(value).ok()) else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "backup must be a UUID",
+            );
+        };
+        let Some(scope) = string("scope") else {
+            return error_body(ContractErrorCode::InvalidParameters, "scope is required");
+        };
+        if !["application_data", "control_state", "server"].contains(&scope) {
+            return error_body(ContractErrorCode::InvalidParameters, "unknown backup scope");
+        }
+        let application_id = string("application").and_then(|value| Uuid::parse(value).ok());
+
+        if scope == "application_data" && application_id.is_none() {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "application is required for application_data scope",
+            );
+        }
+
+        let record = crate::journal::BackupRecord {
+            backup_id: backup_id.clone(),
+            scope: scope.to_string(),
+            application_id,
+        };
+
+        match self.journal.set_backup(&record) {
+            Ok(()) => {
+                json!({"protocol_version": 1, "registered": true, "backup": backup_id.as_str()})
+            }
+            Err(error) => error_body(ContractErrorCode::OperationFailed, &error.to_string()),
+        }
+    }
+
+    fn create_backup(&self, request: &OperationRequest) -> Value {
+        let Some(resource) = request.resource.as_ref() else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "backup resource is required",
+            );
+        };
+        if resource.kind != "backup" {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "resource must be a backup",
+            );
+        }
+        let Ok(backup_id) = Uuid::parse(&resource.id) else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "backup id must be a UUID",
+            );
+        };
+
+        let record = match self.journal.backup(&backup_id) {
+            Ok(Some(record)) => record,
+            Ok(None) => {
+                return error_body(
+                    ContractErrorCode::InvalidParameters,
+                    "backup is not registered",
+                );
+            }
+            Err(error) => {
+                return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+            }
+        };
+
+        let Some(recipient) = self.backup_recipient.clone() else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "no backup recipient (age public key) is configured",
+            );
+        };
+
+        if let Err(error) = std::fs::create_dir_all(&self.backup_dir) {
+            return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+        }
+
+        match record.scope.as_str() {
+            "application_data" => {
+                let Some(application_id) = record.application_id else {
+                    return error_body(
+                        ContractErrorCode::InvalidParameters,
+                        "application is required for application_data scope",
+                    );
+                };
+
+                let shared = self.apps_root.join(application_id.as_str()).join("shared");
+                let archive = self.backup_dir.join(format!("{backup_id}.tar.gz"));
+                if let Err(message) = crate::backup::archive_directory(&shared, &archive) {
+                    return error_body(ContractErrorCode::OperationFailed, &message);
+                }
+
+                let sealed_path = self.backup_dir.join(format!("{backup_id}.tar.gz.age"));
+                let (sealed_bytes, hash) =
+                    match crate::backup::seal_file(&archive, &sealed_path, &recipient) {
+                        Ok(value) => value,
+                        Err(message) => {
+                            return error_body(ContractErrorCode::OperationFailed, &message);
+                        }
+                    };
+                let archive_len = std::fs::metadata(&archive)
+                    .map(|meta| meta.len())
+                    .unwrap_or(0);
+                let _ = std::fs::remove_file(&archive);
+
+                let manifest = crate::backup::manifest(
+                    backup_id.as_str(),
+                    "application_data",
+                    &recipient,
+                    "quiesced",
+                    &clock::now_rfc3339(),
+                    archive_len,
+                    sealed_bytes,
+                    &hash,
+                );
+
+                match crate::backup::write_manifest(&self.backup_dir, &manifest) {
+                    Ok(path) => json!({
+                        "protocol_version": 1,
+                        "artifact_id": backup_id.as_str(),
+                        "scope": "application_data",
+                        "sealed_bytes": sealed_bytes,
+                        "sha256": hash,
+                        "manifest": path.display().to_string(),
+                    }),
+                    Err(message) => error_body(ContractErrorCode::OperationFailed, &message),
+                }
+            }
+            other => error_body(
+                ContractErrorCode::UnsupportedOperation,
+                &format!("backup scope `{other}` is not supported yet"),
+            ),
+        }
+    }
+
     fn package_upgrade(&self, request: &OperationRequest) -> Value {
         let security_only = request
             .parameters
@@ -1468,6 +1621,8 @@ impl RequestHandler for AgentHandler<'_> {
             "package.upgrade" => self.complete_operation(request, || self.package_upgrade(request)),
             "agent.register_package" => self.register_package(request),
             "agent.remove_package" => self.remove_package(request),
+            "agent.register_backup" => self.register_backup(request),
+            "backup.create" => self.complete_operation(request, || self.create_backup(request)),
             "firewall.rule.add" => {
                 self.complete_operation(request, || self.firewall_rule_add(request))
             }

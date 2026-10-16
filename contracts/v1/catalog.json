@@ -226,6 +226,16 @@
             "read_only": false,
             "retry": "no_blind_replay"
         },
+        "agent.register_backup": {
+            "resource": null,
+            "parameters": {
+                "backup": { "type": "uuid", "required": true },
+                "scope": { "type": "enum", "required": true, "values": ["application_data", "control_state", "server"] },
+                "application": { "type": "uuid", "required": false }
+            },
+            "read_only": false,
+            "retry": "capability_declared"
+        },
         "backup.create": {
             "resource": "backup",
             "parameters": {
