@@ -12,6 +12,7 @@ use App\Agent\Dto\OperationReceipt;
 use App\Agent\Dto\OperationRequest;
 use App\Agent\Dto\OperationSnapshot;
 use App\Agent\Dto\ServerSnapshot;
+use App\Agent\Dto\ServerUpdatesSnapshot;
 use App\Agent\OperationCatalog;
 use App\Agent\OperationRequestValidator;
 use App\Enums\AgentMode;
@@ -40,6 +41,7 @@ class AgentContractTest extends TestCase
             str_starts_with($fixture, 'application-metrics') => ApplicationMetricsSnapshot::fromArray($payload),
             str_starts_with($fixture, 'application-observation') => ApplicationObservation::fromArray($payload),
             str_starts_with($fixture, 'server-snapshot') => ServerSnapshot::fromArray($payload),
+            str_starts_with($fixture, 'server-updates') => ServerUpdatesSnapshot::fromArray($payload),
             str_starts_with($fixture, 'snapshot') => OperationSnapshot::fromArray($payload),
             str_starts_with($fixture, 'capability') => CapabilitySnapshot::fromArray($payload),
             str_starts_with($fixture, 'cancellation') => CancellationReceipt::fromArray($payload),

@@ -1164,6 +1164,29 @@ impl<'a> AgentHandler<'a> {
         to_value(snapshot)
     }
 
+    fn server_updates(&self) -> Value {
+        let (updates, truncated) = self.packages.list_updates();
+
+        let entries: Vec<Value> = updates
+            .into_iter()
+            .map(|(package, current, candidate, security)| {
+                json!({
+                    "package": package,
+                    "current": current,
+                    "candidate": candidate,
+                    "security": security,
+                })
+            })
+            .collect();
+
+        json!({
+            "protocol_version": 1,
+            "updates": entries,
+            "truncated": truncated,
+            "sampled_at": clock::now_rfc3339(),
+        })
+    }
+
     fn register_application(&self, request: &OperationRequest) -> Value {
         let parameter = |key: &str| request.parameters.get(key).and_then(Value::as_str);
         let application = match parameter("application").and_then(|value| Uuid::parse(value).ok()) {
@@ -1316,6 +1339,7 @@ impl RequestHandler for AgentHandler<'_> {
         Some(match request.operation.as_str() {
             "agent.capabilities" => self.capabilities(),
             "server.snapshot" => self.server_snapshot(),
+            "server.updates" => self.server_updates(),
             "agent.inspect" => self.inspect(request),
             "agent.cancel" => self.cancel(request),
             "agent.register_application" => self.register_application(request),

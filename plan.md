@@ -1456,10 +1456,13 @@ log tail and resource usage and start, stop or restart it from the panel, with
 cross-application access refused and simulated/unavailable results clearly marked.
 
 ### Phase 20.7 — Server package management (updates and custom catalog)
-- Status: **planned**. The packages page installs only from a fixed approved catalog
-  and cannot tell whether the host has pending `apt` updates: the snapshot exposes
-  metrics, services and firewall only, and no operation queries/previews upgrades or
-  installs packages outside the catalog.
+- Status: **partly implemented, VM validation pending**. P20.7.1 (update observation)
+  is done: read-only `server.updates` returns pending packages (package, current,
+  candidate, security) parsed from `apt list --upgradable`, surfaced on the dashboard.
+  P20.7.4 (custom catalog) and a bounded upgrade action are **not yet done** — the
+  agent's `PackagePolicy` allowlist is still hardcoded, so operator-added packages
+  need a config-driven allowlist plus the panel-side catalog store; and applying
+  updates needs a bounded, audited upgrade operation. VM validation pending.
 - Depends on: 17.
 
 #### Objective and rules
@@ -1683,6 +1686,11 @@ ask only when the choice materially changes scope, cost, access, or product beha
   deriving the provisioning lifecycle and active release from the managed layout, and
   panel persistence of `observed_state/mode/at` plus an **Observed** stat on the
   application page. Rust 130 tests + clippy; PHP 266 tests. Real-host validation pending.
+- **Phase 20.7 (update observation) implemented**: added read-only `server.updates`
+  (parsing `apt list --upgradable` into package/current/candidate/security) to the
+  contract, Rust (`packages::list_updates`), and the dashboard's **Server updates**
+  card. Rust 131 tests + clippy; PHP 266 tests. Remaining 20.7 work: a config-driven
+  custom package catalog and a bounded, audited upgrade operation.
 - **Plan**: the wiring of agent-observed state into the panel
   (`applications.observed_state`/`observed_mode`/`observed_at`) was only implied, not
   planned. Recorded it as a new not-started phase **Phase 20.5 — Observed state

@@ -1,0 +1,9 @@
+{
+    "protocol_version": 1,
+    "updates": [
+        { "package": "nginx", "current": "1.18.0-0ubuntu1.2", "candidate": "1.18.0-0ubuntu1.4", "security": false },
+        { "package": "openssl", "current": "3.0.2-0ubuntu1.10", "candidate": "3.0.2-0ubuntu1.12", "security": true }
+    ],
+    "truncated": false,
+    "sampled_at": "2026-10-12T12:00:02Z"
+}

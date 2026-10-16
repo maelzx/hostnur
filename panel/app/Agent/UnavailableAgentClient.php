@@ -11,6 +11,7 @@ use App\Agent\Dto\OperationReceipt;
 use App\Agent\Dto\OperationRequest;
 use App\Agent\Dto\OperationSnapshot;
 use App\Agent\Dto\ServerSnapshot;
+use App\Agent\Dto\ServerUpdatesSnapshot;
 use App\Agent\Exceptions\AgentUnavailableException;
 use App\Contracts\AgentClient;
 use App\Enums\AgentMode;
@@ -106,6 +107,11 @@ final class UnavailableAgentClient implements AgentClient
     public function applicationObservation(OperationRequest $request): ApplicationObservation
     {
         throw new AgentUnavailableException('The agent is unavailable, so the observed state cannot be read.');
+    }
+
+    public function serverUpdates(OperationRequest $request): ServerUpdatesSnapshot
+    {
+        throw new AgentUnavailableException('The agent is unavailable, so package updates cannot be read.');
     }
 
     private function protocolVersion(): int

@@ -150,6 +150,62 @@ impl PackagePolicy {
         }
         Ok(String::from_utf8_lossy(&outcome.stdout).trim().to_string())
     }
+
+    /// Read pending package updates via `apt list --upgradable` (bounded,
+    /// read-only; uses the cached lists and never runs `apt-get update`).
+    pub fn list_updates(&self) -> (Vec<(String, String, String, bool)>, bool) {
+        let mut spec = CommandSpec::new(PathBuf::from("/usr/bin/apt"), Duration::from_secs(30));
+        spec.args = vec!["list".to_string(), "--upgradable".to_string()];
+        spec.env = installer_env();
+        spec.output_cap_bytes = 65_536;
+        let Ok(outcome) = run(&spec) else {
+            return (Vec::new(), false);
+        };
+        parse_upgradable(&String::from_utf8_lossy(&outcome.stdout))
+    }
+}
+
+/// Parse `apt list --upgradable` into `(package, current, candidate, security)`.
+pub fn parse_upgradable(text: &str) -> (Vec<(String, String, String, bool)>, bool) {
+    let mut updates = Vec::new();
+    let mut truncated = false;
+
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with("Listing") {
+            continue;
+        }
+
+        let tokens: Vec<&str> = line.split_whitespace().collect();
+        if tokens.len() < 2 {
+            continue;
+        }
+
+        let Some((package, suite)) = tokens[0].split_once('/') else {
+            continue;
+        };
+        if package.is_empty() {
+            continue;
+        }
+
+        let candidate = tokens[1].to_string();
+        let current = line
+            .split("[upgradable from:")
+            .nth(1)
+            .and_then(|rest| rest.split(']').next())
+            .map(|value| value.trim().to_string())
+            .unwrap_or_default();
+        let security = suite.contains("security");
+
+        if updates.len() >= 200 {
+            truncated = true;
+            break;
+        }
+
+        updates.push((package.to_string(), current, candidate, security));
+    }
+
+    (updates, truncated)
 }
 
 fn installer_env() -> BTreeMap<String, String> {
@@ -166,6 +222,24 @@ fn installer_env() -> BTreeMap<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_upgradable_listing() {
+        let text = "Listing...\nnginx/jammy-updates 1.18.0-0ubuntu1.4 amd64 [upgradable from: 1.18.0-0ubuntu1.2]\nopenssl/jammy-security 3.0.2-0ubuntu1.12 amd64 [upgradable from: 3.0.2-0ubuntu1.10]\n";
+        let (updates, truncated) = parse_upgradable(text);
+        assert!(!truncated);
+        assert_eq!(updates.len(), 2);
+        assert_eq!(
+            updates[0],
+            (
+                "nginx".to_string(),
+                "1.18.0-0ubuntu1.2".to_string(),
+                "1.18.0-0ubuntu1.4".to_string(),
+                false
+            )
+        );
+        assert!(updates[1].3, "security suite should be flagged");
+    }
 
     #[test]
     fn refuses_unapproved_packages() {

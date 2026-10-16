@@ -119,10 +119,32 @@
 
     <section class="mt-6 grid gap-4 lg:grid-cols-2">
         <x-ui.panel title="Server updates">
-            <p class="mt-2 text-sm text-slate-600">
-                Update status isn’t reported by the agent yet. Pending <code>apt</code>
-                updates will appear here once supported.
-            </p>
+            @if ($updates === null)
+                <p class="mt-2 text-sm text-slate-600">Package update status is unavailable.</p>
+            @elseif ($updates->updates === [])
+                <p class="mt-2 text-sm text-slate-600">No pending updates.</p>
+            @else
+                <p class="mt-2 text-sm text-slate-600">
+                    <span class="font-semibold text-slate-900">{{ count($updates->updates) }}</span>
+                    pending update{{ count($updates->updates) === 1 ? '' : 's' }}.
+                </p>
+                <ul class="mt-3 divide-y divide-slate-100 text-sm">
+                    @foreach (array_slice($updates->updates, 0, 8) as $update)
+                        <li class="flex items-center justify-between gap-3 py-1.5">
+                            <span class="font-mono">{{ $update['package'] }}</span>
+                            <span class="flex items-center gap-2 text-xs text-slate-500">
+                                <span class="font-mono">{{ $update['current'] }} → {{ $update['candidate'] }}</span>
+                                @if ($update['security'])
+                                    <x-ui.badge tone="danger">security</x-ui.badge>
+                                @endif
+                            </span>
+                        </li>
+                    @endforeach
+                </ul>
+                @if (count($updates->updates) > 8)
+                    <p class="mt-2 text-xs text-slate-500">Showing 8 of {{ count($updates->updates) }}.</p>
+                @endif
+            @endif
         </x-ui.panel>
 
         <x-ui.panel title="Recent failures">

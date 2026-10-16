@@ -11,6 +11,7 @@ use App\Agent\Dto\OperationReceipt;
 use App\Agent\Dto\OperationRequest;
 use App\Agent\Dto\OperationSnapshot;
 use App\Agent\Dto\ServerSnapshot;
+use App\Agent\Dto\ServerUpdatesSnapshot;
 use App\Agent\Exceptions\AgentConfigurationException;
 use App\Contracts\AgentClient;
 use App\Enums\AgentMode;
@@ -90,6 +91,16 @@ final class FakeAgentClient implements AgentClient
         $fixture['sampled_at'] = now()->toIso8601String();
 
         return ApplicationObservation::fromArray($fixture);
+    }
+
+    public function serverUpdates(OperationRequest $request): ServerUpdatesSnapshot
+    {
+        $this->guard->assertFakeModeAllowed();
+
+        $fixture = $this->fixture('server-updates');
+        $fixture['sampled_at'] = now()->toIso8601String();
+
+        return ServerUpdatesSnapshot::fromArray($fixture);
     }
 
     /**

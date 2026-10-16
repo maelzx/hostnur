@@ -1,0 +1,28 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://hostnur.dev/contracts/v1/server-updates.schema.json",
+    "title": "ServerUpdatesSnapshot",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["protocol_version", "updates", "truncated", "sampled_at"],
+    "properties": {
+        "protocol_version": { "const": 1 },
+        "updates": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["package", "current", "candidate", "security"],
+                "properties": {
+                    "package": { "type": "string", "minLength": 1 },
+                    "current": { "type": "string" },
+                    "candidate": { "type": "string", "minLength": 1 },
+                    "security": { "type": "boolean" }
+                }
+            }
+        },
+        "truncated": { "type": "boolean" },
+        "sampled_at": { "type": "string", "minLength": 1 }
+    }
+}

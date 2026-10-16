@@ -99,6 +99,7 @@ final class ContractFixtures
             str_starts_with($fixtureFile, 'application-metrics') => 'schemas/application-metrics.schema.json',
             str_starts_with($fixtureFile, 'application-observation') => 'schemas/application-observation.schema.json',
             str_starts_with($fixtureFile, 'server-snapshot') => 'schemas/server-snapshot.schema.json',
+            str_starts_with($fixtureFile, 'server-updates') => 'schemas/server-updates.schema.json',
             str_starts_with($fixtureFile, 'snapshot') => 'schemas/operation-snapshot.schema.json',
             str_starts_with($fixtureFile, 'receipt') => 'schemas/operation-receipt.schema.json',
             str_starts_with($fixtureFile, 'capability') => 'schemas/capability-snapshot.schema.json',

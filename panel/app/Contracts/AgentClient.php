@@ -11,6 +11,7 @@ use App\Agent\Dto\OperationReceipt;
 use App\Agent\Dto\OperationRequest;
 use App\Agent\Dto\OperationSnapshot;
 use App\Agent\Dto\ServerSnapshot;
+use App\Agent\Dto\ServerUpdatesSnapshot;
 
 interface AgentClient
 {
@@ -90,4 +91,9 @@ interface AgentClient
      * Read the agent-observed application lifecycle and active release.
      */
     public function applicationObservation(OperationRequest $request): ApplicationObservation;
+
+    /**
+     * Read the host's pending package updates.
+     */
+    public function serverUpdates(OperationRequest $request): ServerUpdatesSnapshot;
 }

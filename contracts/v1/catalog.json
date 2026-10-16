@@ -116,6 +116,12 @@
             "read_only": true,
             "retry": "bounded"
         },
+        "server.updates": {
+            "resource": null,
+            "parameters": {},
+            "read_only": true,
+            "retry": "bounded"
+        },
         "application.deploy": {
             "resource": "application",
             "parameters": {

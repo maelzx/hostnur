@@ -12,6 +12,7 @@ use App\Agent\Dto\OperationReceipt;
 use App\Agent\Dto\OperationRequest;
 use App\Agent\Dto\OperationSnapshot;
 use App\Agent\Dto\ServerSnapshot;
+use App\Agent\Dto\ServerUpdatesSnapshot;
 use App\Agent\Exceptions\AgentRemoteException;
 use App\Agent\Transport\AgentTransport;
 use App\Contracts\AgentClient;
@@ -101,6 +102,11 @@ final class RealAgentClient implements AgentClient
     public function applicationObservation(OperationRequest $request): ApplicationObservation
     {
         return ApplicationObservation::fromArray($this->send($request->toArray()));
+    }
+
+    public function serverUpdates(OperationRequest $request): ServerUpdatesSnapshot
+    {
+        return ServerUpdatesSnapshot::fromArray($this->send($request->toArray()));
     }
 
     /**

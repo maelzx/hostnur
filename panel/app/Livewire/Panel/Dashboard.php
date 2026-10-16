@@ -2,7 +2,9 @@
 
 namespace App\Livewire\Panel;
 
+use App\Agent\Dto\OperationRequest;
 use App\Agent\Dto\ServerSnapshot;
+use App\Agent\Dto\ServerUpdatesSnapshot;
 use App\Contracts\AgentClient;
 use App\Enums\ApplicationStatus;
 use App\Enums\TaskStatus;
@@ -10,6 +12,7 @@ use App\Models\Application;
 use App\Models\Task;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -31,6 +34,7 @@ class Dashboard extends Component
 
         return view('livewire.panel.dashboard', [
             'snapshot' => $snapshot,
+            'updates' => $this->updates(app(AgentClient::class)),
             'metrics' => collect($snapshot->metrics)->keyBy('name'),
             'applicationsTotal' => $applications->count(),
             'applicationCounts' => $applicationCounts,
@@ -48,6 +52,23 @@ class Dashboard extends Component
                 ->limit(5)
                 ->get(),
         ]);
+    }
+
+    private function updates(AgentClient $agent): ?ServerUpdatesSnapshot
+    {
+        try {
+            return $agent->serverUpdates(new OperationRequest(
+                protocolVersion: (int) config('hostnur.protocol_version', 1),
+                requestId: (string) Str::uuid(),
+                idempotencyKey: (string) Str::uuid(),
+                operation: 'server.updates',
+                resource: null,
+                parameters: [],
+                timeoutSeconds: null,
+            ));
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     private function snapshot(): ServerSnapshot

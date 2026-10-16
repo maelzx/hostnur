@@ -1,0 +1,7 @@
+{
+    "protocol_version": 1,
+    "request_id": "f5a60718-2934-4156-8abc-def012345686",
+    "idempotency_key": "06a71829-3a45-4267-8abc-def012345686",
+    "operation": "server.updates",
+    "parameters": {}
+}
