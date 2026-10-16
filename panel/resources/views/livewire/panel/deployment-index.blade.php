@@ -15,7 +15,6 @@
                             <th scope="col" class="px-4 py-3 font-medium">Application</th>
                             <th scope="col" class="px-4 py-3 font-medium">Operation</th>
                             <th scope="col" class="px-4 py-3 font-medium">State</th>
-                            <th scope="col" class="px-4 py-3 font-medium">Mode</th>
                             <th scope="col" class="px-4 py-3 font-medium">Requested</th>
                         </tr>
                     </thead>
@@ -27,7 +26,6 @@
                                 </th>
                                 <td class="px-4 py-3 text-slate-600">{{ $deployment->operation }}</td>
                                 <td class="px-4 py-3"><x-ui.badge :tone="$deployment->state->value === 'failed' ? 'danger' : ($deployment->state->value === 'succeeded' ? 'success' : ($deployment->state->value === 'unknown' ? 'warning' : 'info'))">{{ $deployment->state->label() }}</x-ui.badge></td>
-                                <td class="px-4 py-3">{{ $deployment->isSimulated() ? 'simulated' : $deployment->mode }}</td>
                                 <td class="px-4 py-3 text-slate-600">{{ $deployment->requested_at?->toDayDateTimeString() ?? '—' }}</td>
                             </tr>
                         @endforeach

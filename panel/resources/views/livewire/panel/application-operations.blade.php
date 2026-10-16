@@ -72,7 +72,7 @@
             <div class="mt-2">
                 <x-ui.confirm title="Restart this application?" confirm-label="Restart" method="restart" variant="secondary">
                     <x-slot:trigger>Restart application</x-slot:trigger>
-                    The request is simulated in fake mode and recorded as a task.
+                    The request is recorded as a task.
                 </x-ui.confirm>
             </div>
         </x-ui.panel>

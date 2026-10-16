@@ -60,7 +60,7 @@ class BackupIndex extends Component
         $policy = BackupPolicy::query()->findOrFail($policyId);
         $service->requestBackup($this->actor(), $policy, $this->backupKey);
 
-        session()->flash('status', 'Backup requested (simulated while the agent is unavailable).');
+        session()->flash('status', 'Backup requested.');
         $this->redirect(route('panel.backups.index'));
     }
 

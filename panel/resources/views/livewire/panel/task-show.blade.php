@@ -6,7 +6,6 @@
         <h1 class="mt-2 break-words text-2xl font-semibold tracking-tight">{{ $task->operation }}</h1>
         <p class="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
             <x-ui.task-status :status="$task->status" />
-            <span>{{ $task->mode }} mode</span>
             @if ($pollWhileActive)
                 <span role="status" class="text-slate-500">Polling while active…</span>
             @endif

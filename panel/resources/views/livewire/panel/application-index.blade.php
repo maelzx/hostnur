@@ -34,7 +34,7 @@
                                 <td class="px-4 py-3 text-slate-600">{{ $application->runtime }} {{ $application->runtime_version }}</td>
                                 <td class="px-4 py-3 text-slate-600">{{ $application->domains_count }}</td>
                                 <td class="px-4 py-3">
-                                    <x-ui.application-status :status="$application->status()" :deployment="$application->latestDeployment" />
+                                    <x-ui.application-status :status="$application->status()" />
                                 </td>
                             </tr>
                         @endforeach

@@ -61,7 +61,7 @@
                             <tr wire:key="cert-{{ $certificate->id }}">
                                 <td class="px-4 py-3 font-mono">{{ $certificate->hostname }}</td>
                                 <td class="px-4 py-3 text-slate-600">{{ $certificate->source->value }}</td>
-                                <td class="px-4 py-3"><x-ui.request-status :state="$certificate->state" :mode="$certificate->source->value === 'managed_http01' ? 'fake' : null" /></td>
+                                <td class="px-4 py-3"><x-ui.request-status :state="$certificate->state" /></td>
                                 <td class="px-4 py-3 text-slate-600">{{ $certificate->expires_at?->toDateString() ?? '—' }}</td>
                             </tr>
                         @endforeach

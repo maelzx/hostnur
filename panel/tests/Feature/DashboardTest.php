@@ -27,7 +27,7 @@ class DashboardTest extends TestCase
         ], $attributes));
     }
 
-    public function test_the_dashboard_labels_simulated_data_in_fake_mode(): void
+    public function test_the_dashboard_shows_snapshot_data_in_fake_mode(): void
     {
         config(['hostnur.agent_mode' => 'fake']);
         $admin = $this->confirmedAdmin();
@@ -36,7 +36,6 @@ class DashboardTest extends TestCase
             ->withSession($this->mfaProof($admin))
             ->get('/panel')
             ->assertOk()
-            ->assertSee('Simulated data (fake agent mode)')
             ->assertSee('Ubuntu 24.04 LTS')
             ->assertSee('hostnur-demo')
             ->assertSee('12.4');
@@ -65,8 +64,7 @@ class DashboardTest extends TestCase
         $this->actingAs($admin)
             ->withSession($this->mfaProof($admin))
             ->get('/panel')
-            ->assertOk()
-            ->assertSee('Simulated data (fake agent mode)');
+            ->assertOk();
 
         $this->actingAs($admin)
             ->withSession($this->mfaProof($admin))

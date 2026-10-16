@@ -84,10 +84,7 @@
                 <ul class="mt-4 divide-y divide-slate-100 text-sm">
                     @foreach ($backups as $backup)
                         <li class="flex items-center justify-between gap-3 py-2" wire:key="backup-{{ $backup->id }}">
-                            <span>
-                                <x-ui.request-status :state="$backup->state" :mode="$backup->isSimulated() ? 'fake' : null" />
-                                <span class="ml-2 text-xs text-slate-500">verification: {{ $backup->verification_status }}</span>
-                            </span>
+                            <x-ui.request-status :state="$backup->state" />
                             @if ($backup->task)
                                 <a href="{{ route('panel.tasks.show', ['task' => $backup->task->id]) }}" class="text-xs font-medium text-indigo-700 hover:underline">task</a>
                             @endif

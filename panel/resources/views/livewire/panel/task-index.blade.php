@@ -53,7 +53,6 @@
                                     <a href="{{ route('panel.tasks.show', ['task' => $task->id]) }}" class="font-medium text-indigo-700 hover:underline">
                                         {{ $task->operation }}
                                     </a>
-                                    <span class="block text-xs text-slate-500">{{ $task->mode }} mode</span>
                                 </th>
                                 <td class="px-4 py-3"><x-ui.task-status :status="$task->status" /></td>
                                 <td class="px-4 py-3 text-slate-600">

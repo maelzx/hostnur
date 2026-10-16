@@ -17,7 +17,7 @@
                 <h1 class="break-words text-2xl font-semibold tracking-tight text-slate-900">{{ $application->name }}</h1>
                 <p class="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
                     <span class="font-mono">{{ $application->slug }}</span>
-                    <x-ui.application-status :status="$application->status()" :deployment="$latestDeployment" />
+                    <x-ui.application-status :status="$application->status()" />
                     <span>{{ $application->provider }}</span>
                     <span>{{ $application->runtime }} {{ $application->runtime_version }}</span>
                 </p>

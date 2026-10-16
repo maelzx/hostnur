@@ -6,11 +6,7 @@
         <h1 class="mt-2 break-words text-2xl font-semibold tracking-tight">{{ $deployment->operation }}</h1>
         <p class="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
             <x-ui.badge :tone="$deployment->state->value === 'failed' ? 'danger' : ($deployment->state->value === 'succeeded' ? 'success' : ($deployment->state->value === 'unknown' ? 'warning' : 'info'))">{{ $deployment->state->label() }}</x-ui.badge>
-            @if ($deployment->isSimulated())
-                <x-ui.badge tone="warning">simulated</x-ui.badge>
-            @else
-                <x-ui.badge tone="info">{{ $deployment->mode }}</x-ui.badge>
-            @endif
+
             @if ($deployment->application)
                 <a href="{{ route('panel.applications.show', ['application' => $deployment->application->id]) }}" class="font-medium text-indigo-700 hover:underline">{{ $deployment->application->name }}</a>
             @endif

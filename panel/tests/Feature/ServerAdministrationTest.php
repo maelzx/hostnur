@@ -66,8 +66,7 @@ class ServerAdministrationTest extends TestCase
             ->get('/panel/packages')
             ->assertOk()
             ->assertSee('nginx')
-            ->assertSee('certbot')
-            ->assertSee('Simulated agent mode');
+            ->assertSee('certbot');
 
         $this->actingAs($admin)
             ->withSession($session)
