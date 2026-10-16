@@ -1757,6 +1757,50 @@ ask only when the choice materially changes scope, cost, access, or product beha
   `unsupported_operation`, unknown/invalid parameters → `invalid_parameters`;
   oversized frames are refused (fail closed). Rust 143 tests + clippy clean.
 
+#### Open findings / next session (droplet destroyed)
+
+**Phase 21 (validation) — remaining:**
+- **Agent long-op blocking (highest priority)**: the transport handles connections one
+  at a time, and mutations (`package.install`/`upgrade`, `backup.create`, `service.control`,
+  `firewall.*`) run **inline**, so a long op blocks all reads (dashboard 500'd during a
+  full `apt upgrade`). Root fix: run long mutations **asynchronously** (accept →
+  background worker → panel polls `agent.inspect`) or handle connections concurrently.
+  Panel reads now degrade to "busy"; do the real fix next.
+- **Hosted-app TLS is not auto-issued on deploy** — a cert for a deployed app's domain
+  needs `register_certificate` + `certificate.issue` (validated manually; the panel's
+  "Request certificate" works). Decide whether deploy/domain-add should auto-request it.
+- Not yet validated: **redeploy**, **rollback**, crash/disconnect, Nginx/TLS-failure
+  handling, **SQLite contention** under load, **cross-app isolation** (two apps; secret/
+  file isolation), **signed-release verification**.
+- **Panel UI path not exercised end-to-end** (MFA blocks automation): apps were deployed
+  via the **agent socket**, so the panel DB stayed empty and was reconciled by hand.
+  Consider an artisan command or a browser test to drive the create-app wizard → deploy.
+- Hand-rolled-deploy gaps (installer/package already cover them, but note for manual):
+  `/etc/nginx/conf.d/hostnur-sites.conf` include; **php8.4 + node** for Laravel builds;
+  dedicated **`hostnur-panel`** identity; agent `acme_email`.
+
+**Phase 19 (backup) — remaining:**
+- **Retention/prune + SFTP destination** (P19.6).
+- **Live S3 upload** to a real bucket (needs operator endpoint/keys); the SigV4 signer is
+  reference-verified but not proven end-to-end against real object storage.
+- **`control_state` + `server` capture scopes** (panel SQLite/APP_KEY; whole-host recovery set).
+- **Full-host reconciliation + separate-VM restore drill/runbook** (P19.5).
+
+**Phase 20 (packaging) — remaining:**
+- **Real CI run** of `.github/workflows/packages.yml` (needs a push/tag) + real-host
+  `.deb` install/upgrade validation; choose the **signing key** and publish the signed
+  APT repo (install-time TLS is wired via `panel-tls.conf`).
+
+**Open decisions gating release:** official product domain; license/public-beta terms;
+release signing key/hosting; a separate restore VM.
+
+**Other:** agent runs as **root** (hardening deferred); real CI runs for the agent/web
+workflows still unobserved (commits are local-only); `key:generate` only *replaces* an
+existing `APP_KEY` (beware hand-written `.env`).
+
+**Droplet rebuild:** destroy + recreate per `docs/p16-test-host.md` (new IP); the panel/
+agent manual-deploy specifics from this session are appended there.
+
 ### Session 044 — UI/UX revamp + truthful application status (2026-10-15)
 
 - **UI/UX revamp** (using the `ui-ux-pro-max` skill): redesigned the sign-in page

@@ -314,3 +314,27 @@ Deploying gets the app serving, but to *log in and use it*:
   for a deploy to succeed — only for browser access.
 - Deleting the droplet removes everything; nothing on the dev machine needs cleanup
   except the Lima VM (kept) and the SSH key (kept at `~/.ssh/hostnur_p16_ed25519`).
+
+## Appendix — session 047 panel/agent deploy (2026-10-16)
+
+Panel domain `hostnur-p16.kom.my`, app domain `assetkom.hostnur-p16.kom.my` (both A →
+droplet). Fast path used this session (beyond the base runbook):
+
+- Install PHP 8.4 (`ppa:ondrej/php`) + Node 20 (nodesource) — Laravel builds need them.
+- Agent `agent.toml`: `socket_group = "hostnur"`, `allowed_peer_uids = [0, <panel-uid>]`,
+  `acme_email = "maelzx@duck.com"`, `backup_recipient`/`backup_dir` optional.
+- **Dedicated panel identity** `hostnur-panel` (in group `hostnur`); FPM pool + worker/
+  scheduler units run as it; chown `/opt/hostnur-panel` to it.
+- **Critical**: the panel `.env` must include `APP_KEY=` (even empty) — `php artisan
+  key:generate` only *replaces* an existing line. Easiest: set `APP_KEY=base64:$(openssl rand 32 | base64)`.
+- Enable the managed-site include: `/etc/nginx/conf.d/hostnur-sites.conf` =
+  `include /etc/nginx/hostnur-sites/*.conf;` (the installer/package do this; a hand-rolled
+  deploy must too, or app vhosts won't load).
+- Panel nginx: `:80` (ACME + 301 to the panel domain) + `:443` ssl; `/run/php/hostnur-panel.sock`.
+- Worker + scheduler (as `hostnur-panel`): `hostnur-panel-worker` + `hostnur-panel-scheduler.timer`.
+- Panel TLS: `php artisan hostnur:panel:setup-tls --domain hostnur-p16.kom.my --email …`.
+- Deploy an app via the panel wizard, **or** (scripted validation) the agent socket:
+  `agent.register_application` → `application.deploy {revision,ref,run_migrations,
+  recovery_acknowledged}` → poll `agent.inspect`; DB via `agent.register_database` +
+  `database.provision`; app TLS via `agent.register_certificate` + `certificate.issue`.
+  Socket-driven deploys **bypass the panel DB** (reconcile or use the wizard).
