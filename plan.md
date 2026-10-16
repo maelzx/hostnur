@@ -1574,11 +1574,13 @@ rolls back without lock-out, and every change is audited.
   agent now runs `php artisan migrate --force` when the caller acknowledges a recovery
   point (`recovery_acknowledged`), replacing the fail-closed stub; validated by
   redeploying AssetKOM — homepage + `/login` return **200** with a real migrated DB.
-  **Remaining blocker**: the agent's managed app site is HTTP-only; hosting an app over
-  TLS needs the `certificate.issue` path.
-- Remaining: app TLS issuance, redeploy/rollback, crash/disconnect, Nginx/TLS-failure,
-  SQLite contention, cross-app isolation, signed-release verification, and
-  restore/recovery drills.
+  **App TLS validated**: `register_certificate` + `certificate.issue` issued a real
+  Let's Encrypt cert and re-rendered the site with `:443` — AssetKOM now serves over
+  **HTTPS** (`/login` 200, cert `CN=assetkom.hostnur-p16.kom.my`). The panel exposes
+  this via "Request certificate" on the app's domain.
+- Remaining: redeploy/rollback, crash/disconnect, Nginx/TLS-failure handling, SQLite
+  contention, cross-app isolation, signed-release verification, and restore/recovery
+  drills.
 - Depends on: 1–20.8 and disposable VM access.
 - Slices: full cross-process/VM regression, privilege/path/socket abuse cases,
   app isolation, crashes/disconnects, Nginx/TLS failures, SQLite contention,
@@ -1730,6 +1732,9 @@ ask only when the choice materially changes scope, cost, access, or product beha
   migrations run (`php artisan migrate --force` as the app user) only when it is set.
   Panel `DeploymentService` forwards the acknowledgement. Validated: AssetKOM redeploy
   migrated and the app serves (`/login` 200). Rust 143 tests + clippy; PHP 267 tests.
+- **App TLS (Phase 21)**: issued a real Let's Encrypt cert for AssetKOM via
+  `register_certificate` + `certificate.issue`; the agent re-rendered the managed site
+  with `:443` and the app serves over HTTPS (`/login` 200, cert `CN=assetkom…`).
 - **Agent fix (Phase 21 safety finding)**: request-level errors now return the
   contract's framed error object (`{"error":{code,message,retryable}}`) instead of
   closing the connection silently. Verified on the host: unknown op →
