@@ -6,6 +6,7 @@ use App\Agent\Dto\OperationRequest;
 use App\Agent\Dto\ServerSnapshot;
 use App\Agent\Dto\ServerUpdatesSnapshot;
 use App\Contracts\AgentClient;
+use App\Enums\AgentMode;
 use App\Enums\ApplicationStatus;
 use App\Enums\TaskStatus;
 use App\Models\Application;
@@ -75,12 +76,25 @@ class Dashboard extends Component
     {
         $seconds = (int) config('hostnur.dashboard.cache_seconds', 15);
 
-        $sample = Cache::remember(
-            'hostnur.dashboard.snapshot.'.config('hostnur.agent_mode'),
-            now()->addSeconds($seconds),
-            fn (): array => app(AgentClient::class)->snapshot()->toArray(),
-        );
+        try {
+            $sample = Cache::remember(
+                'hostnur.dashboard.snapshot.'.config('hostnur.agent_mode'),
+                now()->addSeconds($seconds),
+                fn (): array => app(AgentClient::class)->snapshot()->toArray(),
+            );
 
-        return ServerSnapshot::fromArray($sample);
+            return ServerSnapshot::fromArray($sample);
+        } catch (\Throwable) {
+            // A busy/unreachable agent must not blank the whole page.
+            return new ServerSnapshot(
+                protocolVersion: (int) config('hostnur.protocol_version', 1),
+                mode: AgentMode::Unavailable,
+                available: false,
+                sampledAt: now()->toIso8601String(),
+                metrics: [],
+                services: [],
+                reason: 'The agent is unavailable or busy; retry shortly.',
+            );
+        }
     }
 }

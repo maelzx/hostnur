@@ -1578,9 +1578,17 @@ rolls back without lock-out, and every change is audited.
   Let's Encrypt cert and re-rendered the site with `:443` — AssetKOM now serves over
   **HTTPS** (`/login` 200, cert `CN=assetkom.hostnur-p16.kom.my`). The panel exposes
   this via "Request certificate" on the app's domain.
-- Remaining: redeploy/rollback, crash/disconnect, Nginx/TLS-failure handling, SQLite
-  contention, cross-app isolation, signed-release verification, and restore/recovery
-  drills.
+- **Robustness gap found (Phase 21)**: the agent transport handles connections **one
+  at a time**, so a long mutation (a full `package.upgrade`) blocks every other
+  request — the dashboard 500'd with "Timed out waiting for the agent response".
+  Panel agent **reads now degrade gracefully** to an "unavailable/busy" snapshot
+  instead of erroring, and the upgrade itself actually completed on the host (0
+  pending, dpkg consistent). The root fix — run long mutations **asynchronously**
+  (accept → worker → inspect) or handle connections concurrently — is recorded as
+  remaining.
+- Remaining: long-operation isolation (async mutations / concurrent connections),
+  redeploy/rollback, crash/disconnect, Nginx/TLS-failure handling, SQLite contention,
+  cross-app isolation, signed-release verification, and restore/recovery drills.
 - Depends on: 1–20.8 and disposable VM access.
 - Slices: full cross-process/VM regression, privilege/path/socket abuse cases,
   app isolation, crashes/disconnects, Nginx/TLS failures, SQLite contention,
@@ -1732,6 +1740,11 @@ ask only when the choice materially changes scope, cost, access, or product beha
   migrations run (`php artisan migrate --force` as the app user) only when it is set.
   Panel `DeploymentService` forwards the acknowledgement. Validated: AssetKOM redeploy
   migrated and the app serves (`/login` 200). Rust 143 tests + clippy; PHP 267 tests.
+- **Agent robustness (Phase 21)**: while a full `package.upgrade` ran, the agent's
+  single-threaded transport blocked reads and the dashboard 500'd ("Timed out waiting
+  for the agent response"). The upgrade did complete on the host. Panel agent **reads
+  now degrade to an "unavailable/busy" snapshot** instead of erroring (Dashboard +
+  ServerService). Root fix (async long mutations / concurrent connections) recorded.
 - **Dashboard CPU**: the agent now computes `cpu_percent` over the **interval
   between snapshots** (a single 150 ms sample on an idle box is always ~0). Verified
   on the host: idle 0, under load 100, calm ~10.

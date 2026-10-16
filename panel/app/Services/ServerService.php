@@ -7,6 +7,7 @@ use App\Agent\Dto\ResourceRef;
 use App\Agent\Dto\ServerSnapshot;
 use App\Agent\OperationCatalog;
 use App\Contracts\AgentClient;
+use App\Enums\AgentMode;
 use App\Enums\AuditAction;
 use App\Enums\AuditOutcome;
 use App\Enums\ResourceKind;
@@ -32,7 +33,21 @@ final class ServerService
 
     public function snapshot(): ServerSnapshot
     {
-        return $this->agent->snapshot();
+        try {
+            return $this->agent->snapshot();
+        } catch (\Throwable) {
+            // Reads degrade to an unavailable observation rather than erroring the
+            // page, so a busy/unreachable agent never blanks a screen.
+            return new ServerSnapshot(
+                protocolVersion: (int) config('hostnur.protocol_version', 1),
+                mode: AgentMode::Unavailable,
+                available: false,
+                sampledAt: now()->toIso8601String(),
+                metrics: [],
+                services: [],
+                reason: 'The agent is unavailable or busy; retry shortly.',
+            );
+        }
     }
 
     /**
