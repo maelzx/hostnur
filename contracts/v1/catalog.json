@@ -162,6 +162,30 @@
             "read_only": false,
             "retry": "no_blind_replay"
         },
+        "package.upgrade": {
+            "resource": null,
+            "parameters": {
+                "security": { "type": "boolean", "required": false }
+            },
+            "read_only": false,
+            "retry": "no_blind_replay"
+        },
+        "agent.register_package": {
+            "resource": null,
+            "parameters": {
+                "package": { "type": "string", "required": true, "max": 64 }
+            },
+            "read_only": false,
+            "retry": "capability_declared"
+        },
+        "agent.remove_package": {
+            "resource": null,
+            "parameters": {
+                "package": { "type": "string", "required": true, "max": 64 }
+            },
+            "read_only": false,
+            "retry": "capability_declared"
+        },
         "schedule.apply": {
             "resource": "schedule",
             "parameters": {

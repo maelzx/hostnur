@@ -875,7 +875,18 @@ impl<'a> AgentHandler<'a> {
                 "package id is required",
             );
         };
-        match self.packages.install(id) {
+        let outcome = if self.packages.is_approved(id) {
+            self.packages.install(id)
+        } else if self.package_is_registered(id) {
+            self.packages.install_name(id)
+        } else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "package is not in the approved catalog",
+            );
+        };
+
+        match outcome {
             Ok(version) => json!({
                 "protocol_version": 1,
                 "installed": true,
@@ -888,6 +899,61 @@ impl<'a> AgentHandler<'a> {
             ),
             Err(PackageError::ToolFailed(message)) => {
                 error_body(ContractErrorCode::OperationFailed, &message)
+            }
+        }
+    }
+
+    fn package_is_registered(&self, id: &str) -> bool {
+        self.journal
+            .packages()
+            .map(|packages| packages.iter().any(|package| package == id))
+            .unwrap_or(false)
+    }
+
+    fn register_package(&self, request: &OperationRequest) -> Value {
+        let Some(package) = request.parameters.get("package").and_then(Value::as_str) else {
+            return error_body(ContractErrorCode::InvalidParameters, "package is required");
+        };
+        if !crate::packages::is_valid_package_name(package) {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "package name is invalid",
+            );
+        }
+        match self.journal.set_package(package) {
+            Ok(()) => json!({"protocol_version": 1, "registered": true, "package": package}),
+            Err(error) => error_body(ContractErrorCode::OperationFailed, &error.to_string()),
+        }
+    }
+
+    fn remove_package(&self, request: &OperationRequest) -> Value {
+        let Some(package) = request.parameters.get("package").and_then(Value::as_str) else {
+            return error_body(ContractErrorCode::InvalidParameters, "package is required");
+        };
+        match self.journal.remove_package(package) {
+            Ok(()) => json!({"protocol_version": 1, "removed": true, "package": package}),
+            Err(error) => error_body(ContractErrorCode::OperationFailed, &error.to_string()),
+        }
+    }
+
+    fn package_upgrade(&self, request: &OperationRequest) -> Value {
+        let security_only = request
+            .parameters
+            .get("security")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+
+        match self.packages.upgrade(security_only) {
+            Ok(count) => json!({
+                "protocol_version": 1,
+                "upgraded": count,
+                "security_only": security_only,
+            }),
+            Err(PackageError::ToolFailed(message)) => {
+                error_body(ContractErrorCode::OperationFailed, &message)
+            }
+            Err(PackageError::UnknownPackage(message)) => {
+                error_body(ContractErrorCode::InvalidParameters, &message)
             }
         }
     }
@@ -1346,6 +1412,9 @@ impl RequestHandler for AgentHandler<'_> {
             "application.deploy" => self.deploy_release(request),
             "service.control" => self.complete_operation(request, || self.service_control(request)),
             "package.install" => self.complete_operation(request, || self.package_install(request)),
+            "package.upgrade" => self.complete_operation(request, || self.package_upgrade(request)),
+            "agent.register_package" => self.register_package(request),
+            "agent.remove_package" => self.remove_package(request),
             "firewall.rule.add" => {
                 self.complete_operation(request, || self.firewall_rule_add(request))
             }

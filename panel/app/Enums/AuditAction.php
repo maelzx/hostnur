@@ -50,6 +50,9 @@ enum AuditAction: string
 
     case ServerServiceControlRequested = 'server.service_control_requested';
     case ServerPackageInstallRequested = 'server.package_install_requested';
+    case ServerPackageUpgradeRequested = 'server.package_upgrade_requested';
+    case PackageApproved = 'server.package_approved';
+    case PackageRemoved = 'server.package_removed';
     case FirewallRuleAdded = 'server.firewall_rule_added';
     case FirewallRuleRemoved = 'server.firewall_rule_removed';
     case FirewallWebChanged = 'server.firewall_web_changed';

@@ -103,6 +103,16 @@ final class FakeAgentClient implements AgentClient
         return ServerUpdatesSnapshot::fromArray($fixture);
     }
 
+    public function registerPackage(OperationRequest $request): void
+    {
+        // No durable registry in the fake adapter.
+    }
+
+    public function removePackage(OperationRequest $request): void
+    {
+        // No durable registry in the fake adapter.
+    }
+
     /**
      * @param  array<string, mixed>  $fallback
      */

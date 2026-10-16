@@ -99,6 +99,12 @@ CREATE TABLE IF NOT EXISTS schedules (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS approved_packages (
+    package TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS application_sources (
     application_id TEXT PRIMARY KEY,
     repository_url TEXT NOT NULL,
@@ -879,6 +885,47 @@ impl Journal {
             )
             .map_err(|err| JournalError::Query(err.to_string()))?;
         Ok(())
+    }
+
+    /// Approve an operator-supplied package name in the registry.
+    pub fn set_package(&self, package: &str) -> Result<(), JournalError> {
+        self.connection
+            .execute(
+                "INSERT INTO approved_packages (package, created_at, updated_at) VALUES (?1, ?2, ?2)
+                 ON CONFLICT(package) DO UPDATE SET updated_at = excluded.updated_at",
+                params![package, clock::now_rfc3339()],
+            )
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+        Ok(())
+    }
+
+    pub fn remove_package(&self, package: &str) -> Result<(), JournalError> {
+        self.connection
+            .execute(
+                "DELETE FROM approved_packages WHERE package = ?1",
+                params![package],
+            )
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+        Ok(())
+    }
+
+    /// Operator-approved package names (excludes the built-in catalog).
+    pub fn packages(&self) -> Result<Vec<String>, JournalError> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT package FROM approved_packages ORDER BY package")
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+
+        let mut packages = Vec::new();
+        for row in rows {
+            packages.push(row.map_err(|err| JournalError::Query(err.to_string()))?);
+        }
+
+        Ok(packages)
     }
 }
 

@@ -163,6 +163,94 @@ impl PackagePolicy {
         };
         parse_upgradable(&String::from_utf8_lossy(&outcome.stdout))
     }
+
+    /// Install an already-validated package name (bounded). Used for
+    /// operator-approved registry packages; the name is re-validated here.
+    pub fn install_name(&self, apt_name: &str) -> Result<String, PackageError> {
+        if !is_valid_package_name(apt_name) {
+            return Err(PackageError::UnknownPackage(apt_name.to_string()));
+        }
+
+        let lock_option = format!("DPkg::Lock::Timeout={}", self.lock_timeout_seconds);
+        let mut spec = CommandSpec::new(&self.apt_get, self.deadline);
+        spec.args = vec![
+            "-y".to_string(),
+            "-o".to_string(),
+            lock_option,
+            "--no-install-recommends".to_string(),
+            "install".to_string(),
+            apt_name.to_string(),
+        ];
+        spec.env = installer_env();
+        spec.output_cap_bytes = 65_536;
+        validate_spec(&spec)
+            .map_err(|error: ProcessError| PackageError::ToolFailed(error.to_string()))?;
+
+        let outcome = run(&spec).map_err(|error| PackageError::ToolFailed(error.to_string()))?;
+        if !outcome.succeeded() {
+            return Err(PackageError::ToolFailed(format!(
+                "apt-get exit code {:?}",
+                outcome.exit_code
+            )));
+        }
+
+        self.installed_version(apt_name)
+    }
+
+    /// Upgrade already-installed pending packages only (never installs new
+    /// packages). Returns how many were upgraded.
+    pub fn upgrade(&self, security_only: bool) -> Result<usize, PackageError> {
+        let (updates, _) = self.list_updates();
+        let names: Vec<String> = updates
+            .into_iter()
+            .filter(|(_, _, _, security)| !security_only || *security)
+            .map(|(package, _, _, _)| package)
+            .collect();
+
+        if names.is_empty() {
+            return Ok(0);
+        }
+
+        let lock_option = format!("DPkg::Lock::Timeout={}", self.lock_timeout_seconds);
+        let mut spec = CommandSpec::new(&self.apt_get, self.deadline);
+        let mut args = vec![
+            "-y".to_string(),
+            "-o".to_string(),
+            lock_option,
+            "--only-upgrade".to_string(),
+            "install".to_string(),
+        ];
+        args.extend(names.iter().cloned());
+        spec.args = args;
+        spec.env = installer_env();
+        spec.output_cap_bytes = 65_536;
+        validate_spec(&spec)
+            .map_err(|error: ProcessError| PackageError::ToolFailed(error.to_string()))?;
+
+        let outcome = run(&spec).map_err(|error| PackageError::ToolFailed(error.to_string()))?;
+        if !outcome.succeeded() {
+            return Err(PackageError::ToolFailed(format!(
+                "apt-get upgrade exit code {:?}",
+                outcome.exit_code
+            )));
+        }
+
+        Ok(names.len())
+    }
+}
+
+/// Validate an APT package name (`[a-z0-9][a-z0-9+.-]{0,63}`).
+pub fn is_valid_package_name(name: &str) -> bool {
+    if name.is_empty() || name.len() > 64 {
+        return false;
+    }
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_lowercase() || c.is_ascii_digit() => {}
+        _ => return false,
+    }
+    name.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '+' | '.' | '-'))
 }
 
 /// Parse `apt list --upgradable` into `(package, current, candidate, security)`.
@@ -222,6 +310,15 @@ fn installer_env() -> BTreeMap<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validates_package_names() {
+        assert!(is_valid_package_name("redis-server"));
+        assert!(is_valid_package_name("php8.3-fpm"));
+        assert!(!is_valid_package_name("Bad Name"));
+        assert!(!is_valid_package_name(";rm -rf /"));
+        assert!(!is_valid_package_name(""));
+    }
 
     #[test]
     fn parses_upgradable_listing() {

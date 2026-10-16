@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\BackupService;
 use App\Services\CertificateService;
 use App\Services\DatabaseService;
+use App\Services\PackageCatalogService;
 use App\Services\RecentAuthentication;
 use App\Services\ScheduleService;
 use App\Services\ServerService;
@@ -114,6 +115,31 @@ class ServerAdministrationTest extends TestCase
 
         $task = $service->installPackage($admin, 'nginx', 'k2');
         $this->assertDatabaseHas('tasks', ['id' => $task->getKey(), 'operation' => 'package.install']);
+    }
+
+    public function test_the_operator_package_catalog_and_upgrade(): void
+    {
+        config(['hostnur.agent_mode' => 'fake']);
+        Queue::fake();
+        $admin = $this->admin();
+        $this->recent($admin);
+
+        $catalog = app(PackageCatalogService::class);
+        $package = $catalog->add($admin, 'htop');
+        $this->assertDatabaseHas('approved_packages', ['name' => 'htop']);
+
+        $task = app(ServerService::class)->upgradePackages($admin, true, 'up1');
+        $this->assertDatabaseHas('tasks', ['id' => $task->getKey(), 'operation' => 'package.upgrade']);
+
+        try {
+            $catalog->add($admin, 'Bad Name');
+            $this->fail('Expected an invalid package name to be refused.');
+        } catch (ValidationException) {
+            $this->assertTrue(true);
+        }
+
+        $catalog->remove($admin, $package);
+        $this->assertDatabaseMissing('approved_packages', ['name' => 'htop']);
     }
 
     public function test_firewall_rules_are_requested_but_web_ports_are_protected(): void

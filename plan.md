@@ -1456,13 +1456,13 @@ log tail and resource usage and start, stop or restart it from the panel, with
 cross-application access refused and simulated/unavailable results clearly marked.
 
 ### Phase 20.7 — Server package management (updates and custom catalog)
-- Status: **partly implemented, VM validation pending**. P20.7.1 (update observation)
-  is done: read-only `server.updates` returns pending packages (package, current,
-  candidate, security) parsed from `apt list --upgradable`, surfaced on the dashboard.
-  P20.7.4 (custom catalog) and a bounded upgrade action are **not yet done** — the
-  agent's `PackagePolicy` allowlist is still hardcoded, so operator-added packages
-  need a config-driven allowlist plus the panel-side catalog store; and applying
-  updates needs a bounded, audited upgrade operation. VM validation pending.
+- Status: **implemented, VM validation pending**. Updates observation (`server.updates`,
+  parsed from `apt list --upgradable`, on the dashboard); a config/registry-driven
+  custom catalog (`agent.register_package` / `agent.remove_package` backed by an agent
+  journal table, plus a panel `approved_packages` store and UI); and a bounded,
+  audited `package.upgrade` (`--only-upgrade` on already-installed packages, security
+  filter) are all done and unit-tested (Rust 132 tests + clippy; PHP 267 tests).
+  Real-host validation (actual upgrades, agent registry install path) is pending.
 - Depends on: 17.
 
 #### Objective and rules
@@ -1691,6 +1691,13 @@ ask only when the choice materially changes scope, cost, access, or product beha
   contract, Rust (`packages::list_updates`), and the dashboard's **Server updates**
   card. Rust 131 tests + clippy; PHP 266 tests. Remaining 20.7 work: a config-driven
   custom package catalog and a bounded, audited upgrade operation.
+- **Phase 20.7 (catalog + upgrade) implemented**: added `agent.register_package` /
+  `agent.remove_package` (agent journal `approved_packages` registry) and
+  `package.upgrade` (bounded `--only-upgrade`, security filter) to the contract; a
+  panel `approved_packages` store + `PackageCatalogService` mirrored to the agent
+  registry; and packages-page UI (operator catalog add/remove, install from
+  built-in+operator list, apply security/all updates). Rust 132 tests + clippy; PHP
+  267 tests. Real-host validation pending.
 - **Plan**: the wiring of agent-observed state into the panel
   (`applications.observed_state`/`observed_mode`/`observed_at`) was only implied, not
   planned. Recorded it as a new not-started phase **Phase 20.5 — Observed state

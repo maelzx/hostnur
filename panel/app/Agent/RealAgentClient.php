@@ -109,6 +109,16 @@ final class RealAgentClient implements AgentClient
         return ServerUpdatesSnapshot::fromArray($this->send($request->toArray()));
     }
 
+    public function registerPackage(OperationRequest $request): void
+    {
+        $this->send($request->toArray());
+    }
+
+    public function removePackage(OperationRequest $request): void
+    {
+        $this->send($request->toArray());
+    }
+
     /**
      * @param  array<string, mixed>  $parameters
      * @return array<string, mixed>

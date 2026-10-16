@@ -96,4 +96,14 @@ interface AgentClient
      * Read the host's pending package updates.
      */
     public function serverUpdates(OperationRequest $request): ServerUpdatesSnapshot;
+
+    /**
+     * Add an operator-approved package to the agent registry.
+     */
+    public function registerPackage(OperationRequest $request): void;
+
+    /**
+     * Remove an operator-approved package from the agent registry.
+     */
+    public function removePackage(OperationRequest $request): void;
 }

@@ -176,6 +176,30 @@ final class ServerService
         return $task;
     }
 
+    public function upgradePackages(User $actor, bool $securityOnly, string $idempotencyKey): Task
+    {
+        $this->assertAgentAvailable();
+
+        $task = $this->tasks->requestApproved($actor, new OperationRequest(
+            protocolVersion: (int) config('hostnur.protocol_version', 1),
+            requestId: (string) Str::uuid(),
+            idempotencyKey: $idempotencyKey,
+            operation: 'package.upgrade',
+            resource: null,
+            parameters: ['security' => $securityOnly],
+            timeoutSeconds: null,
+        ));
+
+        $this->audit->record($actor, AuditAction::ServerPackageUpgradeRequested, AuditOutcome::Requested, [
+            'resource_kind' => 'package',
+            'resource_id' => null,
+            'task_id' => $task->getKey(),
+            'metadata' => ['operation' => 'package.upgrade', 'security_only' => $securityOnly],
+        ]);
+
+        return $task;
+    }
+
     private function assertRule(int $port, string $protocol, string $source, string $action): void
     {
         if ($port < 1 || $port > 65535) {
