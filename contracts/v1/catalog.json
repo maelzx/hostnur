@@ -244,6 +244,15 @@
             "read_only": false,
             "retry": "capability_declared"
         },
+        "backup.restore": {
+            "resource": "backup",
+            "parameters": {
+                "identity": { "type": "string", "required": true, "max": 1024 },
+                "artifact": { "type": "string", "required": false, "max": 255 }
+            },
+            "read_only": false,
+            "retry": "no_blind_replay"
+        },
         "firewall.rule.add": {
             "resource": null,
             "parameters": {

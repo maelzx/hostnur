@@ -44,7 +44,7 @@ use crate::transport::RequestHandler;
 /// Operations this build actually advertises and can serve. Must stay in sync
 /// with the match arms in `RequestHandler::handle` (minus the conditional
 /// `application.deploy`, added in `capabilities`).
-pub const SUPPORTED_OPERATIONS: [&str; 33] = [
+pub const SUPPORTED_OPERATIONS: [&str; 34] = [
     "agent.capabilities",
     "agent.inspect",
     "agent.cancel",
@@ -78,6 +78,7 @@ pub const SUPPORTED_OPERATIONS: [&str; 33] = [
     "agent.register_certificate",
     "agent.register_backup",
     "backup.create",
+    "backup.restore",
 ];
 
 /// Upper bound on concurrent deploy workers. Extra deploys are refused with
@@ -1161,6 +1162,96 @@ impl<'a> AgentHandler<'a> {
         }
     }
 
+    fn restore_backup(&self, request: &OperationRequest) -> Value {
+        let Some(resource) = request.resource.as_ref() else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "backup resource is required",
+            );
+        };
+        if resource.kind != "backup" {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "resource must be a backup",
+            );
+        }
+        let Ok(backup_id) = Uuid::parse(&resource.id) else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "backup id must be a UUID",
+            );
+        };
+
+        let record = match self.journal.backup(&backup_id) {
+            Ok(Some(record)) => record,
+            Ok(None) => {
+                return error_body(
+                    ContractErrorCode::InvalidParameters,
+                    "backup is not registered",
+                );
+            }
+            Err(error) => {
+                return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+            }
+        };
+
+        let Some(identity) = request.parameters.get("identity").and_then(Value::as_str) else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "the operator age identity is required to restore",
+            );
+        };
+
+        let artifact = request
+            .parameters
+            .get("artifact")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{backup_id}.tar.gz.age"));
+
+        if artifact.contains('/') || artifact.contains("..") {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "artifact must be a filename",
+            );
+        }
+
+        let sealed_path = self.backup_dir.join(&artifact);
+        if !sealed_path.is_file() {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "backup artifact was not found",
+            );
+        }
+
+        match record.scope.as_str() {
+            "application_data" => {
+                let Some(application_id) = record.application_id else {
+                    return error_body(
+                        ContractErrorCode::InvalidParameters,
+                        "application is required for application_data scope",
+                    );
+                };
+
+                let target = self.apps_root.join(application_id.as_str()).join("shared");
+
+                match crate::backup::restore_archive(&sealed_path, identity, &target) {
+                    Ok(entries) => json!({
+                        "protocol_version": 1,
+                        "restored": true,
+                        "entries": entries,
+                        "target": target.display().to_string(),
+                    }),
+                    Err(message) => error_body(ContractErrorCode::OperationFailed, &message),
+                }
+            }
+            other => error_body(
+                ContractErrorCode::UnsupportedOperation,
+                &format!("restore for scope `{other}` is not supported yet"),
+            ),
+        }
+    }
+
     fn package_upgrade(&self, request: &OperationRequest) -> Value {
         let security_only = request
             .parameters
@@ -1678,6 +1769,7 @@ impl RequestHandler for AgentHandler<'_> {
             "agent.remove_package" => self.remove_package(request),
             "agent.register_backup" => self.register_backup(request),
             "backup.create" => self.complete_operation(request, || self.create_backup(request)),
+            "backup.restore" => self.complete_operation(request, || self.restore_backup(request)),
             "firewall.rule.add" => {
                 self.complete_operation(request, || self.firewall_rule_add(request))
             }

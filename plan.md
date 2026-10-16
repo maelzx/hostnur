@@ -1188,9 +1188,15 @@ pass on the VM. Only tested engine/version/data-movement capabilities are advert
   an independent SigV4 reference. **Validated on the droplet**: with an unreachable
   endpoint, `backup.create` sealed locally then attempted the correct path-style URL
   (`http://…/bucket/<id>.tar.gz.age`) and surfaced a clear error; upload path confirmed.
+- **Restore orchestration (P19.4 core) landed**: `backup.restore` decrypts the
+  artifact with the operator age identity (supplied transiently, never stored/logged)
+  and safely extracts it — rejecting absolute paths/`..`, skipping links and device
+  nodes, bounded entry count, never extracting outside the target — into the app's
+  data dir. **Validated end-to-end on the droplet**: `backup.create` → wipe the data
+  → `backup.restore` recovered the file.
 - **Remaining**: retention/prune + SFTP (P19.6), live end-to-end upload to a real S3
   destination (needs operator credentials), control_state/server capture scopes,
-  restore orchestration (P19.4), separate-VM drill (P19.5).
+  full-host reconciliation + separate-VM drill/runbook (P19.5).
 - Depends on: 15, 16, 17; include 18 for managed databases.
 
 #### Backup scope and trust

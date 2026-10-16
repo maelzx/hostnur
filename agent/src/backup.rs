@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
 use serde::Serialize;
@@ -194,6 +194,56 @@ pub fn write_manifest(dir: &Path, manifest: &BackupManifest) -> Result<PathBuf, 
     Ok(path)
 }
 
+/// Safely restore a sealed archive into `dest` using the operator identity.
+///
+/// Rejects absolute paths and `..` traversal, skips symlinks/hardlinks/device
+/// nodes, and never extracts outside `dest`.
+pub fn restore_archive(sealed_path: &Path, identity: &str, dest: &Path) -> Result<usize, String> {
+    let sealed = std::fs::read(sealed_path).map_err(|error| error.to_string())?;
+    let plaintext = open(identity, &sealed)?;
+
+    let decoder = flate2::read::GzDecoder::new(std::io::Cursor::new(plaintext));
+    let mut archive = tar::Archive::new(decoder);
+    archive.set_preserve_permissions(false);
+    archive.set_preserve_mtime(false);
+    archive.set_overwrite(true);
+
+    std::fs::create_dir_all(dest).map_err(|error| error.to_string())?;
+
+    let mut count = 0usize;
+
+    for entry in archive.entries().map_err(|error| error.to_string())? {
+        let mut entry = entry.map_err(|error| error.to_string())?;
+        let path = entry
+            .path()
+            .map_err(|error| error.to_string())?
+            .into_owned();
+
+        if path.is_absolute() || path.components().any(|c| matches!(c, Component::ParentDir)) {
+            return Err("archive contains an unsafe path".to_string());
+        }
+
+        let kind = entry.header().entry_type();
+        if kind.is_symlink()
+            || kind.is_hard_link()
+            || kind.is_block_special()
+            || kind.is_character_special()
+            || kind.is_fifo()
+        {
+            continue;
+        }
+
+        entry.unpack_in(dest).map_err(|error| error.to_string())?;
+        count += 1;
+
+        if count > 100_000 {
+            return Err("archive has too many entries".to_string());
+        }
+    }
+
+    Ok(count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -257,6 +307,32 @@ mod tests {
         )
         .unwrap();
         assert!(!opened.is_empty());
+    }
+
+    #[test]
+    fn restores_a_sealed_archive() {
+        let work = tempfile::tempdir().unwrap();
+        let source = work.path().join("shared");
+        std::fs::create_dir_all(source.join("storage/app")).unwrap();
+        std::fs::write(source.join("storage/app/file.txt"), b"payload").unwrap();
+
+        let archive = work.path().join("a.tar.gz");
+        archive_directory(&source, &archive).unwrap();
+
+        let identity = age::x25519::Identity::generate();
+        let recipient = identity.to_public().to_string();
+        let sealed = work.path().join("a.tar.gz.age");
+        seal_file(&archive, &sealed, &recipient).unwrap();
+
+        let dest = work.path().join("restored");
+        let secret = identity.to_string();
+        let entries = restore_archive(&sealed, secret.expose_secret(), &dest).unwrap();
+
+        assert!(entries >= 1);
+        assert_eq!(
+            std::fs::read_to_string(dest.join("storage/app/file.txt")).unwrap(),
+            "payload"
+        );
     }
 
     #[test]
