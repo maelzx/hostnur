@@ -1644,6 +1644,13 @@ ask only when the choice materially changes scope, cost, access, or product beha
   for an existing app now happens on the application detail page. Recorded planned
   work: Phase 20.7 broadened to a **custom package catalog**, new **Phase 20.8 —
   Firewall rule management**, and **P19.6** remote backup destinations (S3/SFTP).
+- **Panel-only follow-ups**: enforced a **migration recovery gate** — a deploy that
+  runs migrations now requires an explicit recovery acknowledgement
+  (`DeploymentService::deploy` + operations page + wizard); added **database
+  management** (rotate credentials, delete) and **per-domain TLS** (request
+  certificate) actions to the application detail page; extended the create-app
+  **wizard** with optional **Secrets** and **Schedule** steps; and a
+  focus/accessibility polish pass on the application detail forms. Tests: 263 passing.
 - **Plan**: the wiring of agent-observed state into the panel
   (`applications.observed_state`/`observed_mode`/`observed_at`) was only implied, not
   planned. Recorded it as a new not-started phase **Phase 20.5 — Observed state

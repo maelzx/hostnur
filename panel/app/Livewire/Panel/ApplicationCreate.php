@@ -11,6 +11,7 @@ use App\Services\ApplicationService;
 use App\Services\CertificateService;
 use App\Services\DatabaseService;
 use App\Services\DeploymentService;
+use App\Services\ScheduleService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -28,7 +29,7 @@ use Livewire\Component;
 class ApplicationCreate extends Component
 {
     /** @var list<string> */
-    public const STEPS = ['Basics', 'Source', 'Runtime', 'Domain & TLS', 'Database', 'Review'];
+    public const STEPS = ['Basics', 'Source', 'Runtime', 'Domain & TLS', 'Database', 'Secrets', 'Schedule', 'Review'];
 
     public int $step = 0;
 
@@ -79,8 +80,27 @@ class ApplicationCreate extends Component
 
     public string $database_username = '';
 
+    // Secrets
+    /** @var list<array{name: string, value: string}> */
+    public array $secrets = [['name' => '', 'value' => '']];
+
+    // Schedule
+    public bool $schedule_enabled = false;
+
+    public string $schedule_name = '';
+
+    public string $schedule_expression = '0 2 * * *';
+
+    public string $schedule_timezone = 'UTC';
+
+    public string $schedule_command_reference = 'schedule:run';
+
     // Review
     public bool $run_deploy = false;
+
+    public bool $run_migrations = true;
+
+    public bool $migration_recovery_ack = false;
 
     public string $databaseKey = '';
 
@@ -140,11 +160,27 @@ class ApplicationCreate extends Component
         }
     }
 
+    public function addSecret(): void
+    {
+        $this->secrets[] = ['name' => '', 'value' => ''];
+    }
+
+    public function removeSecret(int $index): void
+    {
+        unset($this->secrets[$index]);
+        $this->secrets = array_values($this->secrets);
+
+        if ($this->secrets === []) {
+            $this->secrets = [['name' => '', 'value' => '']];
+        }
+    }
+
     public function finish(
         ApplicationService $applications,
         CertificateService $certificates,
         DatabaseService $databases,
         DeploymentService $deployments,
+        ScheduleService $schedules,
     ): void {
         $this->authorize('create', Application::class);
 
@@ -213,6 +249,26 @@ class ApplicationCreate extends Component
                     $this->databaseKey,
                 );
             }
+
+            foreach ($this->secrets as $secret) {
+                $name = trim((string) ($secret['name'] ?? ''));
+
+                if ($name === '') {
+                    continue;
+                }
+
+                $applications->setSecret($actor, $application, $name, (string) ($secret['value'] ?? ''));
+            }
+
+            if ($this->schedule_enabled) {
+                $schedules->save($actor, $application, [
+                    'name' => $this->schedule_name,
+                    'expression' => $this->schedule_expression,
+                    'timezone' => $this->schedule_timezone,
+                    'command_reference' => $this->schedule_command_reference,
+                    'enabled' => true,
+                ]);
+            }
         } catch (ValidationException $exception) {
             $this->mapValidationErrors($exception);
 
@@ -223,7 +279,7 @@ class ApplicationCreate extends Component
 
         if ($this->run_deploy && trim($this->repository_url) !== '') {
             try {
-                $deployments->deploy($actor, $application->refresh(), $this->deployKey, true);
+                $deployments->deploy($actor, $application->refresh(), $this->deployKey, $this->run_migrations, $this->migration_recovery_ack);
                 $status = 'Application created and deployment requested.';
             } catch (DeploymentPreflightException $exception) {
                 session()->flash('status', 'Application created, but the deployment was not requested: '.$exception->getMessage());
@@ -284,8 +340,52 @@ class ApplicationCreate extends Component
             ] : [
                 'engine' => ['required', 'string', Rule::in(config('hostnur.server.database_engines'))],
             ]),
+            5 => $this->validateSecrets(),
+            6 => $this->validateSchedule(),
+            7 => $this->validateReview(),
             default => null,
         };
+    }
+
+    private function validateSecrets(): void
+    {
+        $rules = [];
+
+        foreach ($this->secrets as $index => $secret) {
+            if (trim((string) ($secret['name'] ?? '')) === '' && trim((string) ($secret['value'] ?? '')) === '') {
+                continue;
+            }
+
+            $rules["secrets.$index.name"] = ['required', 'string', 'max:255', 'regex:/^[A-Za-z_][A-Za-z0-9_]*$/'];
+            $rules["secrets.$index.value"] = ['required', 'string', 'max:65536'];
+        }
+
+        if ($rules !== []) {
+            $this->validate($rules);
+        }
+    }
+
+    private function validateSchedule(): void
+    {
+        if (! $this->schedule_enabled) {
+            return;
+        }
+
+        $this->validate([
+            'schedule_name' => ['required', 'string', 'max:255'],
+            'schedule_expression' => ['required', 'string', 'max:255'],
+            'schedule_timezone' => ['required', 'string', 'max:64'],
+            'schedule_command_reference' => ['required', 'string', 'max:255'],
+        ]);
+    }
+
+    private function validateReview(): void
+    {
+        if ($this->run_migrations && ! $this->migration_recovery_ack) {
+            throw ValidationException::withMessages([
+                'migration_recovery_ack' => 'Confirm a recovery point before enabling migrations.',
+            ]);
+        }
     }
 
     /**
@@ -314,6 +414,8 @@ class ApplicationCreate extends Component
             'build_command' => 2, 'start_command' => 2, 'workers' => 2, 'scheduler' => 2, 'health_path' => 2, 'persistent_paths' => 2,
             'hostname' => 3, 'https_policy' => 3,
             'engine' => 4, 'database_name' => 4, 'username' => 4,
+            'schedule_name' => 6, 'schedule_expression' => 6, 'schedule_timezone' => 6, 'schedule_command_reference' => 6,
+            'migration_recovery_ack' => 7, 'run_migrations' => 7,
         ];
 
         $lowest = count(self::STEPS) - 1;
@@ -321,7 +423,10 @@ class ApplicationCreate extends Component
         foreach ($exception->errors() as $field => $messages) {
             $property = $field === 'username' ? 'database_username' : $field;
             $this->addError($property, $messages[0]);
-            $step = $map[$field] ?? $lowest;
+
+            $step = str_starts_with($field, 'secrets.')
+                ? 5
+                : ($map[$field] ?? $lowest);
             $lowest = min($lowest, $step);
         }
 

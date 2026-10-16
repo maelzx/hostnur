@@ -149,6 +149,25 @@ class DeploymentTest extends TestCase
         $component->call('deploy')->assertHasErrors('confirm');
     }
 
+    public function test_running_migrations_requires_a_recovery_acknowledgement(): void
+    {
+        config(['hostnur.agent_mode' => 'fake']);
+        Queue::fake();
+        $admin = $this->confirmedAdmin();
+        app(RecentAuthentication::class)->confirm($admin);
+        $application = $this->readyApplication($admin);
+
+        try {
+            $this->deployments()->deploy($admin, $application, (string) Str::uuid(), true, false);
+            $this->fail('Expected migrations without an acknowledgement to be refused.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('run_migrations', $exception->errors());
+        }
+
+        $deployment = $this->deployments()->deploy($admin, $application, (string) Str::uuid(), true, true);
+        $this->assertNotNull($deployment->getKey());
+    }
+
     public function test_a_confirmed_wizard_requests_a_deployment(): void
     {
         config(['hostnur.agent_mode' => 'fake']);

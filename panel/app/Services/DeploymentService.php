@@ -28,8 +28,14 @@ final class DeploymentService
         private readonly AgentClient $agent,
     ) {}
 
-    public function deploy(User $actor, Application $application, string $idempotencyKey, bool $runMigrations): Deployment
+    public function deploy(User $actor, Application $application, string $idempotencyKey, bool $runMigrations, bool $migrationRecoveryAcknowledged = false): Deployment
     {
+        if ($runMigrations && ! $migrationRecoveryAcknowledged) {
+            throw ValidationException::withMessages([
+                'run_migrations' => 'Running database migrations requires confirming a recovery point first.',
+            ]);
+        }
+
         $this->assertPreflight($this->preflight->deployChecks($application->refresh()));
 
         $revision = $application->revisions()->first();

@@ -207,8 +207,68 @@
             </div>
         @endif
 
-        {{-- Step 5: Review --}}
+        {{-- Step 5: Secrets --}}
         @if ($step === 5)
+            <div class="space-y-4">
+                <p class="text-sm text-slate-600">Optional. Encrypted environment variables for the application.</p>
+                @foreach ($secrets as $index => $secret)
+                    <div class="grid gap-3 sm:grid-cols-2" wire:key="secret-row-{{ $index }}">
+                        <div>
+                            <label for="secret_name_{{ $index }}" class="block text-sm font-medium text-slate-700">Name</label>
+                            <input id="secret_name_{{ $index }}" type="text" wire:model="secrets.{{ $index }}.name" placeholder="MAIL_HOST" class="mt-1.5 block w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-xs focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
+                            @error("secrets.$index.name") <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
+                        </div>
+                        <div>
+                            <label for="secret_value_{{ $index }}" class="block text-sm font-medium text-slate-700">Value</label>
+                            <div class="mt-1.5 flex gap-2">
+                                <input id="secret_value_{{ $index }}" type="password" wire:model="secrets.{{ $index }}.value" autocomplete="off" class="block w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-xs focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
+                                <x-ui.button type="button" variant="danger" wire:click="removeSecret({{ $index }})">Remove</x-ui.button>
+                            </div>
+                            @error("secrets.$index.value") <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
+                        </div>
+                    </div>
+                @endforeach
+                <x-ui.button type="button" variant="secondary" wire:click="addSecret">Add another</x-ui.button>
+            </div>
+        @endif
+
+        {{-- Step 6: Schedule --}}
+        @if ($step === 6)
+            <div class="space-y-4">
+                <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+                    <input type="checkbox" wire:model.live="schedule_enabled" class="rounded border-slate-300">
+                    Add a scheduled job
+                </label>
+
+                @if ($schedule_enabled)
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        <div>
+                            <label for="schedule_name" class="block text-sm font-medium text-slate-700">Name</label>
+                            <input id="schedule_name" type="text" wire:model="schedule_name" placeholder="nightly" class="mt-1.5 block w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-xs focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
+                            @error('schedule_name') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
+                        </div>
+                        <div>
+                            <label for="schedule_expression" class="block text-sm font-medium text-slate-700">Cron expression</label>
+                            <input id="schedule_expression" type="text" wire:model="schedule_expression" placeholder="0 2 * * *" class="mt-1.5 block w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 font-mono text-sm text-slate-900 shadow-xs focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
+                            @error('schedule_expression') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
+                        </div>
+                        <div>
+                            <label for="schedule_timezone" class="block text-sm font-medium text-slate-700">Timezone</label>
+                            <input id="schedule_timezone" type="text" wire:model="schedule_timezone" class="mt-1.5 block w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-xs focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
+                            @error('schedule_timezone') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
+                        </div>
+                        <div>
+                            <label for="schedule_command_reference" class="block text-sm font-medium text-slate-700">Command</label>
+                            <input id="schedule_command_reference" type="text" wire:model="schedule_command_reference" placeholder="schedule:run" class="mt-1.5 block w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 font-mono text-sm text-slate-900 shadow-xs focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
+                            @error('schedule_command_reference') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
+                        </div>
+                    </div>
+                @endif
+            </div>
+        @endif
+
+        {{-- Step 7: Review --}}
+        @if ($step === 7)
             <div class="space-y-4">
                 <dl class="grid gap-3 text-sm sm:grid-cols-2">
                     <div>
@@ -243,6 +303,18 @@
                 </label>
                 @if (trim($repository_url) === '')
                     <p class="text-xs text-slate-500">A repository URL is required to deploy.</p>
+                @else
+                    <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+                        <input type="checkbox" wire:model="run_migrations" class="rounded border-slate-300">
+                        Run database migrations on first deploy
+                    </label>
+                    @if ($run_migrations)
+                        <label class="inline-flex items-start gap-2 text-sm text-slate-700">
+                            <input type="checkbox" wire:model="migration_recovery_ack" class="mt-0.5 rounded border-slate-300">
+                            I have a current recovery point for this application's database.
+                        </label>
+                        @error('migration_recovery_ack') <p role="alert" class="text-sm text-red-700">{{ $message }}</p> @enderror
+                    @endif
                 @endif
             </div>
         @endif

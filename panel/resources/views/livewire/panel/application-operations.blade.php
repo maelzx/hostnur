@@ -40,12 +40,21 @@
 
         @error('confirm') <p role="alert" class="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">{{ $message }}</p> @enderror
 
-        <div class="mt-4 flex flex-wrap items-center gap-4">
-            <label class="inline-flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" wire:model.live="run_migrations" class="rounded border-slate-300">
-                Run database migrations
-            </label>
-            <span class="text-xs text-slate-500">Does not revert the database or uploads.</span>
+        <div class="mt-4 space-y-2">
+            <div class="flex flex-wrap items-center gap-4">
+                <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+                    <input type="checkbox" wire:model.live="run_migrations" class="rounded border-slate-300">
+                    Run database migrations
+                </label>
+                <span class="text-xs text-slate-500">Does not revert the database or uploads.</span>
+            </div>
+            @if ($run_migrations)
+                <label class="inline-flex items-start gap-2 text-sm text-slate-700">
+                    <input type="checkbox" wire:model="migration_recovery_ack" class="mt-0.5 rounded border-slate-300">
+                    I have a current recovery point for this application's database.
+                </label>
+                @error('run_migrations') <p role="alert" class="text-sm text-red-700">{{ $message }}</p> @enderror
+            @endif
         </div>
 
         <div class="mt-4 flex flex-wrap gap-3">

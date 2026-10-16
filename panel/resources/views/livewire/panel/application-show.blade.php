@@ -3,6 +3,7 @@
     $primaryUrl = $primaryDomain !== null
         ? ($primaryDomain->https_policy->value === 'disabled' ? 'http://' : 'https://').$primaryDomain->hostname
         : null;
+    $certsByDomain = $certificates->keyBy('application_domain_id');
 @endphp
 
 <main>
@@ -121,7 +122,7 @@
             <form wire:submit="saveSource" class="mt-4 space-y-3">
                 <div>
                     <label for="repository_url" class="block text-sm font-medium text-slate-700">Repository URL</label>
-                    <input id="repository_url" type="text" wire:model="repository_url" @disabled($locked) placeholder="https://github.com/org/repo.git" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500">
+                    <input id="repository_url" type="text" wire:model="repository_url" @disabled($locked) placeholder="https://github.com/org/repo.git" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
                     @if ($locked)
                         <p class="mt-1 text-xs text-slate-500">Locked after the first successful deployment. Create a new application to use a different repository.</p>
                     @else
@@ -157,26 +158,26 @@
                 <div class="grid gap-4 sm:grid-cols-2">
                     <div>
                         <label for="runtime" class="block text-sm font-medium text-slate-700">Runtime</label>
-                        <select id="runtime" wire:model="runtime" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+                        <select id="runtime" wire:model="runtime" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
                             @foreach ($runtimes as $option)<option value="{{ $option }}">{{ $option }}</option>@endforeach
                         </select>
                         @error('runtime') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
                     </div>
                     <div>
                         <label for="runtime_version" class="block text-sm font-medium text-slate-700">Runtime version</label>
-                        <input id="runtime_version" type="text" wire:model="runtime_version" placeholder="8.3" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                        <input id="runtime_version" type="text" wire:model="runtime_version" placeholder="8.3" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
                         <p class="mt-1 text-xs text-slate-500">Server-supported version, e.g. 8.3 or 8.4.</p>
                         @error('runtime_version') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
                     </div>
                     <div>
                         <label for="workers" class="block text-sm font-medium text-slate-700">Queue workers</label>
-                        <input id="workers" type="number" min="0" max="10" wire:model="workers" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                        <input id="workers" type="number" min="0" max="10" wire:model="workers" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
                         <p class="mt-1 text-xs text-slate-500">Set to <code>1</code> if the app queues email.</p>
                         @error('workers') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
                     </div>
                     <div>
                         <label for="health_path" class="block text-sm font-medium text-slate-700">Health check path</label>
-                        <input id="health_path" type="text" wire:model="health_path" placeholder="up" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                        <input id="health_path" type="text" wire:model="health_path" placeholder="up" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
                         <p class="mt-1 text-xs text-slate-500">Must return 200. Laravel default: <code>/up</code>.</p>
                         @error('health_path') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
                     </div>
@@ -192,17 +193,17 @@
                     <div class="mt-3 grid gap-4 sm:grid-cols-2">
                         <div>
                             <label for="build_command" class="block text-sm font-medium text-slate-700">Extra build command</label>
-                            <input id="build_command" type="text" wire:model="build_command" placeholder="(handled automatically)" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                            <input id="build_command" type="text" wire:model="build_command" placeholder="(handled automatically)" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
                             @error('build_command') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
                         </div>
                         <div>
                             <label for="start_command" class="block text-sm font-medium text-slate-700">Start command</label>
-                            <input id="start_command" type="text" wire:model="start_command" placeholder="(blank — served by PHP-FPM)" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                            <input id="start_command" type="text" wire:model="start_command" placeholder="(blank — served by PHP-FPM)" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
                             @error('start_command') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
                         </div>
                         <div class="sm:col-span-2">
                             <label for="persistent_paths_text" class="block text-sm font-medium text-slate-700">Persistent paths (one per line)</label>
-                            <textarea id="persistent_paths_text" wire:model="persistent_paths_text" rows="3" placeholder="storage/app" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+                            <textarea id="persistent_paths_text" wire:model="persistent_paths_text" rows="3" placeholder="storage/app" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"></textarea>
                             <p class="mt-1 text-xs text-slate-500">Kept across deploys, e.g. <code>storage/app</code>.</p>
                             @error('persistent_paths') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
                             @error('persistent_paths.*') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
@@ -222,12 +223,12 @@
                     <div class="grid gap-3 sm:grid-cols-2">
                         <div>
                             <label for="credential_label" class="block text-sm font-medium text-slate-700">Label</label>
-                            <input id="credential_label" type="text" wire:model="credential_label" placeholder="GitHub read-only token" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                            <input id="credential_label" type="text" wire:model="credential_label" placeholder="GitHub read-only token" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
                             @error('credential_label') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
                         </div>
                         <div>
                             <label for="credential_type" class="block text-sm font-medium text-slate-700">Type</label>
-                            <select id="credential_type" wire:model="credential_type" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+                            <select id="credential_type" wire:model="credential_type" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
                                 <option value="https_token">HTTPS token</option>
                                 <option value="ssh_deploy_key">SSH deploy key</option>
                             </select>
@@ -235,7 +236,7 @@
                     </div>
                     <div>
                         <label for="credential_secret" class="block text-sm font-medium text-slate-700">Secret (stored encrypted)</label>
-                        <input id="credential_secret" type="password" wire:model="credential_secret" autocomplete="off" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                        <input id="credential_secret" type="password" wire:model="credential_secret" autocomplete="off" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
                         @error('credential_secret') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
                     </div>
                     <x-ui.button type="submit" variant="secondary">Store credential</x-ui.button>
@@ -265,12 +266,12 @@
             <form wire:submit="addDomain" class="mt-4 grid gap-3 sm:grid-cols-2">
                 <div>
                     <label for="hostname" class="block text-sm font-medium text-slate-700">Hostname</label>
-                    <input id="hostname" type="text" wire:model="hostname" placeholder="app.example.com" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    <input id="hostname" type="text" wire:model="hostname" placeholder="app.example.com" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
                     @error('hostname') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
                 </div>
                 <div>
                     <label for="https_policy" class="block text-sm font-medium text-slate-700">HTTPS</label>
-                    <select id="https_policy" wire:model="https_policy" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+                    <select id="https_policy" wire:model="https_policy" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
                         @foreach ($policies as $policy)<option value="{{ $policy->value }}">{{ $policy->value }}</option>@endforeach
                     </select>
                 </div>
@@ -284,10 +285,18 @@
             @else
                 <ul class="mt-4 divide-y divide-slate-100 text-sm">
                     @foreach ($domains as $domain)
-                        <li class="flex items-center justify-between gap-3 py-2" wire:key="domain-{{ $domain->id }}">
+                        @php $cert = $certsByDomain->get($domain->id); @endphp
+                        <li class="flex flex-wrap items-center justify-between gap-3 py-2" wire:key="domain-{{ $domain->id }}">
                             <span class="font-mono font-medium">{{ $domain->hostname }}</span>
-                            <span class="text-xs text-slate-500">{{ $domain->https_policy->value }}</span>
-                            <x-ui.button type="button" variant="danger" wire:click="removeDomain('{{ $domain->id }}')">Remove</x-ui.button>
+                            <div class="flex flex-wrap items-center gap-2">
+                                @if ($cert !== null)
+                                    <x-ui.badge :tone="$cert->state->value === 'succeeded' ? 'success' : ($cert->state->value === 'failed' ? 'danger' : 'info')">{{ $cert->state->value }}</x-ui.badge>
+                                @else
+                                    <x-ui.button type="button" variant="secondary" wire:click="requestCertificate('{{ $domain->id }}')">Request certificate</x-ui.button>
+                                @endif
+                                <span class="text-xs text-slate-500">{{ $domain->https_policy->value }}</span>
+                                <x-ui.button type="button" variant="danger" wire:click="removeDomain('{{ $domain->id }}')">Remove</x-ui.button>
+                            </div>
                         </li>
                     @endforeach
                 </ul>
@@ -302,7 +311,7 @@
                 <form wire:submit="requestDatabase" class="mt-4 grid gap-3 sm:grid-cols-3">
                     <div>
                         <label for="database_engine" class="block text-sm font-medium text-slate-700">Engine</label>
-                        <select id="database_engine" wire:model="database_engine" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+                        <select id="database_engine" wire:model="database_engine" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
                             @foreach ($engines as $option)<option value="{{ $option }}">{{ $option }}</option>@endforeach
                         </select>
                         @error('engine') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
@@ -327,6 +336,16 @@
                     <div><dt class="text-slate-600">Database</dt><dd class="font-mono font-medium">{{ $database->database_name }}</dd></div>
                     <div><dt class="text-slate-600">State</dt><dd class="font-medium">{{ $database->state->value }}</dd></div>
                 </dl>
+                <div class="mt-4 flex flex-wrap gap-2">
+                    <x-ui.confirm title="Rotate database credentials?" confirm-label="Rotate" method="rotateDatabase" variant="secondary">
+                        <x-slot:trigger>Rotate credentials</x-slot:trigger>
+                        A new password is generated; redeploy the application to adopt it.
+                    </x-ui.confirm>
+                    <x-ui.confirm title="Delete this database?" confirm-label="Delete" method="deleteDatabase" variant="danger">
+                        <x-slot:trigger>Delete database</x-slot:trigger>
+                        Removes the managed database and its principal. This cannot be undone.
+                    </x-ui.confirm>
+                </div>
             @endif
         </x-ui.panel>
 
@@ -335,12 +354,12 @@
             <form wire:submit="setSecret" class="mt-4 grid gap-3 sm:grid-cols-2">
                 <div>
                     <label for="secret_name" class="block text-sm font-medium text-slate-700">Variable name</label>
-                    <input id="secret_name" type="text" wire:model="secret_name" placeholder="MAIL_HOST" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    <input id="secret_name" type="text" wire:model="secret_name" placeholder="MAIL_HOST" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
                     @error('secret_name') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
                 </div>
                 <div>
                     <label for="secret_value" class="block text-sm font-medium text-slate-700">Value (write-only)</label>
-                    <input id="secret_value" type="password" wire:model="secret_value" autocomplete="off" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    <input id="secret_value" type="password" wire:model="secret_value" autocomplete="off" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
                     @error('secret_value') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
                 </div>
                 <div class="sm:col-span-2">

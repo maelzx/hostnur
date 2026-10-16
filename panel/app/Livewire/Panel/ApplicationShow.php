@@ -12,6 +12,7 @@ use App\Models\Task;
 use App\Models\TaskEvent;
 use App\Models\User;
 use App\Services\ApplicationService;
+use App\Services\CertificateService;
 use App\Services\DatabaseService;
 use App\Services\DeploymentService;
 use Illuminate\Contracts\View\View;
@@ -287,6 +288,52 @@ class ApplicationShow extends Component
 
         $this->reset('database_name', 'database_username');
         session()->flash('status', 'Database provisioning requested.');
+        $this->redirect(route('panel.applications.show', ['application' => $this->applicationId]));
+    }
+
+    public function rotateDatabase(DatabaseService $databases): void
+    {
+        $application = $this->application();
+        $this->authorize('update', $application);
+
+        $database = $application->databaseRequests()->latest('created_at')->first();
+
+        if ($database === null) {
+            return;
+        }
+
+        $databases->rotate($this->actor(), $database);
+
+        session()->flash('status', 'Database credential rotation requested; redeploy to adopt it.');
+        $this->redirect(route('panel.applications.show', ['application' => $this->applicationId]));
+    }
+
+    public function deleteDatabase(DatabaseService $databases): void
+    {
+        $application = $this->application();
+        $this->authorize('update', $application);
+
+        $database = $application->databaseRequests()->latest('created_at')->first();
+
+        if ($database === null) {
+            return;
+        }
+
+        $databases->delete($this->actor(), $database);
+
+        session()->flash('status', 'Database removed.');
+        $this->redirect(route('panel.applications.show', ['application' => $this->applicationId]));
+    }
+
+    public function requestCertificate(CertificateService $certificates, string $domainId): void
+    {
+        $application = $this->application();
+        $this->authorize('manageDomains', $application);
+
+        $domain = $application->domains()->findOrFail($domainId);
+        $certificates->requestManaged($this->actor(), $domain, (string) Str::uuid());
+
+        session()->flash('status', 'Certificate issuance requested (HTTP-01).');
         $this->redirect(route('panel.applications.show', ['application' => $this->applicationId]));
     }
 

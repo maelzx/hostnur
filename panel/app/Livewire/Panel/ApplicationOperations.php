@@ -19,6 +19,8 @@ class ApplicationOperations extends Component
 
     public bool $run_migrations = false;
 
+    public bool $migration_recovery_ack = false;
+
     public ?string $confirmedFingerprint = null;
 
     public string $idempotencyKey = '';
@@ -64,7 +66,7 @@ class ApplicationOperations extends Component
         }
 
         try {
-            $deployment = $service->deploy($this->actor(), $application, $this->idempotencyKey, $this->run_migrations);
+            $deployment = $service->deploy($this->actor(), $application, $this->idempotencyKey, $this->run_migrations, $this->migration_recovery_ack);
         } catch (DeploymentPreflightException $exception) {
             $this->addError('confirm', $exception->getMessage());
 
