@@ -1,0 +1,84 @@
+#!/bin/sh
+# hostnur (panel) post-install: create the unprivileged panel identity, point
+# the agent's peer allowlist at it, initialise the panel environment/database,
+# and (re)load nginx + PHP-FPM + the panel worker/scheduler. Service operations
+# are skipped when systemd is not present (e.g. a build container).
+set -e
+
+PANEL_USER=hostnur-panel
+PANEL_GROUP=hostnur-panel
+PANEL_DIR=/opt/hostnur-panel
+CONTRACTS_DIR=/opt/hostnur/contracts/v1
+ACCESS_GROUP=hostnur
+AGENT_CONFIG=/etc/hostnur/agent.toml
+
+if ! getent group "$PANEL_GROUP" >/dev/null 2>&1; then
+    addgroup --system "$PANEL_GROUP"
+fi
+if ! id -u "$PANEL_USER" >/dev/null 2>&1; then
+    adduser --system --ingroup "$PANEL_GROUP" --no-create-home --shell /usr/sbin/nologin "$PANEL_USER"
+fi
+adduser "$PANEL_USER" "$ACCESS_GROUP" >/dev/null 2>&1 || true
+
+PANEL_UID="$(id -u "$PANEL_USER")"
+
+# Point the agent at the panel identity (agent.toml is agent-owned; only the
+# peer allowlist is managed here, and only to add the panel UID).
+if [ -f "$AGENT_CONFIG" ]; then
+    if grep -q '^allowed_peer_uids' "$AGENT_CONFIG"; then
+        sed -i "s/^allowed_peer_uids.*/allowed_peer_uids = [${PANEL_UID}]/" "$AGENT_CONFIG"
+    else
+        printf '\nallowed_peer_uids = [%s]\n' "$PANEL_UID" >> "$AGENT_CONFIG"
+    fi
+    if ! grep -q '^socket_group' "$AGENT_CONFIG"; then
+        sed -i "1a socket_group = \"${ACCESS_GROUP}\"" "$AGENT_CONFIG"
+    fi
+fi
+
+# Panel ownership and writable runtime dirs.
+chown -R "$PANEL_USER:$PANEL_GROUP" "$PANEL_DIR" 2>/dev/null || true
+find "$PANEL_DIR/storage" "$PANEL_DIR/bootstrap/cache" -type d -exec chmod 0775 {} + 2>/dev/null || true
+
+# Initialise the environment and database once (kept across upgrades).
+if [ ! -f "$PANEL_DIR/.env" ]; then
+    APP_KEY="base64:$(openssl rand 32 | base64)"
+    cat > "$PANEL_DIR/.env" <<EOF
+APP_NAME=Hostnur
+APP_ENV=production
+APP_KEY=${APP_KEY}
+APP_DEBUG=false
+APP_URL=http://127.0.0.1
+LOG_CHANNEL=stack
+DB_CONNECTION=sqlite
+SESSION_DRIVER=database
+QUEUE_CONNECTION=database
+CACHE_STORE=database
+HOSTNUR_AGENT_MODE=real
+HOSTNUR_AGENT_SOCKET=/run/hostnur/agent.sock
+HOSTNUR_CONTRACTS_PATH=${CONTRACTS_DIR}
+EOF
+    chown "$PANEL_USER:$PANEL_GROUP" "$PANEL_DIR/.env"
+    chmod 0640 "$PANEL_DIR/.env"
+fi
+
+touch "$PANEL_DIR/database/database.sqlite"
+chown "$PANEL_USER:$PANEL_GROUP" "$PANEL_DIR/database/database.sqlite"
+
+su -s /bin/sh "$PANEL_USER" -c "cd '$PANEL_DIR' && php artisan migrate --force" || true
+
+# nginx: enable the panel site and the agent-managed per-app include.
+mkdir -p /etc/nginx/hostnur-sites
+[ -f /etc/nginx/conf.d/hostnur-sites.conf ] || printf 'include /etc/nginx/hostnur-sites/*.conf;\n' > /etc/nginx/conf.d/hostnur-sites.conf
+ln -sf /etc/nginx/sites-available/hostnur-panel /etc/nginx/sites-enabled/hostnur-panel
+rm -f /etc/nginx/sites-enabled/default
+
+if [ -d /run/systemd/system ]; then
+    systemctl restart hostnur-agent.service 2>/dev/null || true
+    systemctl daemon-reload || true
+    systemctl enable --now hostnur-panel-worker.service 2>/dev/null || true
+    systemctl enable --now hostnur-panel-scheduler.timer 2>/dev/null || true
+    systemctl restart php8.3-fpm.service 2>/dev/null || true
+    systemctl reload nginx.service 2>/dev/null || true
+fi
+
+exit 0

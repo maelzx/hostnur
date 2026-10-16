@@ -1,0 +1,210 @@
+name: Packages
+
+# Builds the Debian packages (hostnur, hostnur-agent) from a release bundle,
+# runs an install/upgrade/purge test on Ubuntu 24.04, and (on a tag, when a GPG
+# key is configured) assembles and publishes a signed APT repository.
+#
+# Live host validation (systemd services, real upgrades) still belongs to the
+# disposable-VM phase; this workflow proves the packages build and are
+# installable/upgradable at the dpkg level.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g. 0.1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build packages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      APP_ENV: production
+    steps:
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            V="${{ github.event.inputs.version }}"
+          else
+            V="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          rustup default 1.99.0
+
+      - name: Build agent (amd64, locked)
+        working-directory: agent
+        run: |
+          cargo build --locked --release --target x86_64-unknown-linux-gnu
+          strip "target/x86_64-unknown-linux-gnu/release/hostnur-agent" || true
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.3'
+          extensions: ctype, curl, dom, fileinfo, filter, hash, iconv, mbstring, openssl, pdo_sqlite, session, sodium, sqlite3, tokenizer, xml, xmlwriter, zip, pcntl, posix
+          coverage: none
+          tools: composer:2.10.3
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: panel/package-lock.json
+
+      - name: Build panel
+        working-directory: panel
+        run: |
+          composer install --no-dev --no-interaction --prefer-dist --no-progress
+          npm ci --no-fund
+          npm run build
+
+      - name: Assemble release bundle
+        run: |
+          set -euo pipefail
+          STAGE="$(pwd)/stage/hostnur"
+          mkdir -p "$STAGE/bin" "$STAGE/packaging"
+          cp agent/target/x86_64-unknown-linux-gnu/release/hostnur-agent "$STAGE/bin/hostnur-agent"
+          rsync -a --delete \
+            --exclude '.git' --exclude 'node_modules' --exclude 'tests' \
+            --exclude '.env' --exclude '.env.example' --exclude 'database/database.sqlite' \
+            --exclude 'storage/logs/*' --exclude 'bootstrap/cache/*.php' \
+            panel/ "$STAGE/panel/"
+          rsync -a --delete contracts/ "$STAGE/contracts/"
+          cp packaging/systemd/hostnur-agent.service "$STAGE/packaging/"
+          tar czf bundle.tar.gz -C "$(pwd)/stage" hostnur
+
+      - name: Build .deb packages
+        run: |
+          packaging/debian/build-deb.sh \
+            --version "${{ steps.version.outputs.version }}" \
+            --bundle "$(pwd)/stage/hostnur" \
+            --out dist
+
+      - name: Upload packages and bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: packages
+          path: |
+            dist/*.deb
+            bundle.tar.gz
+
+  test:
+    name: Install / upgrade test (Ubuntu 24.04)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          name: packages
+
+      - name: Install prerequisites
+        run: sudo apt-get update
+
+      - name: Install hostnur-agent
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y ./hostnur-agent_*_amd64.deb
+          test -x /usr/bin/hostnur-agent
+          test -f /lib/systemd/system/hostnur-agent.service
+          test -f /etc/hostnur/agent.toml
+          getent group hostnur >/dev/null
+
+      - name: Prove conffile preservation on upgrade
+        run: |
+          set -euo pipefail
+          echo "# operator note preserved across upgrades" | sudo tee -a /etc/hostnur/agent.toml >/dev/null
+          tar xzf bundle.tar.gz
+          packaging/debian/build-deb.sh --version 9.9.9 --bundle "$(pwd)/hostnur" --out dist-bump
+          sudo apt-get install -y ./dist-bump/hostnur-agent_9.9.9_amd64.deb
+          dpkg -s hostnur-agent | grep -q '^Version: 9.9.9'
+          grep -q 'operator note preserved' /etc/hostnur/agent.toml
+
+      - name: Install hostnur (panel) and verify
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y ./hostnur_*_amd64.deb
+          test -f /opt/hostnur-panel/artisan
+          test -f /opt/hostnur/contracts/v1/catalog.json
+          test -f /etc/nginx/sites-available/hostnur-panel
+          test -f /etc/php/8.3/fpm/pool.d/hostnur-panel.conf
+          dpkg -s hostnur | grep -q '^Version:'
+
+      - name: Purge and verify removal
+        run: |
+          set -euo pipefail
+          sudo apt-get purge -y hostnur hostnur-agent
+          test ! -f /lib/systemd/system/hostnur-agent.service
+          test ! -f /usr/bin/hostnur-agent
+
+  publish-apt:
+    name: Build and publish signed APT repository
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && secrets.GPG_PRIVATE_KEY != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          name: packages
+
+      - name: Import signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          KEYID="$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')"
+          echo "SIGNING_KEY=$KEYID" >> "$GITHUB_ENV"
+
+      - name: Assemble signed repository
+        run: |
+          set -euo pipefail
+          packaging/apt/build-repo.sh --debs . --out public --key "$SIGNING_KEY"
+          test -f public/dists/stable/InRelease
+
+      - name: Publish to gh-pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd public
+          git init -q
+          git config user.name "hostnur-bot"
+          git config user.email "bot@hostnur.dev"
+          git checkout -q -b gh-pages
+          git add -A
+          git commit -q -m "APT repository ${GITHUB_REF_NAME}"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push -f origin gh-pages

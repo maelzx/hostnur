@@ -1,0 +1,16 @@
+[Unit]
+Description=Hostnur panel queue worker
+After=network.target
+
+[Service]
+Type=simple
+User=hostnur-panel
+Group=hostnur-panel
+WorkingDirectory=/opt/hostnur-panel
+ExecStart=/usr/bin/php artisan queue:work --sleep=3 --tries=1 --max-time=3600
+Restart=always
+RestartSec=5
+StopWaitSecs=60
+
+[Install]
+WantedBy=multi-user.target

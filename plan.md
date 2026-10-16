@@ -1258,10 +1258,17 @@ method, consistency limits and observed recovery outcome; no fake/untested backu
 can be represented as restore-ready.
 
 ### Phase 20 — Packages, installer, signed releases and upgrades
-- Status: **partly deferred** (session 034). Debian packages, APT repository,
-  signing and coordinated upgrades are deferred. Interim direction: install via a
-  **curl + bash bootstrap script** (verified, versioned, idempotent) that sets up
-  the host, agent and panel; revisit Debian/APT + signing later.
+- Status: **implemented, CI + VM validation pending**. Debian packages for
+  `hostnur` and `hostnur-agent` (`packaging/debian/`) with control/conffiles/
+  maintainer scripts and systemd units; a flat APT repository + signing helper
+  (`packaging/apt/build-repo.sh`); and a CI workflow (`.github/workflows/packages.yml`)
+  that builds the packages, runs an install/upgrade/purge test on Ubuntu 24.04, and
+  publishes a signed repo to `gh-pages` when a GPG key secret is configured. The
+  interim curl-and-bash installer remains. Locally validated in the Lima VM: both
+  `.deb`s build with correct control/conffiles/scripts/layout, the APT repo
+  assembles (`Packages`/`Release`), and signing produces a verified `InRelease`.
+  Outstanding: a real CI run and real-host systemd/upgrade validation; the official
+  domain/license/signing-key decisions still gate publishing.
 - Depends on: 2, 16, 19; signing/domain/hosting decisions deferred with packaging.
 
 #### Packaging scope and release inputs
@@ -1698,6 +1705,14 @@ ask only when the choice materially changes scope, cost, access, or product beha
   registry; and packages-page UI (operator catalog add/remove, install from
   built-in+operator list, apply security/all updates). Rust 132 tests + clippy; PHP
   267 tests. Real-host validation pending.
+- **Phase 20 (Debian/APT packaging) implemented**: added `packaging/debian/`
+  (control files, conffiles, maintainer scripts, panel worker/scheduler units,
+  nginx vhost + FPM pool), `packaging/debian/build-deb.sh`, `packaging/apt/build-repo.sh`
+  (flat repo + optional GPG signing), and `.github/workflows/packages.yml` (build +
+  install/upgrade/purge test on Ubuntu 24.04 + signed-repo publish to `gh-pages`).
+  Validated in the Lima VM: both `.deb`s build with correct metadata/layout, the
+  repository assembles, and the signed `InRelease` verifies. Real CI run + real-host
+  validation and the domain/license/signing-key decisions still pending.
 - **Plan**: the wiring of agent-observed state into the panel
   (`applications.observed_state`/`observed_mode`/`observed_at`) was only implied, not
   planned. Recorded it as a new not-started phase **Phase 20.5 — Observed state

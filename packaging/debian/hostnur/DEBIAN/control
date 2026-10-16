@@ -1,0 +1,13 @@
+Package: hostnur
+Version: __VERSION__
+Architecture: amd64
+Maintainer: Hostnur <maintainer@hostnur.dev>
+Section: admin
+Priority: optional
+Depends: adduser, ca-certificates, nginx, php8.3-fpm, php8.3-cli, php8.3-sqlite3, php8.3-mbstring, php8.3-xml, php8.3-curl, php8.3-zip, php8.3-intl, sqlite3, python3, hostnur-agent (= __VERSION__)
+Recommends: certbot, mariadb-server
+Homepage: https://github.com/maelzx/hostnur
+Description: Hostnur control panel
+ Web control panel (Laravel/Livewire) served by nginx + PHP-FPM under a dedicated
+ unprivileged user. Manages applications, databases, TLS and the host through the
+ privileged Hostnur agent. Single-host, operator-administered.

@@ -1,0 +1,15 @@
+#!/bin/sh
+# hostnur-agent post-remove: reload systemd and, on purge, remove agent state.
+set -e
+
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload || true
+fi
+
+if [ "$1" = "purge" ]; then
+    rm -rf /var/lib/hostnur/agent
+    rmdir /var/lib/hostnur 2>/dev/null || true
+    rmdir /run/hostnur 2>/dev/null || true
+fi
+
+exit 0

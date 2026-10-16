@@ -1,0 +1,9 @@
+[Unit]
+Description=Hostnur panel scheduler (schedule:run)
+
+[Service]
+Type=oneshot
+User=hostnur-panel
+Group=hostnur-panel
+WorkingDirectory=/opt/hostnur-panel
+ExecStart=/usr/bin/php artisan schedule:run

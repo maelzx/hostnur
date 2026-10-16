@@ -1,0 +1,20 @@
+# Hostnur panel vhost (default HTTP; configure TLS/domain separately).
+server {
+    listen 80 default_server;
+    server_name _;
+    root /opt/hostnur-panel/public;
+    index index.php;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/hostnur-panel.sock;
+    }
+
+    location ~ /\.(?!well-known) {
+        deny all;
+    }
+}

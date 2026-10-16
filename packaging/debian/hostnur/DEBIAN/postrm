@@ -1,0 +1,16 @@
+#!/bin/sh
+# hostnur (panel) post-remove: drop the nginx site enable and reload.
+#
+# The panel SQLite database and .env are intentionally LEFT IN PLACE even on
+# purge, because they hold all operator state and secrets. Remove
+# /opt/hostnur-panel manually if a full wipe is truly intended.
+set -e
+
+rm -f /etc/nginx/sites-enabled/hostnur-panel
+
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload || true
+    systemctl reload nginx.service 2>/dev/null || true
+fi
+
+exit 0

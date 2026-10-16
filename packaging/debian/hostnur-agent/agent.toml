@@ -1,0 +1,13 @@
+# Hostnur agent configuration (managed by dpkg as a conffile).
+#
+# allowed_peer_uids is set by the panel package post-install to the panel user's
+# UID. An empty list denies every peer.
+version = 1
+socket_path = "/run/hostnur/agent.sock"
+state_dir = "/var/lib/hostnur/agent"
+log_level = "info"
+socket_mode = 432                 # 0o660, owner root:hostnur
+socket_group = "hostnur"
+connection_read_timeout_seconds = 5
+allowed_peer_uids = []
+php_versions = ["8.3", "8.4"]

@@ -1,0 +1,13 @@
+Package: hostnur-agent
+Version: __VERSION__
+Architecture: amd64
+Maintainer: Hostnur <maintainer@hostnur.dev>
+Section: admin
+Priority: optional
+Depends: adduser, ca-certificates
+Homepage: https://github.com/maelzx/hostnur
+Description: Hostnur privileged operations agent
+ Native privileged agent for the Hostnur control panel. Resolves every action
+ from its own UUID-derived registry and manages Linux accounts, systemd units,
+ Nginx/PHP-FPM configuration and package installation on a single Ubuntu host.
+ Caller-supplied paths or commands are never trusted.

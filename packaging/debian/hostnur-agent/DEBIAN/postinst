@@ -1,0 +1,26 @@
+#!/bin/sh
+# hostnur-agent post-install: create the shared access group and (re)start the
+# privileged agent service. Safe to run when systemd is not present (e.g. a
+# build container), where service start is skipped.
+set -e
+
+ACCESS_GROUP=hostnur
+AGENT_STATE=/var/lib/hostnur/agent
+AGENT_SOCKET_DIR=/run/hostnur
+
+if ! getent group "$ACCESS_GROUP" >/dev/null 2>&1; then
+    addgroup --system "$ACCESS_GROUP"
+fi
+
+mkdir -p "$AGENT_STATE" "$AGENT_SOCKET_DIR"
+chmod 0700 "$AGENT_STATE"
+chmod 0750 "$AGENT_SOCKET_DIR"
+chown root:root "$AGENT_STATE" "$AGENT_SOCKET_DIR"
+
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload || true
+    systemctl enable hostnur-agent.service || true
+    systemctl restart hostnur-agent.service || true
+fi
+
+exit 0

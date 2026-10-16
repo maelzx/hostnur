@@ -1,0 +1,12 @@
+#!/bin/sh
+# hostnur (panel) pre-remove: stop the queue worker and scheduler.
+set -e
+
+if [ -d /run/systemd/system ]; then
+    systemctl stop hostnur-panel-worker.service 2>/dev/null || true
+    systemctl disable hostnur-panel-worker.service 2>/dev/null || true
+    systemctl stop hostnur-panel-scheduler.timer 2>/dev/null || true
+    systemctl disable hostnur-panel-scheduler.timer 2>/dev/null || true
+fi
+
+exit 0

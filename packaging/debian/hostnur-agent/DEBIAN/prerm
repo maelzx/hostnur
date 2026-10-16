@@ -1,0 +1,10 @@
+#!/bin/sh
+# hostnur-agent pre-remove: stop and disable the service when systemd is present.
+set -e
+
+if [ -d /run/systemd/system ]; then
+    systemctl stop hostnur-agent.service || true
+    systemctl disable hostnur-agent.service || true
+fi
+
+exit 0

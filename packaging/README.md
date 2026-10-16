@@ -1,9 +1,51 @@
-# Packaging and installation (interim)
+# Packaging and installation
 
-Signed Debian/APT packaging and coordinated upgrades are deferred (plan phase 20
-substitute). Until then, releases are produced by
-[`.github/workflows/release.yml`](../.github/workflows/release.yml) and installed
-with a **curl-and-bash** bootstrap script.
+Two install paths are provided:
+
+- **Debian packages + APT repository** (`packaging/debian`, `packaging/apt`,
+  [`.github/workflows/packages.yml`](../.github/workflows/packages.yml)) — builds
+  `hostnur` and `hostnur-agent`, tests install/upgrade/purge on Ubuntu 24.04, and
+  can publish a signed APT repository. This is the coordinated-upgrade path.
+- **curl-and-bash interim installer** (`install.sh`,
+  [`.github/workflows/release.yml`](../.github/workflows/release.yml)) — a single
+  bundle for quick/self-serve installs.
+
+Both install the same layout: the privileged agent (systemd, root) and the panel
+under nginx + PHP-FPM as a dedicated unprivileged user. Live-host validation of
+the packages (systemd services, real upgrades) is part of the disposable-VM phase.
+
+## Debian packages
+
+Built by `packaging/debian/build-deb.sh` from a release bundle:
+
+```bash
+packaging/debian/build-deb.sh --version 0.1.0 --bundle /path/to/stage/hostnur --out dist
+```
+
+- `hostnur-agent` — `/usr/bin/hostnur-agent`, `hostnur-agent.service`,
+  `/etc/hostnur/agent.toml` (conffile), shared `hostnur` group, state dirs.
+- `hostnur` — the panel under `/opt/hostnur-panel` + `/opt/hostnur/contracts`,
+  nginx vhost and PHP-FPM pool (conffiles), queue-worker + scheduler units.
+  `Depends` on nginx/PHP and `hostnur-agent (= version)` for coordinated versions.
+
+Maintainer scripts create the identities, initialise `.env`/database once, point
+the agent's `allowed_peer_uids` at the panel user, and reload services. The panel
+SQLite database and `.env` are intentionally preserved on purge.
+
+## APT repository
+
+`packaging/apt/build-repo.sh` assembles a flat repository and (with `--key`) signs
+it:
+
+```bash
+packaging/apt/build-repo.sh --debs dist --out public --key <gpg-key-id>
+```
+
+CI (`.github/workflows/packages.yml`) builds and tests the packages on every tag,
+and publishes a signed repository to the `gh-pages` branch when `GPG_PRIVATE_KEY`
+is configured as a repository secret.
+
+## Interim bundle (later in this file)
 
 ## What the release pipeline produces
 
