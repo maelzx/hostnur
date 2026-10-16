@@ -1564,9 +1564,21 @@ rolls back without lock-out, and every change is audited.
   operation → `unsupported_operation`, unknown/invalid parameters →
   `invalid_parameters`) and over-limit frames are refused. Uses the user's
   **recreated throwaway Ubuntu 24.04 amd64 droplet** each session (per session 034),
-  plus a separate restore VM when phase 19 resumes. Remaining: full app
-  deploy/redeploy/rollback, crash/disconnect, Nginx/TLS failure, SQLite contention,
-  cross-app isolation, signed-release, and restore/recovery drills.
+  plus a separate restore VM when phase 19 resumes.
+- **Real deploy validated on the droplet (session 047)**: registered the (public)
+  AssetKOM repo and ran `application.deploy` end-to-end — git clone → composer + `npm
+  run build` as the app user → release activated (commit `6672e102`) → managed nginx
+  site + php8.4-fpm pool created → app served (`/up` **200**, Laravel boots with
+  `APP_KEY`). Database path also works: `agent.register_database` +
+  `database.provision` created a MariaDB db/user. **Blockers found**: (1) the agent
+  **refuses migrations** with a fail-closed "recovery prerequisite not configured
+  yet" stub → DB-backed endpoints 500 (no tables) — this gate must be implemented
+  (phase 15 prose) to finish DB apps; (2) the agent's managed site is HTTP-only and no
+  app certificate is issued during deploy — TLS for a hosted app needs the
+  `certificate.issue` path.
+- Remaining: agent-level migration recovery prerequisite, app TLS issuance, crash/
+  disconnect, Nginx/TLS-failure, SQLite contention, cross-app isolation,
+  signed-release verification, and restore/recovery drills.
 - Depends on: 1–20.8 and disposable VM access.
 - Slices: full cross-process/VM regression, privilege/path/socket abuse cases,
   app isolation, crashes/disconnects, Nginx/TLS failures, SQLite contention,
@@ -1705,6 +1717,14 @@ ask only when the choice materially changes scope, cost, access, or product beha
   installer/package set it explicitly). Aligned the droplet to the packaged
   dedicated **`hostnur-panel`** identity (uid 997) — FPM pool + worker/scheduler
   units + `allowed_peer_uids`; HTTPS still 200 and the panel user reaches the socket.
+- **Real deploy (Phase 21)**: deployed public AssetKOM on the droplet via the agent
+  (clone + composer + npm build as the app user → release activated → nginx + php8.4
+  pool → `/up` 200). Provisioned its MariaDB via `register_database` +
+  `database.provision`. Two blockers surfaced: the agent **refuses migrations** (a
+  fail-closed recovery-prerequisite stub) so DB tables don't exist (homepage 500), and
+  hosted-app **TLS is not issued during deploy** (managed site is HTTP-only). Also
+  confirmed the installer/package create `/etc/nginx/conf.d/hostnur-sites.conf` (the
+  manual deploy was missing it, so the app vhost wasn't loaded until added).
 - **Agent fix (Phase 21 safety finding)**: request-level errors now return the
   contract's framed error object (`{"error":{code,message,retryable}}`) instead of
   closing the connection silently. Verified on the host: unknown op →
