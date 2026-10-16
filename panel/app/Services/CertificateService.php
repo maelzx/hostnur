@@ -54,7 +54,7 @@ final class CertificateService
             operation: 'certificate.issue',
             resource: new ResourceRef(ResourceKind::Domain, $domain->getKey()),
             parameters: ['provider' => 'http01'],
-            timeoutSeconds: null,
+            timeoutSeconds: 300,
         ));
 
         $certificate->forceFill(['task_id' => $task->getKey()])->save();

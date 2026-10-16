@@ -61,7 +61,7 @@ final class ServerService
             operation: 'service.control',
             resource: new ResourceRef(ResourceKind::Service, $serviceId),
             parameters: ['action' => $action->value],
-            timeoutSeconds: null,
+            timeoutSeconds: 120,
         ));
 
         $this->audit->record($actor, AuditAction::ServerServiceControlRequested, AuditOutcome::Requested, [
@@ -89,7 +89,7 @@ final class ServerService
             operation: 'package.install',
             resource: null,
             parameters: ['package' => $packageId],
-            timeoutSeconds: null,
+            timeoutSeconds: 900,
         ));
 
         $this->audit->record($actor, AuditAction::ServerPackageInstallRequested, AuditOutcome::Requested, [
@@ -187,7 +187,7 @@ final class ServerService
             operation: 'package.upgrade',
             resource: null,
             parameters: ['security' => $securityOnly],
-            timeoutSeconds: null,
+            timeoutSeconds: 1800,
         ));
 
         $this->audit->record($actor, AuditAction::ServerPackageUpgradeRequested, AuditOutcome::Requested, [

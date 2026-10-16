@@ -122,7 +122,7 @@ final class BackupService
             operation: 'backup.create',
             resource: new ResourceRef(ResourceKind::Backup, $backup->getKey()),
             parameters: ['policy' => $policy->getKey()],
-            timeoutSeconds: null,
+            timeoutSeconds: 1800,
         ));
 
         $backup->forceFill(['task_id' => $task->getKey()])->save();

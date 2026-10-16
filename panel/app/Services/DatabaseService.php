@@ -60,7 +60,7 @@ final class DatabaseService
             operation: 'database.provision',
             resource: null,
             parameters: ['request' => $request->getKey()],
-            timeoutSeconds: null,
+            timeoutSeconds: 300,
         ));
 
         $request->forceFill(['task_id' => $task->getKey()])->save();
