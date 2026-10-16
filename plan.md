@@ -1373,11 +1373,14 @@ state. Ownership/socket isolation, real TLS and restore checks still hold. Publi
 verification/update/operator instructions match the exact tested artifacts.
 
 ### Phase 20.5 — Observed state reconciliation and truthful application status
-- Status: **planned**. Closes an implied gap left by phases 12 and 15: the agent
-  already reconciles a provisioning lifecycle and an active release, but
-  `applications.observed_state` / `observed_mode` / `observed_at` are reserved in the
-  schema and never written, and no screen distinguishes desired configuration from
-  genuine agent evidence.
+- Status: **implemented, VM validation pending**. Contract `application.observe`
+  (read-only) returns the observed lifecycle + active release + mode + time
+  (`ApplicationObservation` DTO/schema/fixtures); the Rust handler derives the
+  lifecycle from the managed layout (`reserved` → `account_created` →
+  `layout_prepared` → `ready`) and the active release from the `current` symlink.
+  The panel persists `observed_state`/`observed_mode`/`observed_at` and shows an
+  **Observed** stat (with a warning tone on failed/drifted). Rust 130 tests +
+  clippy; PHP 266 tests. Real-host validation of the observed derivation is pending.
 - Depends on: 12, 14, 15, 16, 17, 18.
 
 #### Objective and rules
@@ -1675,6 +1678,11 @@ ask only when the choice materially changes scope, cost, access, or product beha
   own `hn-<app>-*` units in `agent/src/appstate.rs`; and surfaced them on the
   application page (Logs panel with refresh, storage stat, Start/Stop buttons).
   Rust 130 tests + clippy clean; PHP 266 tests. Real-host validation pending.
+- **Phase 20.5 (observed state) implemented**: added read-only `application.observe`
+  to the contract (`ApplicationObservation` DTO/schema/fixtures), a Rust handler
+  deriving the provisioning lifecycle and active release from the managed layout, and
+  panel persistence of `observed_state/mode/at` plus an **Observed** stat on the
+  application page. Rust 130 tests + clippy; PHP 266 tests. Real-host validation pending.
 - **Plan**: the wiring of agent-observed state into the panel
   (`applications.observed_state`/`observed_mode`/`observed_at`) was only implied, not
   planned. Recorded it as a new not-started phase **Phase 20.5 — Observed state

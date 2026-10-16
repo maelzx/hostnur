@@ -246,6 +246,12 @@
             "read_only": true,
             "retry": "bounded"
         },
+        "application.observe": {
+            "resource": "application",
+            "parameters": {},
+            "read_only": true,
+            "retry": "bounded"
+        },
         "application.start": {
             "resource": "application",
             "parameters": {},

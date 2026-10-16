@@ -4,6 +4,7 @@ namespace App\Agent;
 
 use App\Agent\Dto\ApplicationLogSnapshot;
 use App\Agent\Dto\ApplicationMetricsSnapshot;
+use App\Agent\Dto\ApplicationObservation;
 use App\Agent\Dto\CancellationReceipt;
 use App\Agent\Dto\CapabilitySnapshot;
 use App\Agent\Dto\OperationReceipt;
@@ -100,6 +101,11 @@ final class UnavailableAgentClient implements AgentClient
     public function applicationMetrics(OperationRequest $request): ApplicationMetricsSnapshot
     {
         throw new AgentUnavailableException('The agent is unavailable, so application metrics cannot be read.');
+    }
+
+    public function applicationObservation(OperationRequest $request): ApplicationObservation
+    {
+        throw new AgentUnavailableException('The agent is unavailable, so the observed state cannot be read.');
     }
 
     private function protocolVersion(): int

@@ -5,6 +5,7 @@ namespace App\Agent;
 use App\Agent\Dto\AgentError;
 use App\Agent\Dto\ApplicationLogSnapshot;
 use App\Agent\Dto\ApplicationMetricsSnapshot;
+use App\Agent\Dto\ApplicationObservation;
 use App\Agent\Dto\CancellationReceipt;
 use App\Agent\Dto\CapabilitySnapshot;
 use App\Agent\Dto\OperationReceipt;
@@ -95,6 +96,11 @@ final class RealAgentClient implements AgentClient
     public function applicationMetrics(OperationRequest $request): ApplicationMetricsSnapshot
     {
         return ApplicationMetricsSnapshot::fromArray($this->send($request->toArray()));
+    }
+
+    public function applicationObservation(OperationRequest $request): ApplicationObservation
+    {
+        return ApplicationObservation::fromArray($this->send($request->toArray()));
     }
 
     /**

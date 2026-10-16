@@ -1001,6 +1001,39 @@ impl<'a> AgentHandler<'a> {
         })
     }
 
+    fn application_observe(&self, request: &OperationRequest) -> Value {
+        let application_id = match application_resource(request) {
+            Ok(id) => id,
+            Err(message) => return error_body(ContractErrorCode::InvalidParameters, message),
+        };
+
+        let root = self.apps_root.join(application_id.as_str());
+        let current = root.join("current");
+
+        let (lifecycle, active_release) = match std::fs::read_link(&current) {
+            Ok(target) => {
+                let release = target
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .and_then(|name| Uuid::parse(name).ok())
+                    .map(|uuid| uuid.as_str().to_string());
+                ("ready", release)
+            }
+            Err(_) if root.join("releases").is_dir() => ("layout_prepared", None),
+            Err(_) if root.is_dir() => ("account_created", None),
+            Err(_) => ("reserved", None),
+        };
+
+        json!({
+            "protocol_version": 1,
+            "application_id": application_id.as_str(),
+            "lifecycle": lifecycle,
+            "active_release": active_release,
+            "mode": "real",
+            "sampled_at": clock::now_rfc3339(),
+        })
+    }
+
     fn application_control(&self, request: &OperationRequest, action: &str) -> Value {
         let application_id = match application_resource(request) {
             Ok(id) => id,
@@ -1298,6 +1331,7 @@ impl RequestHandler for AgentHandler<'_> {
             "firewall.web" => self.complete_operation(request, || self.firewall_web(request)),
             "application.logs" => self.application_logs(request),
             "application.metrics" => self.application_metrics(request),
+            "application.observe" => self.application_observe(request),
             "application.start" => {
                 self.complete_operation(request, || self.application_start(request))
             }

@@ -222,7 +222,14 @@ class ApplicationInventoryTest extends TestCase
 
         Livewire::test(ApplicationShow::class, ['application' => $application->getKey()])
             ->assertSet('logsUnavailable', null)
-            ->assertSet('logLines', fn (mixed $lines): bool => is_array($lines) && $lines !== []);
+            ->assertSet('logLines', fn (mixed $lines): bool => is_array($lines) && $lines !== [])
+            ->assertSet('observedLifecycle', 'ready');
+
+        $this->assertDatabaseHas('applications', [
+            'id' => $application->getKey(),
+            'observed_state' => 'ready',
+            'observed_mode' => 'fake',
+        ]);
     }
 
     public function test_credentials_are_encrypted_hidden_and_rotatable(): void

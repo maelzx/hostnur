@@ -4,6 +4,7 @@ namespace App\Contracts;
 
 use App\Agent\Dto\ApplicationLogSnapshot;
 use App\Agent\Dto\ApplicationMetricsSnapshot;
+use App\Agent\Dto\ApplicationObservation;
 use App\Agent\Dto\CancellationReceipt;
 use App\Agent\Dto\CapabilitySnapshot;
 use App\Agent\Dto\OperationReceipt;
@@ -84,4 +85,9 @@ interface AgentClient
      * Read per-application storage metrics.
      */
     public function applicationMetrics(OperationRequest $request): ApplicationMetricsSnapshot;
+
+    /**
+     * Read the agent-observed application lifecycle and active release.
+     */
+    public function applicationObservation(OperationRequest $request): ApplicationObservation;
 }

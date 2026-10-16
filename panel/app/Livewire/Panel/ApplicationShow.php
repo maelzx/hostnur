@@ -20,6 +20,7 @@ use App\Services\CertificateService;
 use App\Services\DatabaseService;
 use App\Services\DeploymentService;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
@@ -92,6 +93,12 @@ class ApplicationShow extends Component
 
     public ?int $storageTotalBytes = null;
 
+    public ?string $observedLifecycle = null;
+
+    public ?string $observedMode = null;
+
+    public ?string $observedAt = null;
+
     // Database
     public string $database_engine = 'mariadb';
 
@@ -150,6 +157,27 @@ class ApplicationShow extends Component
         } catch (\Throwable) {
             $this->storageUsedBytes = null;
             $this->storageTotalBytes = null;
+        }
+
+        try {
+            $observation = $agent->applicationObservation($this->observationRequest('application.observe'));
+            $this->observedLifecycle = $observation->lifecycle;
+            $this->observedMode = $observation->mode->value;
+            $this->observedAt = $observation->sampledAt;
+
+            $application = $this->application();
+
+            if (! $application->isArchived()) {
+                $application->forceFill([
+                    'observed_state' => $observation->lifecycle,
+                    'observed_mode' => $observation->mode->value,
+                    'observed_at' => Carbon::parse($observation->sampledAt),
+                ])->save();
+            }
+        } catch (\Throwable) {
+            $this->observedLifecycle = null;
+            $this->observedMode = null;
+            $this->observedAt = null;
         }
     }
 

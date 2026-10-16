@@ -4,6 +4,7 @@ namespace App\Agent;
 
 use App\Agent\Dto\ApplicationLogSnapshot;
 use App\Agent\Dto\ApplicationMetricsSnapshot;
+use App\Agent\Dto\ApplicationObservation;
 use App\Agent\Dto\CancellationReceipt;
 use App\Agent\Dto\CapabilitySnapshot;
 use App\Agent\Dto\OperationReceipt;
@@ -78,6 +79,17 @@ final class FakeAgentClient implements AgentClient
         $fixture['sampled_at'] = now()->toIso8601String();
 
         return ApplicationMetricsSnapshot::fromArray($fixture);
+    }
+
+    public function applicationObservation(OperationRequest $request): ApplicationObservation
+    {
+        $this->guard->assertFakeModeAllowed();
+
+        $fixture = $this->fixture('application-observation');
+        $fixture['application_id'] = $this->applicationResourceId($request, $fixture['application_id']);
+        $fixture['sampled_at'] = now()->toIso8601String();
+
+        return ApplicationObservation::fromArray($fixture);
     }
 
     /**

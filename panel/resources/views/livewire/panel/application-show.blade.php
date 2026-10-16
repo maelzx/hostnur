@@ -106,6 +106,12 @@
         />
         <x-ui.stat label="Queue workers" :value="$workers" :hint="$scheduler ? 'Scheduler on' : 'Scheduler off'" />
         <x-ui.stat label="Storage" :value="$fmtBytes($storageUsedBytes)" :hint="$storageTotalBytes !== null ? 'of '.$fmtBytes($storageTotalBytes) : 'Not reported'" />
+        <x-ui.stat
+            label="Observed"
+            :value="$observedLifecycle ?? '—'"
+            :hint="$observedAt !== null ? ($observedMode ?? '').' · '.\Illuminate\Support\Carbon::parse($observedAt)->diffForHumans() : 'Not reported'"
+            :tone="$observedLifecycle === 'failed' || $observedLifecycle === 'drifted' ? 'warning' : 'neutral'"
+        />
     </div>
 
     {{-- Setup checklist: shown only until the first successful deployment --}}
