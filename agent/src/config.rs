@@ -35,7 +35,7 @@ const MAX_SOCKET_PATH_BYTES: usize = 107;
 
 /// Top-level settings accepted by this schema version. Anything else is an
 /// unknown setting and is rejected.
-const KNOWN_KEYS: [&str; 13] = [
+const KNOWN_KEYS: [&str; 15] = [
     "version",
     "socket_path",
     "state_dir",
@@ -49,7 +49,12 @@ const KNOWN_KEYS: [&str; 13] = [
     "socket_group",
     "acme_email",
     "acme_staging",
+    "backup_recipient",
+    "backup_dir",
 ];
+
+/// Default local staging directory for sealed backup artifacts.
+pub const DEFAULT_BACKUP_DIR: &str = "/var/lib/hostnur/backups";
 
 /// Validated agent configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,6 +79,10 @@ pub struct AgentConfig {
     pub acme_email: Option<String>,
     /// Use the Let's Encrypt staging endpoint (for testing).
     pub acme_staging: bool,
+    /// Operator age (X25519) public key used to seal backup artifacts.
+    pub backup_recipient: Option<String>,
+    /// Local staging directory for sealed backup artifacts.
+    pub backup_dir: PathBuf,
 }
 
 impl AgentConfig {
@@ -127,6 +136,10 @@ impl AgentConfig {
         let socket_group = optional_string(table, "socket_group")?;
         let acme_email = optional_string(table, "acme_email")?;
         let acme_staging = optional_bool(table, "acme_staging", false)?;
+        let backup_recipient = optional_string(table, "backup_recipient")?;
+        let backup_dir = optional_string(table, "backup_dir")?
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(DEFAULT_BACKUP_DIR));
 
         let config = AgentConfig {
             version: u32::try_from(version)
@@ -143,6 +156,8 @@ impl AgentConfig {
             socket_group,
             acme_email,
             acme_staging,
+            backup_recipient,
+            backup_dir,
         };
         config.validate()?;
         Ok(config)
@@ -167,6 +182,16 @@ impl AgentConfig {
         }
 
         validate_absolute_path("state_dir", &self.state_dir)?;
+        validate_absolute_path("backup_dir", &self.backup_dir)?;
+
+        if let Some(recipient) = &self.backup_recipient
+            && !recipient.is_empty()
+            && !recipient.starts_with("age1")
+        {
+            return Err(invalid(
+                "`backup_recipient` must be an age public key (age1...)",
+            ));
+        }
 
         if self.max_message_bytes < MIN_MAX_MESSAGE_BYTES
             || self.max_message_bytes > MAX_MESSAGE_BYTES_LIMIT

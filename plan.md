@@ -1164,8 +1164,16 @@ Laravel app; actual grants, secret handling, rotation and partial-failure behavi
 pass on the VM. Only tested engine/version/data-movement capabilities are advertised.
 
 ### Phase 19 — Backup, restore and recovery
-- Status: **deferred by user decision** (session 034) — do later. Requires a
-  separate disposable restore VM and key-custody decision when resumed.
+- Status: **in progress** (resumed session 045). Decisions: artifacts are sealed
+  with **age (X25519)** to an operator public key (identity kept off-host, never the
+  panel APP_KEY); the first destination is **S3-compatible object storage** (S3/R2/
+  MinIO), with SFTP afterward (P19.6).
+- Landed: `agent/src/backup.rs` — `seal`/`open` (age), a versioned `BackupManifest`
+  (scope, sizes, consistency, SHA-256 of the sealed bytes) and integrity hashing;
+  config `backup_recipient` + `backup_dir` (validated). Unit-tested (round-trip,
+  invalid recipient, manifest). **Remaining**: per-scope artifact capture, the S3
+  transfer + retention/prune (P19.3/P19.6), restore orchestration (P19.4), and the
+  separate-VM drill/runbook (P19.5).
 - Depends on: 15, 16, 17; include 18 for managed databases.
 
 #### Backup scope and trust
@@ -1647,6 +1655,18 @@ ask only when the choice materially changes scope, cost, access, or product beha
   host (worked around by appending it) — worth reproducing; the dedicated
   `hostnur-panel` identity wasn't used here. Phase 20 CI/real-host package validation
   still pending.
+
+### Session 046 — Phase 19 (backup) started (2026-10-16)
+
+- Locked the Phase 19 decisions: **age (X25519)** encryption to an operator public
+  key (identity off-host) and **S3-compatible** object storage as the first
+  destination.
+- Landed the P19.2 foundation: `agent/src/backup.rs` (`seal`/`open` via the `age`
+  crate, versioned `BackupManifest`, SHA-256 integrity), plus `backup_recipient` /
+  `backup_dir` in the agent config. Added `age` + `sha2` dependencies. Rust 136
+  tests + clippy clean.
+- Remaining: artifact capture per scope, S3 transfer + retention (P19.3/P19.6),
+  restore orchestration (P19.4), separate-VM drill (P19.5).
 
 ### Session 044 — UI/UX revamp + truthful application status (2026-10-15)
 

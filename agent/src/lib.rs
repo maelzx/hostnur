@@ -11,6 +11,7 @@
 //! UUIDs, and every external tool runs through the bounded process primitive.
 
 pub mod appstate;
+pub mod backup;
 pub mod cli;
 pub mod clock;
 pub mod config;
