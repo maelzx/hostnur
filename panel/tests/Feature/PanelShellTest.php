@@ -45,7 +45,7 @@ class PanelShellTest extends TestCase
             ->assertSee('Task history')
             ->assertSee('Audit history')
             ->assertSee('Security settings')
-            ->assertSee('Server overview')
+            ->assertSee('Packages & services')
             ->assertSee('Scheduled jobs');
 
         foreach (['panel.dashboard', 'panel.tasks.index', 'panel.audit.index', 'panel.security', 'panel.security.mfa'] as $name) {

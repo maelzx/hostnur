@@ -51,21 +51,29 @@ class ServerAdministrationTest extends TestCase
         app(RecentAuthentication::class)->confirm($admin);
     }
 
-    public function test_the_server_page_is_gated_and_shows_snapshot_and_catalog(): void
+    public function test_the_packages_and_firewall_pages_are_gated_and_show_snapshot(): void
     {
         config(['hostnur.agent_mode' => 'fake']);
         $admin = $this->confirmedAdmin();
 
-        $this->get('/panel/server')->assertRedirect(route('login'));
+        $this->get('/panel/packages')->assertRedirect(route('login'));
+        $this->get('/panel/firewall')->assertRedirect(route('login'));
+
+        $session = array_merge($this->mfaProof($admin), $this->recentAuth($admin));
 
         $this->actingAs($admin)
-            ->withSession(array_merge($this->mfaProof($admin), $this->recentAuth($admin)))
-            ->get('/panel/server')
+            ->withSession($session)
+            ->get('/panel/packages')
             ->assertOk()
             ->assertSee('nginx')
             ->assertSee('certbot')
-            ->assertSee('Simulated agent mode')
-            ->assertSee('Firewall (read-only)');
+            ->assertSee('Simulated agent mode');
+
+        $this->actingAs($admin)
+            ->withSession($session)
+            ->get('/panel/firewall')
+            ->assertOk()
+            ->assertSee('Firewall');
     }
 
     public function test_service_control_requires_a_snapshot_service(): void
@@ -290,7 +298,7 @@ class ServerAdministrationTest extends TestCase
 
         $this->get(route('panel.backups.index'))->assertRedirect(route('login'));
 
-        foreach (['panel.schedules.index', 'panel.certificates.index', 'panel.databases.index', 'panel.backups.index', 'panel.server'] as $route) {
+        foreach (['panel.schedules.index', 'panel.certificates.index', 'panel.backups.index', 'panel.packages', 'panel.firewall'] as $route) {
             $this->actingAs($admin)->withSession($session)->get(route($route))->assertOk();
         }
     }

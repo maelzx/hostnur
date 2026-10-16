@@ -12,6 +12,7 @@ use App\Models\Task;
 use App\Models\TaskEvent;
 use App\Models\User;
 use App\Services\ApplicationService;
+use App\Services\DatabaseService;
 use App\Services\DeploymentService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Collection;
@@ -70,10 +71,20 @@ class ApplicationShow extends Component
 
     public string $restartKey = '';
 
+    // Database
+    public string $database_engine = 'mariadb';
+
+    public string $database_name = '';
+
+    public string $database_username = '';
+
+    public string $databaseKey = '';
+
     public function mount(string $application): void
     {
         $this->applicationId = $application;
         $this->restartKey = (string) Str::uuid();
+        $this->databaseKey = (string) Str::uuid();
         $application = $this->application();
 
         $this->authorize('view', $application);
@@ -260,6 +271,25 @@ class ApplicationShow extends Component
         $this->redirect(route('panel.applications.show', ['application' => $this->applicationId]));
     }
 
+    public function requestDatabase(DatabaseService $databases): void
+    {
+        $application = $this->application();
+        $this->authorize('update', $application);
+
+        $databases->request(
+            $this->actor(),
+            $application,
+            $this->database_engine,
+            $this->database_name,
+            $this->database_username,
+            $this->databaseKey,
+        );
+
+        $this->reset('database_name', 'database_username');
+        session()->flash('status', 'Database provisioning requested.');
+        $this->redirect(route('panel.applications.show', ['application' => $this->applicationId]));
+    }
+
     public function render(): View
     {
         $application = $this->application();
@@ -270,6 +300,7 @@ class ApplicationShow extends Component
             'application' => $application,
             'latestDeployment' => $application->latestDeployment,
             'database' => $application->databaseRequests()->latest('created_at')->first(),
+            'engines' => config('hostnur.server.database_engines'),
             'certificates' => Certificate::query()->whereIn('application_domain_id', $domainIds)->latest('created_at')->get(),
             'logs' => $this->logs(),
             'locked' => $application->hasSuccessfulDeployment(),

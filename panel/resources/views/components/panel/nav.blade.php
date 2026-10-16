@@ -44,10 +44,10 @@
             <p class="{{ $label }}">Server</p>
             <ul class="mt-2 space-y-1">
                 @foreach ([
-                    'panel.server' => 'Server overview',
+                    'panel.packages' => 'Packages & services',
+                    'panel.firewall' => 'Firewall',
                     'panel.schedules.index' => 'Scheduled jobs',
-                    'panel.certificates.index' => 'Domains & TLS',
-                    'panel.databases.index' => 'Databases',
+                    'panel.certificates.index' => 'SSL certificates',
                     'panel.backups.index' => 'Backups',
                 ] as $name => $text)
                     <li>

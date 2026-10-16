@@ -1237,6 +1237,12 @@ The runbook states what is recoverable, data-loss window, required keys/artifact
 version limitations, expected downtime, how to recover without a functioning web
 panel, and how to safely fail a restore before/after partial data replacement.
 
+Backups must also support **remote destinations** — S3-compatible object storage
+(AWS S3, Cloudflare R2, MinIO, etc.) and FTP/SFTP — in addition to local/attached
+storage. Destination credentials are stored write-only (panel-encrypted or supplied
+by the operator), transfers are verified end-to-end, and a failed upload never
+replaces a known-good recovery set.
+
 | Slice | Deliverable | Required evidence |
 |---|---|---|
 | P19.1 Recovery inventory/policy | Scope/consistency/retention and key-custody decision | Every secret/identity needed for recovery has a documented recoverable source |
@@ -1244,6 +1250,7 @@ panel, and how to safely fail a restore before/after partial data replacement.
 | P19.3 Destination/retention | Verified transfer, pinning, prune and failure cleanup | Network/disk failure preserves previous recovery sets |
 | P19.4 Restore orchestration | Safe extraction, identity/schema/config reconciliation | No root path escape, unexpected replay or host identity confusion |
 | P19.5 Separate-VM drill/runbook | Full restore plus scoped restore examples | Real admin/MFA, data, app, TLS and service health recovered |
+| P19.6 Remote destinations | S3-compatible object storage and FTP/SFTP transfer | Transfer verified end-to-end; credentials write-only; failures preserve previous sets |
 
 **Exit gate:** a separately provisioned VM restores a genuine encrypted recovery set
 and passes the documented checks. Evidence includes artifact ID, versions, key access
@@ -1440,10 +1447,11 @@ command runner.
 log tail and resource usage and start, stop or restart it from the panel, with
 cross-application access refused and simulated/unavailable results clearly marked.
 
-### Phase 20.7 — Server package update awareness
-- Status: **planned**. The dashboard cannot yet tell whether the host has pending
-  `apt` updates: the snapshot exposes metrics, services and firewall only, and no
-  operation queries or previews upgrades.
+### Phase 20.7 — Server package management (updates and custom catalog)
+- Status: **planned**. The packages page installs only from a fixed approved catalog
+  and cannot tell whether the host has pending `apt` updates: the snapshot exposes
+  metrics, services and firewall only, and no operation queries/previews upgrades or
+  installs packages outside the catalog.
 - Depends on: 17.
 
 #### Objective and rules
@@ -1463,16 +1471,45 @@ apply them safely, reusing the existing approved package/allowlist path.
 | P20.7.1 Update observation | Pending upgrades (name/current/candidate/security) with mode/time | Unavailable ≠ "no updates"; fake values are labelled |
 | P20.7.2 Bounded upgrade | Preview and apply approved upgrades, audited | No unreviewed repos; failure is reported, not hidden |
 | P20.7.3 Dashboard surface | Pending-update status on the overview | Values match agent evidence; unavailable stays truthful |
+| P20.7.4 Custom package catalog | Operator-managed approved package list with validation | Only reviewed sources; arbitrary/unreviewed packages refused |
 
 **Exit gate / milestone:** on the VM the dashboard shows the true pending-update
-count, an operator can preview and apply updates with audit evidence, and an
-unavailable agent never reports "up to date".
+count, an operator can preview and apply updates with audit evidence, packages can be
+added to the approved catalog, and an unavailable agent never reports "up to date".
+
+### Phase 20.8 — Firewall rule management
+- Status: **planned**. The firewall page is read-only; the agent reports a summary
+  only and exposes no mutation, so rules cannot be added yet.
+- Depends on: 17.
+
+#### Objective and rules
+
+Let the operator manage host firewall rules through a dedicated page while keeping
+web traffic reachable.
+
+- Ports 80 and 443 are always kept open; disabling 80 is allowed only when 443 (with a
+  valid certificate) is enabled.
+- Rules are added/edited/removed through bounded, strictly typed operations (port,
+  protocol, source, action) — never arbitrary `iptables`/`nft`/`ufw` command strings.
+- Changes are validated (no lock-out: the operator's management path and SSH are
+  protected), applied atomically, journaled and audited; apply failure rolls back to
+  the previous ruleset.
+
+| Slice | Deliverable | Required proof |
+|---|---|---|
+| P20.8.1 Rule observation | Read current rules (port/protocol/source/action) with mode/time | Unavailable ≠ "no rules"; fake values labelled |
+| P20.8.2 Bounded mutations | Add/edit/remove validated rules with rollback | No lock-out; arbitrary command strings refused |
+| P20.8.3 Web-port policy | 80/443 kept open; optional 80 close requires 443+cert | Closing 80 is refused unless HTTPS is live |
+
+**Exit gate / milestone:** on the VM an operator can add, edit and remove firewall
+rules from the panel, web traffic stays reachable (optionally 80 → 443), a bad apply
+rolls back without lock-out, and every change is audited.
 
 ### Phase 21 — Integrated beta validation and release gate
 - Status: planned. Uses the user's **recreated throwaway Ubuntu 24.04 amd64
   droplet** each session (per session 034), plus a separate restore VM when
   phase 19 resumes.
-- Depends on: 1–20.7 and disposable VM access.
+- Depends on: 1–20.8 and disposable VM access.
 - Slices: full cross-process/VM regression, privilege/path/socket abuse cases,
   app isolation, crashes/disconnects, Nginx/TLS failures, SQLite contention,
   signed release verification, restore/recovery drill and operator documentation.
@@ -1600,6 +1637,13 @@ ask only when the choice materially changes scope, cost, access, or product beha
   and a **Server updates** panel. Server package-update status is not available from
   the agent, so it is shown as not-yet-reported and recorded as planned
   **Phase 20.7 — Server package update awareness**.
+- **Server area restructure**: removed the **Server overview** and standalone
+  **Databases** pages; added a **Packages & services** page (approved package install
+  + managed-service control), a **Firewall** page (read-only state; rule management
+  planned), and renamed **Domains & TLS → SSL certificates**. Provisioning a database
+  for an existing app now happens on the application detail page. Recorded planned
+  work: Phase 20.7 broadened to a **custom package catalog**, new **Phase 20.8 —
+  Firewall rule management**, and **P19.6** remote backup destinations (S3/SFTP).
 - **Plan**: the wiring of agent-observed state into the panel
   (`applications.observed_state`/`observed_mode`/`observed_at`) was only implied, not
   planned. Recorded it as a new not-started phase **Phase 20.5 — Observed state

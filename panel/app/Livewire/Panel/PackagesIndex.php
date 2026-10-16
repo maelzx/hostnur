@@ -11,7 +11,7 @@ use Livewire\Attributes\Layout;
 use Livewire\Component;
 
 #[Layout('layouts.panel')]
-class ServerOverview extends Component
+class PackagesIndex extends Component
 {
     public string $serviceId = '';
 
@@ -47,11 +47,10 @@ class ServerOverview extends Component
 
     public function render(ServerService $service): View
     {
-        $snapshot = $service->snapshot();
-
-        return view('livewire.panel.server-overview', [
-            'snapshot' => $snapshot,
+        return view('livewire.panel.packages-index', [
+            'snapshot' => $service->snapshot(),
             'packages' => config('hostnur.server.packages'),
+            'staleAfter' => (int) config('hostnur.dashboard.stale_after_seconds', 120),
         ]);
     }
 

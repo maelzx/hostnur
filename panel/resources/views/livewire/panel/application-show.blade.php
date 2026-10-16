@@ -299,7 +299,28 @@
         <x-ui.panel title="Database">
             @if ($database === null)
                 <p class="mt-2 text-sm text-slate-600">No managed database provisioned.</p>
-                <p class="mt-3 text-sm"><a href="{{ route('panel.databases.index') }}" class="font-medium text-indigo-700 hover:underline">Provision a database</a></p>
+                <form wire:submit="requestDatabase" class="mt-4 grid gap-3 sm:grid-cols-3">
+                    <div>
+                        <label for="database_engine" class="block text-sm font-medium text-slate-700">Engine</label>
+                        <select id="database_engine" wire:model="database_engine" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+                            @foreach ($engines as $option)<option value="{{ $option }}">{{ $option }}</option>@endforeach
+                        </select>
+                        @error('engine') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
+                    </div>
+                    <div>
+                        <label for="database_name" class="block text-sm font-medium text-slate-700">Database name</label>
+                        <input id="database_name" type="text" wire:model="database_name" placeholder="my_app_db" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm">
+                        @error('database_name') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
+                    </div>
+                    <div>
+                        <label for="database_username" class="block text-sm font-medium text-slate-700">Username</label>
+                        <input id="database_username" type="text" wire:model="database_username" placeholder="my_app_user" class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm">
+                        @error('username') <p role="alert" class="mt-1 text-sm text-red-700">{{ $message }}</p> @enderror
+                    </div>
+                    <div class="sm:col-span-3">
+                        <x-ui.button type="submit" variant="secondary">Provision database</x-ui.button>
+                    </div>
+                </form>
             @else
                 <dl class="mt-2 grid gap-3 text-sm sm:grid-cols-3">
                     <div><dt class="text-slate-600">Engine</dt><dd class="font-medium">{{ $database->engine->value }}</dd></div>

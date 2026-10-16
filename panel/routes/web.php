@@ -14,12 +14,12 @@ use App\Livewire\Panel\BackupIndex;
 use App\Livewire\Panel\CertificateIndex;
 use App\Livewire\Panel\ConfirmPassword;
 use App\Livewire\Panel\Dashboard;
-use App\Livewire\Panel\DatabaseIndex;
 use App\Livewire\Panel\DeploymentIndex;
 use App\Livewire\Panel\DeploymentShow;
+use App\Livewire\Panel\FirewallIndex;
+use App\Livewire\Panel\PackagesIndex;
 use App\Livewire\Panel\ScheduleIndex;
 use App\Livewire\Panel\SecuritySettings;
-use App\Livewire\Panel\ServerOverview;
 use App\Livewire\Panel\TaskIndex;
 use App\Livewire\Panel\TaskShow;
 use Illuminate\Support\Facades\Route;
@@ -55,9 +55,9 @@ Route::middleware(['auth:web', 'administrator', 'mfa'])->group(function (): void
 Route::middleware(['auth:web', 'administrator', 'mfa'])->group(function (): void {
     Route::get('/panel/security', SecuritySettings::class)->name('panel.security');
     Route::get('/panel/applications/{application}/operations', ApplicationOperations::class)->name('panel.applications.operations');
-    Route::get('/panel/server', ServerOverview::class)->name('panel.server');
+    Route::get('/panel/packages', PackagesIndex::class)->name('panel.packages');
+    Route::get('/panel/firewall', FirewallIndex::class)->name('panel.firewall');
     Route::get('/panel/schedules', ScheduleIndex::class)->name('panel.schedules.index');
     Route::get('/panel/certificates', CertificateIndex::class)->name('panel.certificates.index');
-    Route::get('/panel/databases', DatabaseIndex::class)->name('panel.databases.index');
     Route::get('/panel/backups', BackupIndex::class)->name('panel.backups.index');
 });

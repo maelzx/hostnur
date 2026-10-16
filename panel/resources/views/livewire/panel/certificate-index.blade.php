@@ -1,6 +1,6 @@
 <main>
     <header class="mb-6">
-        <h1 class="text-2xl font-semibold tracking-tight">Domains &amp; TLS</h1>
+        <h1 class="text-2xl font-semibold tracking-tight">SSL certificates</h1>
     </header>
 
     <div class="grid gap-6 lg:grid-cols-2">

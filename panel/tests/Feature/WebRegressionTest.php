@@ -53,8 +53,8 @@ class WebRegressionTest extends TestCase
     {
         foreach ([
             'panel.dashboard', 'panel.tasks.index', 'panel.audit.index',
-            'panel.applications.index', 'panel.deployments.index', 'panel.server',
-            'panel.schedules.index', 'panel.certificates.index', 'panel.databases.index',
+            'panel.applications.index', 'panel.deployments.index', 'panel.packages',
+            'panel.firewall', 'panel.schedules.index', 'panel.certificates.index',
             'panel.backups.index', 'panel.security',
         ] as $route) {
             $this->get(route($route))->assertRedirect(route('login'));

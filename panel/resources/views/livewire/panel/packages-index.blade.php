@@ -1,9 +1,9 @@
 <main>
     <header class="mb-6">
-        <h1 class="text-2xl font-semibold tracking-tight">Server</h1>
+        <h1 class="text-2xl font-semibold tracking-tight text-slate-900">Packages &amp; services</h1>
     </header>
 
-    <x-ui.capability-notice :snapshot="$snapshot" :stale-after="(int) config('hostnur.dashboard.stale_after_seconds', 120)" />
+    <x-ui.capability-notice :snapshot="$snapshot" :stale-after="$staleAfter" />
 
     @error('agent') <p role="alert" class="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{{ $message }}</p> @enderror
 
@@ -62,19 +62,7 @@
                 </div>
                 <x-ui.button type="submit" variant="secondary">Request install</x-ui.button>
             </form>
+            <p class="mt-4 text-xs text-slate-500">Adding packages outside this approved catalog is planned.</p>
         </x-ui.panel>
     </div>
-
-    <x-ui.panel title="Firewall (read-only)" class="mt-6">
-        @if ($snapshot->firewall === null)
-            <p class="mt-2 text-sm text-slate-600">Not reported by this agent.</p>
-        @else
-            <dl class="mt-2 grid gap-3 text-sm sm:grid-cols-3">
-                <div><dt class="text-slate-600">Enabled</dt><dd class="font-medium">{{ $snapshot->firewall['enabled'] ? 'yes' : 'no' }}</dd></div>
-                <div><dt class="text-slate-600">Incoming policy</dt><dd class="font-medium">{{ $snapshot->firewall['incoming_policy'] }}</dd></div>
-                <div><dt class="text-slate-600">Rules</dt><dd class="font-medium">{{ $snapshot->firewall['rule_count'] }}</dd></div>
-            </dl>
-            <p class="mt-2 text-xs text-slate-500">Read-only.</p>
-        @endif
-    </x-ui.panel>
 </main>
