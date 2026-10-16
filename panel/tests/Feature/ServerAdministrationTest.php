@@ -116,6 +116,32 @@ class ServerAdministrationTest extends TestCase
         $this->assertDatabaseHas('tasks', ['id' => $task->getKey(), 'operation' => 'package.install']);
     }
 
+    public function test_firewall_rules_are_requested_but_web_ports_are_protected(): void
+    {
+        config(['hostnur.agent_mode' => 'fake']);
+        Queue::fake();
+        $admin = $this->admin();
+        $this->recent($admin);
+
+        $service = app(ServerService::class);
+
+        $add = $service->addFirewallRule($admin, 8080, 'tcp', 'any', 'allow', 'fw1');
+        $this->assertDatabaseHas('tasks', ['id' => $add->getKey(), 'operation' => 'firewall.rule.add']);
+
+        $remove = $service->removeFirewallRule($admin, 8080, 'tcp', 'any', 'allow', 'fw2');
+        $this->assertDatabaseHas('tasks', ['id' => $remove->getKey(), 'operation' => 'firewall.rule.remove']);
+
+        $web = $service->setWebHttpsOnly($admin, true, 'fw3');
+        $this->assertDatabaseHas('tasks', ['id' => $web->getKey(), 'operation' => 'firewall.web']);
+
+        try {
+            $service->addFirewallRule($admin, 80, 'tcp', 'any', 'allow', 'fw4');
+            $this->fail('Expected the protected port to be refused.');
+        } catch (ValidationException) {
+            $this->assertTrue(true);
+        }
+    }
+
     public function test_requests_are_closed_when_the_agent_is_unavailable(): void
     {
         config(['hostnur.agent_mode' => 'unavailable']);

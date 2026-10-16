@@ -221,7 +221,7 @@ final readonly class ServerSnapshot
             throw AgentContractException::invalidParameters('Server snapshot firewall must be an object or null.');
         }
 
-        $extra = array_diff(array_keys($firewall), ['enabled', 'incoming_policy', 'rule_count']);
+        $extra = array_diff(array_keys($firewall), ['enabled', 'incoming_policy', 'rule_count', 'rules']);
 
         if ($extra !== []) {
             throw AgentContractException::invalidParameters(
@@ -237,6 +237,51 @@ final readonly class ServerSnapshot
             throw AgentContractException::invalidParameters('Firewall summary is invalid.');
         }
 
-        return ['enabled' => $enabled, 'incoming_policy' => $policy, 'rule_count' => $count];
+        return [
+            'enabled' => $enabled,
+            'incoming_policy' => $policy,
+            'rule_count' => $count,
+            'rules' => self::firewallRules($firewall['rules'] ?? []),
+        ];
+    }
+
+    /**
+     * @return list<array{port: int, protocol: string, source: string, action: string}>
+     */
+    private static function firewallRules(mixed $rules): array
+    {
+        if (! is_array($rules)) {
+            throw AgentContractException::invalidParameters('Firewall rules must be an array.');
+        }
+
+        self::assertBounded($rules, 'firewall rules');
+
+        return array_values(array_map(function (mixed $rule): array {
+            if (! is_array($rule)) {
+                throw AgentContractException::invalidParameters('Each firewall rule must be an object.');
+            }
+
+            $extra = array_diff(array_keys($rule), ['port', 'protocol', 'source', 'action']);
+
+            if ($extra !== []) {
+                throw AgentContractException::invalidParameters(
+                    'Firewall rule has unexpected keys: '.implode(', ', $extra).'.'
+                );
+            }
+
+            $port = $rule['port'] ?? null;
+            $protocol = $rule['protocol'] ?? null;
+            $source = $rule['source'] ?? null;
+            $action = $rule['action'] ?? null;
+
+            if (! is_int($port) || $port < 1 || $port > 65535
+                || ! in_array($protocol, ['tcp', 'udp'], true)
+                || ! is_string($source) || $source === ''
+                || ! in_array($action, ['allow', 'deny'], true)) {
+                throw AgentContractException::invalidParameters('Firewall rule is invalid.');
+            }
+
+            return ['port' => $port, 'protocol' => $protocol, 'source' => $source, 'action' => $action];
+        }, $rules));
     }
 }

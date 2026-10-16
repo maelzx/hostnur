@@ -1,0 +1,12 @@
+{
+    "protocol_version": 1,
+    "request_id": "f1e2d3c4-b5a6-4789-9abc-def012345678",
+    "idempotency_key": "0a1b2c3d-4e5f-4678-9abc-def012345678",
+    "operation": "firewall.rule.add",
+    "parameters": {
+        "port": 8080,
+        "protocol": "tcp",
+        "source": "any",
+        "action": "allow"
+    }
+}

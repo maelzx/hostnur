@@ -14,8 +14,8 @@ pub mod request;
 pub use catalog::{Catalog, OperationDefinition, ParameterRule};
 pub use dto::{
     AgentError, AgentMode, CancellationReceipt, CancellationStatus, CapabilitySnapshot,
-    FirewallSummary, Metric, OperationReceipt, OperationSnapshot, OperationStatus, ServerSnapshot,
-    ServiceObservation, SnapshotEvent, Uuid, is_uuid,
+    FirewallRule, FirewallSummary, Metric, OperationReceipt, OperationSnapshot, OperationStatus,
+    ServerSnapshot, ServiceObservation, SnapshotEvent, Uuid, is_uuid,
 };
 pub use error::{ContractError, ContractErrorCode};
 pub use framing::{FrameError, MAX_MESSAGE_BYTES, encode_frame, read_frame};

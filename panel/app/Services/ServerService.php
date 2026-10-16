@@ -102,6 +102,103 @@ final class ServerService
         return $task;
     }
 
+    public function addFirewallRule(User $actor, int $port, string $protocol, string $source, string $action, string $idempotencyKey): Task
+    {
+        $this->assertAgentAvailable();
+        $this->assertRule($port, $protocol, $source, $action);
+
+        $task = $this->tasks->requestApproved($actor, new OperationRequest(
+            protocolVersion: (int) config('hostnur.protocol_version', 1),
+            requestId: (string) Str::uuid(),
+            idempotencyKey: $idempotencyKey,
+            operation: 'firewall.rule.add',
+            resource: null,
+            parameters: ['port' => $port, 'protocol' => $protocol, 'source' => $source, 'action' => $action],
+            timeoutSeconds: null,
+        ));
+
+        $this->audit->record($actor, AuditAction::FirewallRuleAdded, AuditOutcome::Requested, [
+            'resource_kind' => 'firewall',
+            'resource_id' => null,
+            'task_id' => $task->getKey(),
+            'metadata' => ['operation' => 'firewall.rule.add', 'port' => $port],
+        ]);
+
+        return $task;
+    }
+
+    public function removeFirewallRule(User $actor, int $port, string $protocol, string $source, string $action, string $idempotencyKey): Task
+    {
+        $this->assertAgentAvailable();
+        $this->assertRule($port, $protocol, $source, $action);
+
+        $task = $this->tasks->requestApproved($actor, new OperationRequest(
+            protocolVersion: (int) config('hostnur.protocol_version', 1),
+            requestId: (string) Str::uuid(),
+            idempotencyKey: $idempotencyKey,
+            operation: 'firewall.rule.remove',
+            resource: null,
+            parameters: ['port' => $port, 'protocol' => $protocol, 'source' => $source, 'action' => $action],
+            timeoutSeconds: null,
+        ));
+
+        $this->audit->record($actor, AuditAction::FirewallRuleRemoved, AuditOutcome::Requested, [
+            'resource_kind' => 'firewall',
+            'resource_id' => null,
+            'task_id' => $task->getKey(),
+            'metadata' => ['operation' => 'firewall.rule.remove', 'port' => $port],
+        ]);
+
+        return $task;
+    }
+
+    public function setWebHttpsOnly(User $actor, bool $httpsOnly, string $idempotencyKey): Task
+    {
+        $this->assertAgentAvailable();
+
+        $task = $this->tasks->requestApproved($actor, new OperationRequest(
+            protocolVersion: (int) config('hostnur.protocol_version', 1),
+            requestId: (string) Str::uuid(),
+            idempotencyKey: $idempotencyKey,
+            operation: 'firewall.web',
+            resource: null,
+            parameters: ['https_only' => $httpsOnly],
+            timeoutSeconds: null,
+        ));
+
+        $this->audit->record($actor, AuditAction::FirewallWebChanged, AuditOutcome::Requested, [
+            'resource_kind' => 'firewall',
+            'resource_id' => null,
+            'task_id' => $task->getKey(),
+            'metadata' => ['operation' => 'firewall.web', 'https_only' => $httpsOnly],
+        ]);
+
+        return $task;
+    }
+
+    private function assertRule(int $port, string $protocol, string $source, string $action): void
+    {
+        if ($port < 1 || $port > 65535) {
+            throw ValidationException::withMessages(['port' => 'Port must be between 1 and 65535.']);
+        }
+
+        if (in_array($port, [80, 443], true)) {
+            throw ValidationException::withMessages(['port' => 'Ports 80 and 443 are managed automatically and cannot be changed here.']);
+        }
+
+        if (! in_array($protocol, ['tcp', 'udp'], true)) {
+            throw ValidationException::withMessages(['protocol' => 'Protocol must be tcp or udp.']);
+        }
+
+        if (! in_array($action, ['allow', 'deny'], true)) {
+            throw ValidationException::withMessages(['action' => 'Action must be allow or deny.']);
+        }
+
+        if ($source !== 'any' && ($source === '' || strlen($source) > 64 || preg_match('#^[A-Za-z0-9.:_/-]+$#', $source) !== 1)) {
+            throw ValidationException::withMessages(['source' => 'Source must be "any" or an IP/CIDR.']);
+        }
+    }
+
     private function assertAgentAvailable(): void
     {
         $capabilities = $this->agent->capabilities();

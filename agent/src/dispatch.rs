@@ -22,7 +22,7 @@ use crate::database::{
     is_managed_username, username,
 };
 use crate::deploy::DeployRuntime;
-use crate::firewall::FirewallPolicy;
+use crate::firewall::{FirewallError, FirewallPolicy};
 use crate::git::policy::{NetworkPolicy, validate_repository_url};
 use crate::git::{GitRef, validate_ref};
 use crate::journal::{ApplicationSource, CertificateRecord, DatabaseResource, Journal};
@@ -892,6 +892,80 @@ impl<'a> AgentHandler<'a> {
         }
     }
 
+    fn firewall_rule_add(&self, request: &OperationRequest) -> Value {
+        let Some(port) = request.parameters.get("port").and_then(Value::as_i64) else {
+            return error_body(ContractErrorCode::InvalidParameters, "port is required");
+        };
+        let protocol = request
+            .parameters
+            .get("protocol")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let source = request.parameters.get("source").and_then(Value::as_str);
+        let Some(action) = request.parameters.get("action").and_then(Value::as_str) else {
+            return error_body(ContractErrorCode::InvalidParameters, "action is required");
+        };
+
+        match self.firewall.add_rule(port, protocol, source, action) {
+            Ok(()) => json!({
+                "protocol_version": 1,
+                "applied": true,
+                "port": port,
+                "protocol": protocol,
+                "action": action,
+            }),
+            Err(error) => firewall_error(error),
+        }
+    }
+
+    fn firewall_rule_remove(&self, request: &OperationRequest) -> Value {
+        let Some(port) = request.parameters.get("port").and_then(Value::as_i64) else {
+            return error_body(ContractErrorCode::InvalidParameters, "port is required");
+        };
+        let protocol = request
+            .parameters
+            .get("protocol")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let source = request.parameters.get("source").and_then(Value::as_str);
+        let Some(action) = request.parameters.get("action").and_then(Value::as_str) else {
+            return error_body(ContractErrorCode::InvalidParameters, "action is required");
+        };
+
+        match self.firewall.remove_rule(port, protocol, source, action) {
+            Ok(()) => json!({
+                "protocol_version": 1,
+                "applied": true,
+                "removed": true,
+                "port": port,
+                "protocol": protocol,
+            }),
+            Err(error) => firewall_error(error),
+        }
+    }
+
+    fn firewall_web(&self, request: &OperationRequest) -> Value {
+        let Some(https_only) = request
+            .parameters
+            .get("https_only")
+            .and_then(Value::as_bool)
+        else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "https_only is required",
+            );
+        };
+
+        match self.firewall.web_https_only(https_only) {
+            Ok(()) => json!({
+                "protocol_version": 1,
+                "applied": true,
+                "https_only": https_only,
+            }),
+            Err(error) => firewall_error(error),
+        }
+    }
+
     fn deploy_release(&self, request: &OperationRequest) -> Value {
         let Some(runtime) = self.deploy.as_ref() else {
             return error_body(
@@ -1152,6 +1226,13 @@ impl RequestHandler for AgentHandler<'_> {
             "application.deploy" => self.deploy_release(request),
             "service.control" => self.complete_operation(request, || self.service_control(request)),
             "package.install" => self.complete_operation(request, || self.package_install(request)),
+            "firewall.rule.add" => {
+                self.complete_operation(request, || self.firewall_rule_add(request))
+            }
+            "firewall.rule.remove" => {
+                self.complete_operation(request, || self.firewall_rule_remove(request))
+            }
+            "firewall.web" => self.complete_operation(request, || self.firewall_web(request)),
             "agent.register_database" => self.register_database(request),
             "database.provision" => {
                 self.complete_operation(request, || self.database_provision(request))
@@ -1219,6 +1300,16 @@ fn database_error(error: DatabaseError) -> Value {
     let code = match error {
         DatabaseError::Policy(_) => ContractErrorCode::InvalidParameters,
         DatabaseError::Tool(_) | DatabaseError::Conflict(_) => ContractErrorCode::OperationFailed,
+    };
+    error_body(code, &error.to_string())
+}
+
+fn firewall_error(error: FirewallError) -> Value {
+    let code = match error {
+        FirewallError::ProtectedPort => ContractErrorCode::PermissionDenied,
+        FirewallError::HttpsRequired => ContractErrorCode::Conflict,
+        FirewallError::InvalidInput(_) => ContractErrorCode::InvalidParameters,
+        FirewallError::Tool(_) => ContractErrorCode::OperationFailed,
     };
     error_body(code, &error.to_string())
 }

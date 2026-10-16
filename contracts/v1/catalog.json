@@ -203,6 +203,36 @@
             },
             "read_only": false,
             "retry": "capability_declared"
+        },
+        "firewall.rule.add": {
+            "resource": null,
+            "parameters": {
+                "port": { "type": "integer", "required": true },
+                "protocol": { "type": "enum", "required": true, "values": ["tcp", "udp"] },
+                "source": { "type": "string", "required": false, "max": 64 },
+                "action": { "type": "enum", "required": true, "values": ["allow", "deny"] }
+            },
+            "read_only": false,
+            "retry": "capability_declared"
+        },
+        "firewall.rule.remove": {
+            "resource": null,
+            "parameters": {
+                "port": { "type": "integer", "required": true },
+                "protocol": { "type": "enum", "required": true, "values": ["tcp", "udp"] },
+                "source": { "type": "string", "required": false, "max": 64 },
+                "action": { "type": "enum", "required": true, "values": ["allow", "deny"] }
+            },
+            "read_only": false,
+            "retry": "capability_declared"
+        },
+        "firewall.web": {
+            "resource": null,
+            "parameters": {
+                "https_only": { "type": "boolean", "required": true }
+            },
+            "read_only": false,
+            "retry": "capability_declared"
         }
     }
 }

@@ -232,6 +232,17 @@ pub struct FirewallSummary {
     pub enabled: bool,
     pub incoming_policy: String,
     pub rule_count: i64,
+    #[serde(default)]
+    pub rules: Vec<FirewallRule>,
+}
+
+/// A single observed firewall rule.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FirewallRule {
+    pub port: i64,
+    pub protocol: String,
+    pub source: String,
+    pub action: String,
 }
 
 /// Bounded read-only server observation.

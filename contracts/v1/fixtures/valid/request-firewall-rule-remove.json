@@ -1,0 +1,12 @@
+{
+    "protocol_version": 1,
+    "request_id": "1a2b3c4d-5e6f-4789-9abc-def012345679",
+    "idempotency_key": "2a3b4c5d-6e7f-4890-9abc-def012345679",
+    "operation": "firewall.rule.remove",
+    "parameters": {
+        "port": 8080,
+        "protocol": "tcp",
+        "source": "any",
+        "action": "allow"
+    }
+}
