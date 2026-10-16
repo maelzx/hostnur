@@ -1413,10 +1413,15 @@ mode and time, clearly distinct from desired configuration, and no simulation or
 unavailable condition writes real observed fields.
 
 ### Phase 20.6 — Application logs, per-app metrics and lifecycle controls
-- Status: **planned**. The application detail page cannot yet show the app's own logs,
-  its storage/bandwidth usage, or start/stop it — the contract has no such operations
-  (`contracts/v1/catalog.json` exposes only `application.restart`, and host metrics are
-  host-wide, not per app).
+- Status: **implemented, VM validation pending**. Contract (`application.logs`,
+  `application.metrics`, `application.start`, `application.stop` + the log/metrics
+  response schemas and fixtures), Rust (`appstate.rs`: bounded light-redacted log
+  tail, `statvfs` storage, and start/stop of the app's own `hn-<app>-*` systemd
+  units), and the panel (Logs panel + storage stat + Start/Stop actions on the
+  application page) are done and unit-tested (Rust 130 tests + clippy; PHP 266 tests).
+  Real-host validation (actual log paths, storage, and worker/scheduler unit control)
+  is still required before the phase is complete. Note: start/stop controls the
+  application's own units (workers/schedulers), not the shared PHP-FPM service.
 - Depends on: 15, 17, 20.5.
 
 #### Objective and rules
@@ -1662,6 +1667,14 @@ ask only when the choice materially changes scope, cost, access, or product beha
   only while 443 is open, and rebuilt the panel firewall page (rule list, add/remove,
   HTTPS-only toggle) via `ServerService`. Rust lib tests 128 pass + clippy clean;
   PHP 263 tests pass. Real-host `ufw` validation still pending.
+- **Phase 20.6 (app logs / metrics / lifecycle) implemented**: added
+  `application.logs` and `application.metrics` (read-only, with new
+  `application-log`/`application-metrics` DTOs, schemas and fixtures) and
+  `application.start`/`application.stop` to the contract; implemented bounded
+  light-redacted log tail + `statvfs` storage + `systemctl` start/stop of the app's
+  own `hn-<app>-*` units in `agent/src/appstate.rs`; and surfaced them on the
+  application page (Logs panel with refresh, storage stat, Start/Stop buttons).
+  Rust 130 tests + clippy clean; PHP 266 tests. Real-host validation pending.
 - **Plan**: the wiring of agent-observed state into the panel
   (`applications.observed_state`/`observed_mode`/`observed_at`) was only implied, not
   planned. Recorded it as a new not-started phase **Phase 20.5 — Observed state

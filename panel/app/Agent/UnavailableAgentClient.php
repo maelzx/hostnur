@@ -2,6 +2,8 @@
 
 namespace App\Agent;
 
+use App\Agent\Dto\ApplicationLogSnapshot;
+use App\Agent\Dto\ApplicationMetricsSnapshot;
 use App\Agent\Dto\CancellationReceipt;
 use App\Agent\Dto\CapabilitySnapshot;
 use App\Agent\Dto\OperationReceipt;
@@ -88,6 +90,16 @@ final class UnavailableAgentClient implements AgentClient
     public function registerCertificate(OperationRequest $request): void
     {
         throw new AgentUnavailableException('The agent is unavailable, so the certificate was not registered.');
+    }
+
+    public function applicationLogs(OperationRequest $request): ApplicationLogSnapshot
+    {
+        throw new AgentUnavailableException('The agent is unavailable, so application logs cannot be read.');
+    }
+
+    public function applicationMetrics(OperationRequest $request): ApplicationMetricsSnapshot
+    {
+        throw new AgentUnavailableException('The agent is unavailable, so application metrics cannot be read.');
     }
 
     private function protocolVersion(): int

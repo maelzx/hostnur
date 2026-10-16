@@ -45,6 +45,8 @@ enum AuditAction: string
     case ApplicationDeployRequested = 'application.deploy_requested';
     case ApplicationRestartRequested = 'application.restart_requested';
     case ApplicationRollbackRequested = 'application.rollback_requested';
+    case ApplicationStartRequested = 'application.start_requested';
+    case ApplicationStopRequested = 'application.stop_requested';
 
     case ServerServiceControlRequested = 'server.service_control_requested';
     case ServerPackageInstallRequested = 'server.package_install_requested';

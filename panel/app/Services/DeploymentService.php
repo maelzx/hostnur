@@ -83,6 +83,35 @@ final class DeploymentService
         return $deployment;
     }
 
+    public function start(User $actor, Application $application, string $idempotencyKey): Deployment
+    {
+        return $this->control($actor, $application, 'application.start', $idempotencyKey, AuditAction::ApplicationStartRequested);
+    }
+
+    public function stop(User $actor, Application $application, string $idempotencyKey): Deployment
+    {
+        return $this->control($actor, $application, 'application.stop', $idempotencyKey, AuditAction::ApplicationStopRequested);
+    }
+
+    private function control(User $actor, Application $application, string $operation, string $idempotencyKey, AuditAction $auditAction): Deployment
+    {
+        $this->assertPreflight($this->preflight->operationChecks($application->refresh(), $operation));
+
+        $deployment = $this->firstOrCreate($actor, $idempotencyKey, $application, $operation);
+
+        if ($deployment->wasRecentlyCreated) {
+            $this->requestTask($actor, $application, $deployment, []);
+            $this->audit->record($actor, $auditAction, AuditOutcome::Requested, [
+                'resource_kind' => 'application',
+                'resource_id' => $application->getKey(),
+                'task_id' => $deployment->task_id,
+                'metadata' => ['operation' => $operation],
+            ]);
+        }
+
+        return $deployment;
+    }
+
     public function rollback(User $actor, Application $application, string $releaseId, string $idempotencyKey): Deployment
     {
         $this->assertPreflight($this->preflight->operationChecks($application->refresh(), 'application.rollback'));

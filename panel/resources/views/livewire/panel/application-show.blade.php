@@ -4,6 +4,19 @@
         ? ($primaryDomain->https_policy->value === 'disabled' ? 'http://' : 'https://').$primaryDomain->hostname
         : null;
     $certsByDomain = $certificates->keyBy('application_domain_id');
+    $fmtBytes = function (?int $bytes): string {
+        if ($bytes === null) {
+            return '—';
+        }
+        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        $value = (float) $bytes;
+        $index = 0;
+        while ($value >= 1024 && $index < count($units) - 1) {
+            $value /= 1024;
+            $index++;
+        }
+        return round($value, $index === 0 ? 0 : 1).' '.$units[$index];
+    };
 @endphp
 
 <main>
@@ -32,6 +45,14 @@
                 </a>
 
                 @if ($locked)
+                    <x-ui.confirm title="Start this application?" confirm-label="Start" method="start" variant="secondary">
+                        <x-slot:trigger>Start</x-slot:trigger>
+                        Starts the application's managed processes.
+                    </x-ui.confirm>
+                    <x-ui.confirm title="Stop this application?" confirm-label="Stop" method="stop" variant="danger">
+                        <x-slot:trigger>Stop</x-slot:trigger>
+                        Stops the application's managed processes (workers and scheduled jobs).
+                    </x-ui.confirm>
                     <x-ui.confirm title="Restart this application?" confirm-label="Restart" method="restart" variant="secondary">
                         <x-slot:trigger>Restart</x-slot:trigger>
                         Reloads the application processes. Recorded as a task.
@@ -39,6 +60,9 @@
                 @endif
             </div>
         </div>
+
+        @error('start') <p role="alert" class="mt-3 text-sm text-red-700">{{ $message }}</p> @enderror
+        @error('stop') <p role="alert" class="mt-3 text-sm text-red-700">{{ $message }}</p> @enderror
 
         @error('restart') <p role="alert" class="mt-3 text-sm text-red-700">{{ $message }}</p> @enderror
 
@@ -81,7 +105,7 @@
             :hint="$database?->database_name ?? 'Not provisioned'"
         />
         <x-ui.stat label="Queue workers" :value="$workers" :hint="$scheduler ? 'Scheduler on' : 'Scheduler off'" />
-        <x-ui.stat label="Mode" :value="config('hostnur.agent_mode')" />
+        <x-ui.stat label="Storage" :value="$fmtBytes($storageUsedBytes)" :hint="$storageTotalBytes !== null ? 'of '.$fmtBytes($storageTotalBytes) : 'Not reported'" />
     </div>
 
     {{-- Setup checklist: shown only until the first successful deployment --}}
@@ -382,8 +406,26 @@
             @endif
         </x-ui.panel>
 
-        {{-- Logs --}}
+        {{-- Application log --}}
         <x-ui.panel title="Logs">
+            <div class="mt-2 flex items-center justify-between gap-3">
+                <p class="text-sm text-slate-600">Recent application log lines.</p>
+                <x-ui.button type="button" variant="secondary" wire:click="loadObservation">Refresh</x-ui.button>
+            </div>
+            @if ($logsUnavailable !== null)
+                <p class="mt-4 text-sm text-slate-600">{{ $logsUnavailable }}</p>
+            @elseif ($logLines === [])
+                <p class="mt-4 text-sm text-slate-600">No log lines.</p>
+            @else
+                <pre class="mt-4 max-h-96 overflow-auto rounded-lg bg-slate-900 p-4 text-xs leading-5 text-slate-100">{{ implode("\n", $logLines) }}</pre>
+                @if ($logTruncated)
+                    <p class="mt-2 text-xs text-slate-500">Showing the end of the log file.</p>
+                @endif
+            @endif
+        </x-ui.panel>
+
+        {{-- Activity --}}
+        <x-ui.panel title="Activity">
             <p class="mt-2 text-sm text-slate-600">Operation and deployment events for this application.</p>
             @if ($logs->isEmpty())
                 <p class="mt-4 text-sm text-slate-600">No events recorded yet.</p>

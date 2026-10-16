@@ -6,6 +6,7 @@ use App\Actions\Deployments\DeploymentPreflight;
 use App\Enums\DeploymentState;
 use App\Jobs\RunTask;
 use App\Livewire\Panel\ApplicationOperations;
+use App\Livewire\Panel\ApplicationShow;
 use App\Models\Application;
 use App\Models\Deployment;
 use App\Models\FakeAgentExecution;
@@ -184,6 +185,28 @@ class DeploymentTest extends TestCase
 
         $this->assertDatabaseCount('deployments', 1);
         $this->assertDatabaseCount('tasks', 1);
+    }
+
+    public function test_the_application_page_can_request_start_and_stop(): void
+    {
+        config(['hostnur.agent_mode' => 'fake']);
+        Queue::fake();
+        $admin = $this->confirmedAdmin();
+        app(RecentAuthentication::class)->confirm($admin);
+        $application = $this->readyApplication($admin);
+        $this->actingAs($admin)->withSession($this->mfaProof($admin) + $this->recentAuth($admin));
+
+        Livewire::test(ApplicationShow::class, ['application' => $application->getKey()])
+            ->call('stop')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('tasks', ['operation' => 'application.stop']);
+
+        Livewire::test(ApplicationShow::class, ['application' => $application->getKey()])
+            ->call('start')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('tasks', ['operation' => 'application.start']);
     }
 
     public function test_deployment_state_tracks_the_task_and_stays_labelled_simulated(): void

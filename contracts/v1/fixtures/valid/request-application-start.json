@@ -1,0 +1,11 @@
+{
+    "protocol_version": 1,
+    "request_id": "9a0b1c2d-3e4f-4567-8abc-def012345683",
+    "idempotency_key": "a0b1c2d3-4e5f-4678-8abc-def012345683",
+    "operation": "application.start",
+    "resource": {
+        "kind": "application",
+        "id": "224065ac-4bc7-4ba4-a06d-8c8bca950c32"
+    },
+    "parameters": {}
+}

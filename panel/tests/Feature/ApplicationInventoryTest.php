@@ -212,6 +212,19 @@ class ApplicationInventoryTest extends TestCase
         $this->assertSame('release', $application->refresh()->git_ref);
     }
 
+    public function test_the_application_page_reads_application_logs_in_fake_mode(): void
+    {
+        config(['hostnur.agent_mode' => 'fake']);
+        $admin = $this->confirmedAdmin();
+        $application = $this->application($admin);
+
+        $this->actingAs($admin)->withSession($this->mfaProof($admin) + $this->recentAuth($admin));
+
+        Livewire::test(ApplicationShow::class, ['application' => $application->getKey()])
+            ->assertSet('logsUnavailable', null)
+            ->assertSet('logLines', fn (mixed $lines): bool => is_array($lines) && $lines !== []);
+    }
+
     public function test_credentials_are_encrypted_hidden_and_rotatable(): void
     {
         $admin = $this->admin();

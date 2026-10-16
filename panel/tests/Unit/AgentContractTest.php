@@ -3,6 +3,8 @@
 namespace Tests\Unit;
 
 use App\Agent\AgentContractException;
+use App\Agent\Dto\ApplicationLogSnapshot;
+use App\Agent\Dto\ApplicationMetricsSnapshot;
 use App\Agent\Dto\CancellationReceipt;
 use App\Agent\Dto\CapabilitySnapshot;
 use App\Agent\Dto\OperationReceipt;
@@ -33,6 +35,8 @@ class AgentContractTest extends TestCase
     {
         return match (true) {
             str_starts_with($fixture, 'receipt') => OperationReceipt::fromArray($payload),
+            str_starts_with($fixture, 'application-log') => ApplicationLogSnapshot::fromArray($payload),
+            str_starts_with($fixture, 'application-metrics') => ApplicationMetricsSnapshot::fromArray($payload),
             str_starts_with($fixture, 'server-snapshot') => ServerSnapshot::fromArray($payload),
             str_starts_with($fixture, 'snapshot') => OperationSnapshot::fromArray($payload),
             str_starts_with($fixture, 'capability') => CapabilitySnapshot::fromArray($payload),

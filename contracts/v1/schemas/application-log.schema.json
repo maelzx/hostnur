@@ -1,0 +1,19 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://hostnur.dev/contracts/v1/application-log.schema.json",
+    "title": "ApplicationLogSnapshot",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["protocol_version", "application_id", "lines", "truncated", "sampled_at"],
+    "properties": {
+        "protocol_version": { "const": 1 },
+        "application_id": { "type": "string", "minLength": 1 },
+        "lines": {
+            "type": "array",
+            "maxItems": 1000,
+            "items": { "type": "string" }
+        },
+        "truncated": { "type": "boolean" },
+        "sampled_at": { "type": "string", "minLength": 1 }
+    }
+}

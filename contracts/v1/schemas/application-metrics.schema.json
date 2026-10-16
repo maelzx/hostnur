@@ -1,0 +1,15 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://hostnur.dev/contracts/v1/application-metrics.schema.json",
+    "title": "ApplicationMetricsSnapshot",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["protocol_version", "application_id", "storage_used_bytes", "storage_total_bytes", "sampled_at"],
+    "properties": {
+        "protocol_version": { "const": 1 },
+        "application_id": { "type": "string", "minLength": 1 },
+        "storage_used_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "storage_total_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "sampled_at": { "type": "string", "minLength": 1 }
+    }
+}

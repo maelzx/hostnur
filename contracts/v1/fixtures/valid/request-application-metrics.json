@@ -1,0 +1,11 @@
+{
+    "protocol_version": 1,
+    "request_id": "7a8b9c0d-1e2f-4345-8abc-def012345682",
+    "idempotency_key": "8a9b0c1d-2e3f-4456-8abc-def012345682",
+    "operation": "application.metrics",
+    "resource": {
+        "kind": "application",
+        "id": "224065ac-4bc7-4ba4-a06d-8c8bca950c32"
+    },
+    "parameters": {}
+}

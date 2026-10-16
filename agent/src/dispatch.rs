@@ -966,6 +966,69 @@ impl<'a> AgentHandler<'a> {
         }
     }
 
+    fn application_logs(&self, request: &OperationRequest) -> Value {
+        let application_id = match application_resource(request) {
+            Ok(id) => id,
+            Err(message) => return error_body(ContractErrorCode::InvalidParameters, message),
+        };
+
+        let (lines, truncated) =
+            crate::appstate::read_logs(&self.apps_root, &application_id).unwrap_or_default();
+
+        json!({
+            "protocol_version": 1,
+            "application_id": application_id.as_str(),
+            "lines": lines,
+            "truncated": truncated,
+            "sampled_at": clock::now_rfc3339(),
+        })
+    }
+
+    fn application_metrics(&self, request: &OperationRequest) -> Value {
+        let application_id = match application_resource(request) {
+            Ok(id) => id,
+            Err(message) => return error_body(ContractErrorCode::InvalidParameters, message),
+        };
+
+        let storage = crate::appstate::storage(&self.apps_root, &application_id);
+
+        json!({
+            "protocol_version": 1,
+            "application_id": application_id.as_str(),
+            "storage_used_bytes": storage.map(|(used, _)| used),
+            "storage_total_bytes": storage.map(|(_, total)| total),
+            "sampled_at": clock::now_rfc3339(),
+        })
+    }
+
+    fn application_control(&self, request: &OperationRequest, action: &str) -> Value {
+        let application_id = match application_resource(request) {
+            Ok(id) => id,
+            Err(message) => return error_body(ContractErrorCode::InvalidParameters, message),
+        };
+
+        let fragment = crate::provision::account_name(&application_id);
+        let fragment = fragment.trim_start_matches("hn_").to_string();
+
+        match crate::appstate::control_units(&fragment, action) {
+            Ok(units) => json!({
+                "protocol_version": 1,
+                "applied": true,
+                "action": action,
+                "units": units,
+            }),
+            Err(message) => error_body(ContractErrorCode::OperationFailed, &message),
+        }
+    }
+
+    fn application_start(&self, request: &OperationRequest) -> Value {
+        self.application_control(request, "start")
+    }
+
+    fn application_stop(&self, request: &OperationRequest) -> Value {
+        self.application_control(request, "stop")
+    }
+
     fn deploy_release(&self, request: &OperationRequest) -> Value {
         let Some(runtime) = self.deploy.as_ref() else {
             return error_body(
@@ -1233,6 +1296,14 @@ impl RequestHandler for AgentHandler<'_> {
                 self.complete_operation(request, || self.firewall_rule_remove(request))
             }
             "firewall.web" => self.complete_operation(request, || self.firewall_web(request)),
+            "application.logs" => self.application_logs(request),
+            "application.metrics" => self.application_metrics(request),
+            "application.start" => {
+                self.complete_operation(request, || self.application_start(request))
+            }
+            "application.stop" => {
+                self.complete_operation(request, || self.application_stop(request))
+            }
             "agent.register_database" => self.register_database(request),
             "database.provision" => {
                 self.complete_operation(request, || self.database_provision(request))
@@ -1302,6 +1373,16 @@ fn database_error(error: DatabaseError) -> Value {
         DatabaseError::Tool(_) | DatabaseError::Conflict(_) => ContractErrorCode::OperationFailed,
     };
     error_body(code, &error.to_string())
+}
+
+fn application_resource(request: &OperationRequest) -> Result<Uuid, &'static str> {
+    let Some(resource) = request.resource.as_ref() else {
+        return Err("application resource is required");
+    };
+    if resource.kind != "application" {
+        return Err("resource must be an application");
+    }
+    Uuid::parse(&resource.id).map_err(|_| "application id must be a UUID")
 }
 
 fn firewall_error(error: FirewallError) -> Value {

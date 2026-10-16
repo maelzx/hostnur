@@ -2,6 +2,8 @@
 
 namespace App\Agent;
 
+use App\Agent\Dto\ApplicationLogSnapshot;
+use App\Agent\Dto\ApplicationMetricsSnapshot;
 use App\Agent\Dto\CancellationReceipt;
 use App\Agent\Dto\CapabilitySnapshot;
 use App\Agent\Dto\OperationReceipt;
@@ -54,6 +56,40 @@ final class FakeAgentClient implements AgentClient
         $fixture['sampled_at'] = now()->toIso8601String();
 
         return ServerSnapshot::fromArray($fixture);
+    }
+
+    public function applicationLogs(OperationRequest $request): ApplicationLogSnapshot
+    {
+        $this->guard->assertFakeModeAllowed();
+
+        $fixture = $this->fixture('application-log');
+        $fixture['application_id'] = $this->applicationResourceId($request, $fixture['application_id']);
+        $fixture['sampled_at'] = now()->toIso8601String();
+
+        return ApplicationLogSnapshot::fromArray($fixture);
+    }
+
+    public function applicationMetrics(OperationRequest $request): ApplicationMetricsSnapshot
+    {
+        $this->guard->assertFakeModeAllowed();
+
+        $fixture = $this->fixture('application-metrics');
+        $fixture['application_id'] = $this->applicationResourceId($request, $fixture['application_id']);
+        $fixture['sampled_at'] = now()->toIso8601String();
+
+        return ApplicationMetricsSnapshot::fromArray($fixture);
+    }
+
+    /**
+     * @param  array<string, mixed>  $fallback
+     */
+    private function applicationResourceId(OperationRequest $request, mixed $fallback): string
+    {
+        if ($request->resource !== null && $request->resource->id !== '') {
+            return $request->resource->id;
+        }
+
+        return is_string($fallback) ? $fallback : '';
     }
 
     public function submit(OperationRequest $request): OperationReceipt

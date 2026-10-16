@@ -2,6 +2,8 @@
 
 namespace App\Contracts;
 
+use App\Agent\Dto\ApplicationLogSnapshot;
+use App\Agent\Dto\ApplicationMetricsSnapshot;
 use App\Agent\Dto\CancellationReceipt;
 use App\Agent\Dto\CapabilitySnapshot;
 use App\Agent\Dto\OperationReceipt;
@@ -72,4 +74,14 @@ interface AgentClient
      * the agent. No-op without a durable registry.
      */
     public function registerCertificate(OperationRequest $request): void;
+
+    /**
+     * Read a bounded, redacted tail of an application's own log files.
+     */
+    public function applicationLogs(OperationRequest $request): ApplicationLogSnapshot;
+
+    /**
+     * Read per-application storage metrics.
+     */
+    public function applicationMetrics(OperationRequest $request): ApplicationMetricsSnapshot;
 }

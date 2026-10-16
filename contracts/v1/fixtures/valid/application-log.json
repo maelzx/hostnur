@@ -1,0 +1,10 @@
+{
+    "protocol_version": 1,
+    "application_id": "224065ac-4bc7-4ba4-a06d-8c8bca950c32",
+    "lines": [
+        "[2026-10-12 12:00:00] production.INFO: Application booted",
+        "[2026-10-12 12:00:01] production.WARNING: Slow query detected"
+    ],
+    "truncated": false,
+    "sampled_at": "2026-10-12T12:00:02Z"
+}

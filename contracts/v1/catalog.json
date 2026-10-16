@@ -233,6 +233,30 @@
             },
             "read_only": false,
             "retry": "capability_declared"
+        },
+        "application.logs": {
+            "resource": "application",
+            "parameters": {},
+            "read_only": true,
+            "retry": "bounded"
+        },
+        "application.metrics": {
+            "resource": "application",
+            "parameters": {},
+            "read_only": true,
+            "retry": "bounded"
+        },
+        "application.start": {
+            "resource": "application",
+            "parameters": {},
+            "read_only": false,
+            "retry": "capability_declared"
+        },
+        "application.stop": {
+            "resource": "application",
+            "parameters": {},
+            "read_only": false,
+            "retry": "capability_declared"
         }
     }
 }

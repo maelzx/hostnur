@@ -3,6 +3,8 @@
 namespace App\Agent;
 
 use App\Agent\Dto\AgentError;
+use App\Agent\Dto\ApplicationLogSnapshot;
+use App\Agent\Dto\ApplicationMetricsSnapshot;
 use App\Agent\Dto\CancellationReceipt;
 use App\Agent\Dto\CapabilitySnapshot;
 use App\Agent\Dto\OperationReceipt;
@@ -83,6 +85,16 @@ final class RealAgentClient implements AgentClient
     public function registerCertificate(OperationRequest $request): void
     {
         $this->send($request->toArray());
+    }
+
+    public function applicationLogs(OperationRequest $request): ApplicationLogSnapshot
+    {
+        return ApplicationLogSnapshot::fromArray($this->send($request->toArray()));
+    }
+
+    public function applicationMetrics(OperationRequest $request): ApplicationMetricsSnapshot
+    {
+        return ApplicationMetricsSnapshot::fromArray($this->send($request->toArray()));
     }
 
     /**

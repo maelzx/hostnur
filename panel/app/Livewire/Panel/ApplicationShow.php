@@ -2,7 +2,11 @@
 
 namespace App\Livewire\Panel;
 
+use App\Agent\Dto\OperationRequest;
+use App\Agent\Dto\ResourceRef;
+use App\Contracts\AgentClient;
 use App\Enums\DomainHttpsPolicy;
+use App\Enums\ResourceKind;
 use App\Exceptions\ApplicationConflictException;
 use App\Exceptions\DeploymentPreflightException;
 use App\Models\Application;
@@ -72,6 +76,22 @@ class ApplicationShow extends Component
 
     public string $restartKey = '';
 
+    public string $startKey = '';
+
+    public string $stopKey = '';
+
+    // Observation (logs + storage)
+    /** @var list<string> */
+    public array $logLines = [];
+
+    public bool $logTruncated = false;
+
+    public ?string $logsUnavailable = null;
+
+    public ?int $storageUsedBytes = null;
+
+    public ?int $storageTotalBytes = null;
+
     // Database
     public string $database_engine = 'mariadb';
 
@@ -81,10 +101,12 @@ class ApplicationShow extends Component
 
     public string $databaseKey = '';
 
-    public function mount(string $application): void
+    public function mount(string $application, AgentClient $agent): void
     {
         $this->applicationId = $application;
         $this->restartKey = (string) Str::uuid();
+        $this->startKey = (string) Str::uuid();
+        $this->stopKey = (string) Str::uuid();
         $this->databaseKey = (string) Str::uuid();
         $application = $this->application();
 
@@ -103,6 +125,79 @@ class ApplicationShow extends Component
         $this->repository_url = (string) $application->repository_url;
         $this->git_ref = (string) $application->git_ref;
         $this->source_credential_id = (string) $application->source_credential_id;
+
+        $this->loadObservation($agent);
+    }
+
+    public function loadObservation(AgentClient $agent): void
+    {
+        $this->logsUnavailable = null;
+
+        try {
+            $logs = $agent->applicationLogs($this->observationRequest('application.logs'));
+            $this->logLines = $logs->lines;
+            $this->logTruncated = $logs->truncated;
+        } catch (\Throwable) {
+            $this->logLines = [];
+            $this->logTruncated = false;
+            $this->logsUnavailable = 'Application logs are unavailable.';
+        }
+
+        try {
+            $metrics = $agent->applicationMetrics($this->observationRequest('application.metrics'));
+            $this->storageUsedBytes = $metrics->storageUsedBytes;
+            $this->storageTotalBytes = $metrics->storageTotalBytes;
+        } catch (\Throwable) {
+            $this->storageUsedBytes = null;
+            $this->storageTotalBytes = null;
+        }
+    }
+
+    public function start(DeploymentService $deployments): void
+    {
+        $application = $this->application();
+        $this->authorize('update', $application);
+
+        try {
+            $deployments->start($this->actor(), $application->refresh(), $this->startKey);
+        } catch (DeploymentPreflightException $exception) {
+            $this->addError('start', $exception->getMessage());
+
+            return;
+        }
+
+        session()->flash('status', 'Start requested.');
+        $this->redirect(route('panel.applications.show', ['application' => $this->applicationId]));
+    }
+
+    public function stop(DeploymentService $deployments): void
+    {
+        $application = $this->application();
+        $this->authorize('update', $application);
+
+        try {
+            $deployments->stop($this->actor(), $application->refresh(), $this->stopKey);
+        } catch (DeploymentPreflightException $exception) {
+            $this->addError('stop', $exception->getMessage());
+
+            return;
+        }
+
+        session()->flash('status', 'Stop requested.');
+        $this->redirect(route('panel.applications.show', ['application' => $this->applicationId]));
+    }
+
+    private function observationRequest(string $operation): OperationRequest
+    {
+        return new OperationRequest(
+            protocolVersion: (int) config('hostnur.protocol_version', 1),
+            requestId: (string) Str::uuid(),
+            idempotencyKey: (string) Str::uuid(),
+            operation: $operation,
+            resource: new ResourceRef(ResourceKind::Application, $this->applicationId),
+            parameters: [],
+            timeoutSeconds: null,
+        );
     }
 
     public function applyLaravelDefaults(): void
