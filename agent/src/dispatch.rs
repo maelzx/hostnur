@@ -40,14 +40,26 @@ use crate::transport::RequestHandler;
 /// Operations this build actually advertises and can serve. Must stay in sync
 /// with the match arms in `RequestHandler::handle` (minus the conditional
 /// `application.deploy`, added in `capabilities`).
-pub const SUPPORTED_OPERATIONS: [&str; 18] = [
+pub const SUPPORTED_OPERATIONS: [&str; 30] = [
     "agent.capabilities",
     "agent.inspect",
     "agent.cancel",
     "agent.register_application",
+    "agent.register_package",
+    "agent.remove_package",
     "server.snapshot",
+    "server.updates",
     "service.control",
     "package.install",
+    "package.upgrade",
+    "firewall.rule.add",
+    "firewall.rule.remove",
+    "firewall.web",
+    "application.logs",
+    "application.metrics",
+    "application.observe",
+    "application.start",
+    "application.stop",
     "schedule.apply",
     "agent.register_schedule",
     "agent.remove_schedule",

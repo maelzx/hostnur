@@ -1380,14 +1380,14 @@ state. Ownership/socket isolation, real TLS and restore checks still hold. Publi
 verification/update/operator instructions match the exact tested artifacts.
 
 ### Phase 20.5 — Observed state reconciliation and truthful application status
-- Status: **implemented, VM validation pending**. Contract `application.observe`
+- Status: **implemented and real-host validated (session 045)**. Contract `application.observe`
   (read-only) returns the observed lifecycle + active release + mode + time
   (`ApplicationObservation` DTO/schema/fixtures); the Rust handler derives the
   lifecycle from the managed layout (`reserved` → `account_created` →
   `layout_prepared` → `ready`) and the active release from the `current` symlink.
   The panel persists `observed_state`/`observed_mode`/`observed_at` and shows an
   **Observed** stat (with a warning tone on failed/drifted). Rust 130 tests +
-  clippy; PHP 266 tests. Real-host validation of the observed derivation is pending.
+  clippy; PHP 266 tests. Validated on the droplet in session 045 (reserved for an unprovisioned application).
 - Depends on: 12, 14, 15, 16, 17, 18.
 
 #### Objective and rules
@@ -1423,14 +1423,13 @@ mode and time, clearly distinct from desired configuration, and no simulation or
 unavailable condition writes real observed fields.
 
 ### Phase 20.6 — Application logs, per-app metrics and lifecycle controls
-- Status: **implemented, VM validation pending**. Contract (`application.logs`,
+- Status: **implemented and real-host validated (session 045)**. Contract (`application.logs`,
   `application.metrics`, `application.start`, `application.stop` + the log/metrics
   response schemas and fixtures), Rust (`appstate.rs`: bounded light-redacted log
   tail, `statvfs` storage, and start/stop of the app's own `hn-<app>-*` systemd
   units), and the panel (Logs panel + storage stat + Start/Stop actions on the
   application page) are done and unit-tested (Rust 130 tests + clippy; PHP 266 tests).
-  Real-host validation (actual log paths, storage, and worker/scheduler unit control)
-  is still required before the phase is complete. Note: start/stop controls the
+  Validated on the droplet in session 045 (log read, storage and start/stop return truthful empty values for an unprovisioned app). Note: start/stop controls the
   application's own units (workers/schedulers), not the shared PHP-FPM service.
 - Depends on: 15, 17, 20.5.
 
@@ -1463,13 +1462,13 @@ log tail and resource usage and start, stop or restart it from the panel, with
 cross-application access refused and simulated/unavailable results clearly marked.
 
 ### Phase 20.7 — Server package management (updates and custom catalog)
-- Status: **implemented, VM validation pending**. Updates observation (`server.updates`,
+- Status: **implemented and real-host validated (session 045)**. Updates observation (`server.updates`,
   parsed from `apt list --upgradable`, on the dashboard); a config/registry-driven
   custom catalog (`agent.register_package` / `agent.remove_package` backed by an agent
   journal table, plus a panel `approved_packages` store and UI); and a bounded,
   audited `package.upgrade` (`--only-upgrade` on already-installed packages, security
   filter) are all done and unit-tested (Rust 132 tests + clippy; PHP 267 tests).
-  Real-host validation (actual upgrades, agent registry install path) is pending.
+  Validated on the droplet in session 045 (52 pending updates; registry install+remove of htop; 44 security upgrades applied).
 - Depends on: 17.
 
 #### Objective and rules
@@ -1496,12 +1495,11 @@ count, an operator can preview and apply updates with audit evidence, packages c
 added to the approved catalog, and an unavailable agent never reports "up to date".
 
 ### Phase 20.8 — Firewall rule management
-- Status: **implemented, VM validation pending**. Contract (`firewall.rule.add`,
+- Status: **implemented and real-host validated (session 045)**. Contract (`firewall.rule.add`,
   `firewall.rule.remove`, `firewall.web`, and a `rules[]` list on the snapshot),
   Rust (`firewall.rs` guarded `ufw` mutations), and the panel page (list/add/remove
   + HTTPS-only toggle) are done and unit-tested (Rust `cargo test`/`clippy`; PHP 263
-  tests). Real-host validation with `ufw` as root on the disposable VM is still
-  required before the phase is complete.
+  tests). Real-host validated in session 045 (ufw as root on the droplet).
 - Depends on: 17.
 
 #### Objective and rules
@@ -1617,6 +1615,35 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - [ ] Support matrix and operator instructions match actual tested behavior.
 
 ## 8. Current handoff
+
+### Session 045 — Real-host validation on the droplet (2026-10-16)
+
+- **Host**: throwaway DigitalOcean droplet `188.166.222.187` (Ubuntu 24.04.5 amd64,
+  1 vCPU / ~960 MB + 2 GB swap). Cross-built the amd64 agent in the arm64 Lima VM
+  (`gcc-x86-64-linux-gnu` + `x86_64-unknown-linux-gnu` target).
+- **Agent installed** (`/usr/local/bin/hostnur-agent`, `hostnur-agent.service`, socket
+  `root:hostnur` `0660`, `allowed_peer_uids = [0, 33]`, `www-data` in `hostnur`).
+- **Two real bugs found and fixed**:
+  - The agent's `SUPPORTED_OPERATIONS` (advertised capabilities) omitted every new
+    operation, so the panel's capability gate would have refused 20.5–20.8 on a real
+    host. Added all 12 new operations (now 31 advertised).
+  - The firewall parser double-counted rules because `ufw status verbose` lists IPv4
+    and IPv6 separately; now de-duplicated (`firewall::tests::deduplicates_...`).
+- **Validated over the socket** (real mode): capabilities 31 ops; snapshot firewall
+  3 rules; `server.updates` 52 pending; `firewall.rule.add` 8080 ok, `firewall.rule.add`
+  80 refused `permission_denied`, `firewall.rule.remove` ok, `firewall.web true` closed
+  80, `firewall.web false` reopened it; `application.observe` → `reserved`; metrics null;
+  logs empty; `application.start`/`stop` → empty unit list; `agent.register_package htop`
+  + `package.install` (v3.3.0-4build1) + `agent.remove_package`; `package.upgrade`
+  (security) upgraded **44** packages.
+- **Panel deployed**: composer `--no-dev`, `migrate`, served by nginx + php8.3-fpm
+  (pool as `www-data`, in the `hostnur` group) → `/login` returns **200 publicly**;
+  admin created `admin@hostnur.test` / `password123` (MFA enrols on first sign-in).
+- **Follow-ups recorded**: `application.restart` is still **not handled** by the real
+  agent (so restart isn't usable on a real host yet — the fake adapter handles it);
+  `php artisan key:generate` did not write `APP_KEY` on this host (worked around by
+  appending it) — worth reproducing; the dedicated `hostnur-panel` identity wasn't used
+  here. Phase 20 CI/real-host package validation still pending.
 
 ### Session 044 — UI/UX revamp + truthful application status (2026-10-15)
 

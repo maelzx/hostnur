@@ -260,7 +260,10 @@ pub fn parse_ufw_status(text: &str) -> Option<FirewallSummary> {
             }
         } else if let Some(rule) = parse_rule_line(trimmed)
             && rules.len() < 100
+            && !rules.contains(&rule)
         {
+            // `ufw status verbose` lists IPv4 and IPv6 rules separately; report
+            // each rule once (the summary is not address-family specific).
             rules.push(rule);
         }
     }
@@ -371,6 +374,14 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn deduplicates_ipv4_and_ipv6_rule_listings() {
+        let text = "Status: active\nDefault: deny (incoming)\n\nTo Action From\n-- ------ ----\n22/tcp ALLOW IN Anywhere\n22/tcp (v6) ALLOW IN Anywhere (v6)\n";
+        let summary = parse_ufw_status(text).unwrap();
+        assert_eq!(summary.rule_count, 1);
+        assert_eq!(summary.rules.len(), 1);
     }
 
     #[test]
