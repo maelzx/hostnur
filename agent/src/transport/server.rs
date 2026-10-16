@@ -132,7 +132,13 @@ pub fn handle_connection(stream: &UnixStream, context: &ServerContext<'_>) -> Co
 
     let request = match parse_request(&bytes, context.catalog) {
         Ok(request) => request,
-        Err(error) => return ConnectionOutcome::InvalidRequest(error),
+        Err(error) => {
+            // Return the stable machine error code as a framed response (the
+            // contract's error object) rather than closing silently.
+            let body = contract_error_body(&error);
+            let _ = send_response(stream, &body, context.max_message_bytes);
+            return ConnectionOutcome::InvalidRequest(error);
+        }
     };
 
     match context.handler.handle(&request) {
@@ -142,6 +148,17 @@ pub fn handle_connection(stream: &UnixStream, context: &ServerContext<'_>) -> Co
             Err(message) => ConnectionOutcome::Io(message),
         },
     }
+}
+
+/// The contract's error object for a request-level failure.
+fn contract_error_body(error: &ContractError) -> serde_json::Value {
+    serde_json::json!({
+        "error": {
+            "code": error.code().as_str(),
+            "message": error.message(),
+            "retryable": false,
+        }
+    })
 }
 
 fn send_response(

@@ -1557,9 +1557,16 @@ rules from the panel, web traffic stays reachable (optionally 80 → 443), a bad
 rolls back without lock-out, and every change is audited.
 
 ### Phase 21 — Integrated beta validation and release gate
-- Status: planned. Uses the user's **recreated throwaway Ubuntu 24.04 amd64
-  droplet** each session (per session 034), plus a separate restore VM when
-  phase 19 resumes.
+- Status: **in progress (session 045)** on the droplet
+  (`188.166.222.187` → `hostnur-p16.kom.my`). Evidence so far: HTTPS panel with a
+  real Let's Encrypt cert; dedicated `hostnur-panel` identity can reach the agent
+  socket; agent safety checks fail closed with **framed error codes** (unknown
+  operation → `unsupported_operation`, unknown/invalid parameters →
+  `invalid_parameters`) and over-limit frames are refused. Uses the user's
+  **recreated throwaway Ubuntu 24.04 amd64 droplet** each session (per session 034),
+  plus a separate restore VM when phase 19 resumes. Remaining: full app
+  deploy/redeploy/rollback, crash/disconnect, Nginx/TLS failure, SQLite contention,
+  cross-app isolation, signed-release, and restore/recovery drills.
 - Depends on: 1–20.8 and disposable VM access.
 - Slices: full cross-process/VM regression, privilege/path/socket abuse cases,
   app isolation, crashes/disconnects, Nginx/TLS failures, SQLite contention,
@@ -1690,6 +1697,19 @@ ask only when the choice materially changes scope, cost, access, or product beha
   tests + clippy clean.
 - Remaining: artifact capture per scope, S3 transfer + retention (P19.3/P19.6),
   restore orchestration (P19.4), separate-VM drill (P19.5).
+
+### Session 047 — Phase 21 kickoff + agent error-frame fix (2026-10-16)
+
+- **Smaller follow-ups**: confirmed `key:generate` only *replaces* an existing
+  `APP_KEY` (the failure was our hand-written droplet `.env` omitting the line; the
+  installer/package set it explicitly). Aligned the droplet to the packaged
+  dedicated **`hostnur-panel`** identity (uid 997) — FPM pool + worker/scheduler
+  units + `allowed_peer_uids`; HTTPS still 200 and the panel user reaches the socket.
+- **Agent fix (Phase 21 safety finding)**: request-level errors now return the
+  contract's framed error object (`{"error":{code,message,retryable}}`) instead of
+  closing the connection silently. Verified on the host: unknown op →
+  `unsupported_operation`, unknown/invalid parameters → `invalid_parameters`;
+  oversized frames are refused (fail closed). Rust 143 tests + clippy clean.
 
 ### Session 044 — UI/UX revamp + truthful application status (2026-10-15)
 
