@@ -7,10 +7,14 @@
 //! `handle` match returns a safe `unsupported_operation` error rather than
 //! pretending to run.
 
-use std::path::PathBuf;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use serde_json::{Value, json};
+
+use crate::process::{CommandSpec, run};
 
 use crate::clock;
 use crate::contract::{
@@ -40,7 +44,7 @@ use crate::transport::RequestHandler;
 /// Operations this build actually advertises and can serve. Must stay in sync
 /// with the match arms in `RequestHandler::handle` (minus the conditional
 /// `application.deploy`, added in `capabilities`).
-pub const SUPPORTED_OPERATIONS: [&str; 30] = [
+pub const SUPPORTED_OPERATIONS: [&str; 31] = [
     "agent.capabilities",
     "agent.inspect",
     "agent.cancel",
@@ -60,6 +64,7 @@ pub const SUPPORTED_OPERATIONS: [&str; 30] = [
     "application.observe",
     "application.start",
     "application.stop",
+    "application.restart",
     "schedule.apply",
     "agent.register_schedule",
     "agent.remove_schedule",
@@ -1132,6 +1137,42 @@ impl<'a> AgentHandler<'a> {
         }
     }
 
+    fn application_restart(&self, request: &OperationRequest) -> Value {
+        let application_id = match application_resource(request) {
+            Ok(id) => id,
+            Err(message) => return error_body(ContractErrorCode::InvalidParameters, message),
+        };
+
+        let source = match self.journal.application_source(&application_id) {
+            Ok(Some(source)) => source,
+            Ok(None) => {
+                return error_body(
+                    ContractErrorCode::InvalidParameters,
+                    "application is not registered; deploy it first",
+                );
+            }
+            Err(error) => {
+                return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+            }
+        };
+
+        let version = if source.runtime_version.is_empty() {
+            "8.3".to_string()
+        } else {
+            source.runtime_version.clone()
+        };
+
+        if let Err(message) = reload_runtime(&version) {
+            return error_body(ContractErrorCode::OperationFailed, &message);
+        }
+
+        json!({
+            "protocol_version": 1,
+            "restarted": true,
+            "php": version,
+        })
+    }
+
     fn application_start(&self, request: &OperationRequest) -> Value {
         self.application_control(request, "start")
     }
@@ -1443,6 +1484,9 @@ impl RequestHandler for AgentHandler<'_> {
             "application.stop" => {
                 self.complete_operation(request, || self.application_stop(request))
             }
+            "application.restart" => {
+                self.complete_operation(request, || self.application_restart(request))
+            }
             "agent.register_database" => self.register_database(request),
             "database.provision" => {
                 self.complete_operation(request, || self.database_provision(request))
@@ -1522,6 +1566,36 @@ fn application_resource(request: &OperationRequest) -> Result<Uuid, &'static str
         return Err("resource must be an application");
     }
     Uuid::parse(&resource.id).map_err(|_| "application id must be a UUID")
+}
+
+/// Reload the application's PHP-FPM service and Nginx after a restart request.
+fn reload_runtime(php_version: &str) -> Result<(), String> {
+    let fpm = format!("php{php_version}-fpm");
+    run_bounded(Path::new("/usr/bin/systemctl"), &["reload", &fpm])
+        .map_err(|error| format!("php-fpm reload failed: {error}"))?;
+    run_bounded(Path::new("/usr/sbin/nginx"), &["-s", "reload"])
+        .map_err(|error| format!("nginx reload failed: {error}"))?;
+    Ok(())
+}
+
+/// Run a fixed command through the bounded process primitive.
+fn run_bounded(program: &Path, args: &[&str]) -> Result<(), String> {
+    let mut spec = CommandSpec::new(program, Duration::from_secs(30));
+    spec.args = args.iter().map(|arg| (*arg).to_string()).collect();
+    spec.output_cap_bytes = 32_768;
+    let mut env = BTreeMap::new();
+    env.insert(
+        "PATH".to_string(),
+        "/usr/sbin:/usr/bin:/sbin:/bin".to_string(),
+    );
+    env.insert("LC_ALL".to_string(), "C".to_string());
+    spec.env = env;
+    let outcome = run(&spec).map_err(|error| error.to_string())?;
+    if outcome.succeeded() {
+        Ok(())
+    } else {
+        Err(format!("exit code {:?}", outcome.exit_code))
+    }
 }
 
 fn firewall_error(error: FirewallError) -> Value {

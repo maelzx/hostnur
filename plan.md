@@ -1639,11 +1639,14 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - **Panel deployed**: composer `--no-dev`, `migrate`, served by nginx + php8.3-fpm
   (pool as `www-data`, in the `hostnur` group) → `/login` returns **200 publicly**;
   admin created `admin@hostnur.test` / `password123` (MFA enrols on first sign-in).
-- **Follow-ups recorded**: `application.restart` is still **not handled** by the real
-  agent (so restart isn't usable on a real host yet — the fake adapter handles it);
-  `php artisan key:generate` did not write `APP_KEY` on this host (worked around by
-  appending it) — worth reproducing; the dedicated `hostnur-panel` identity wasn't used
-  here. Phase 20 CI/real-host package validation still pending.
+- **`application.restart` implemented + validated on the real agent** (it previously
+  worked only in the fake adapter): resolves the app's registered runtime version and
+  reloads `php<ver>-fpm` + nginx through the bounded process primitive; added to the
+  advertised operations. Verified on the droplet (register app → restart → succeeded).
+- **Follow-ups recorded**: `php artisan key:generate` did not write `APP_KEY` on this
+  host (worked around by appending it) — worth reproducing; the dedicated
+  `hostnur-panel` identity wasn't used here. Phase 20 CI/real-host package validation
+  still pending.
 
 ### Session 044 — UI/UX revamp + truthful application status (2026-10-15)
 
