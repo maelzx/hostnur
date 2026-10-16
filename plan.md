@@ -1169,11 +1169,13 @@ pass on the VM. Only tested engine/version/data-movement capabilities are advert
   panel APP_KEY); the first destination is **S3-compatible object storage** (S3/R2/
   MinIO), with SFTP afterward (P19.6).
 - Landed: `agent/src/backup.rs` — `seal`/`open` (age), a versioned `BackupManifest`
-  (scope, sizes, consistency, SHA-256 of the sealed bytes) and integrity hashing;
-  config `backup_recipient` + `backup_dir` (validated). Unit-tested (round-trip,
-  invalid recipient, manifest). **Remaining**: per-scope artifact capture, the S3
-  transfer + retention/prune (P19.3/P19.6), restore orchestration (P19.4), and the
-  separate-VM drill/runbook (P19.5).
+  (scope, sizes, consistency, SHA-256 of the sealed bytes), integrity hashing, and the
+  capture pipeline (`archive_directory` via system tar, streaming `seal_file`,
+  `write_manifest`) writing to `backup_dir` staging; config `backup_recipient` +
+  `backup_dir` (validated). Unit-tested (round-trip, invalid recipient, manifest,
+  archive→seal→manifest→recover). **Remaining**: `agent.register_backup` +
+  `backup.create` operation wiring, the S3 transfer + retention/prune (P19.3/P19.6),
+  restore orchestration (P19.4), and the separate-VM drill/runbook (P19.5).
 - Depends on: 15, 16, 17; include 18 for managed databases.
 
 #### Backup scope and trust
