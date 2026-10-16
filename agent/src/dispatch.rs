@@ -1524,6 +1524,11 @@ impl<'a> AgentHandler<'a> {
             .get("run_migrations")
             .and_then(Value::as_bool)
             .unwrap_or(false);
+        let recovery_acknowledged = request
+            .parameters
+            .get("recovery_acknowledged")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
 
         let Some(ticket) = DeployTicket::try_acquire() else {
             return error_body(
@@ -1543,7 +1548,13 @@ impl<'a> AgentHandler<'a> {
             std::thread::spawn(move || {
                 // The ticket is returned when the worker finishes or panics.
                 let _ticket = ticket;
-                runtime.run_worker(execution_id, application_id, git_ref, run_migrations);
+                runtime.run_worker(
+                    execution_id,
+                    application_id,
+                    git_ref,
+                    run_migrations,
+                    recovery_acknowledged,
+                );
             });
         }
 

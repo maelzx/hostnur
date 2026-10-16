@@ -52,6 +52,7 @@ final class DeploymentService
                 'revision' => $revision !== null ? (string) $revision->getKey() : null,
                 'ref' => $application->git_ref,
                 'run_migrations' => $runMigrations,
+                'recovery_acknowledged' => $migrationRecoveryAcknowledged,
             ]);
             $this->audit->record($actor, AuditAction::ApplicationDeployRequested, AuditOutcome::Requested, [
                 'resource_kind' => 'application',

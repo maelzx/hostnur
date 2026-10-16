@@ -38,6 +38,8 @@ pub struct DeployInput<'a> {
     pub server_name: &'a str,
     pub allow_protocol: &'a str,
     pub run_migrations: bool,
+    /// The operator explicitly acknowledged a recovery point for migrations.
+    pub recovery_acknowledged: bool,
     /// Run the unprivileged Composer build when `composer.json` is present.
     pub build: bool,
     pub env: BTreeMap<String, String>,
@@ -518,11 +520,27 @@ impl<'a> Deployer<'a> {
                 }
             }
 
-            // Fail closed: migrations mutate shared state before activation
-            // and there is no recovery prerequisite implemented yet, so the
-            // documented refusal is enforced here.
+            // Migrations mutate shared state before activation. They run only
+            // when the caller explicitly acknowledged a recovery point.
             if input.run_migrations {
-                return Err(DeployError::MigrationPrerequisiteMissing);
+                if !input.recovery_acknowledged {
+                    return Err(DeployError::MigrationPrerequisiteMissing);
+                }
+
+                let outcome = self.run_app(
+                    &php,
+                    &["artisan", "migrate", "--force"],
+                    release_dir,
+                    uid,
+                    gid,
+                    &[],
+                )?;
+
+                if !outcome.succeeded() {
+                    return Err(DeployError::Provision(
+                        "php artisan migrate failed".to_string(),
+                    ));
+                }
             }
 
             let _ = self.run_app(
@@ -663,6 +681,7 @@ impl DeployRuntime {
         application_id: Uuid,
         git_ref: crate::git::GitRef,
         run_migrations: bool,
+        recovery_acknowledged: bool,
     ) {
         let journal = match Journal::open(&self.db_path) {
             Ok(journal) => journal,
@@ -694,6 +713,7 @@ impl DeployRuntime {
             &application_id,
             git_ref,
             run_migrations,
+            recovery_acknowledged,
             execution_id.clone(),
         ) {
             Ok((release_id, commit)) => {
@@ -751,6 +771,7 @@ impl DeployRuntime {
         application_id: &Uuid,
         git_ref: crate::git::GitRef,
         run_migrations: bool,
+        recovery_acknowledged: bool,
         execution_id: Uuid,
     ) -> Result<(Uuid, String), DeployError> {
         let source = journal
@@ -781,6 +802,7 @@ impl DeployRuntime {
             server_name: &source.server_name,
             allow_protocol: &self.allow_protocol,
             run_migrations,
+            recovery_acknowledged,
             build: true,
             env: BTreeMap::new(),
             execution_id: Some(execution_id),

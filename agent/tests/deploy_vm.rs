@@ -171,6 +171,7 @@ fn deploy_activate_health_redeploy_and_rollback() {
         server_name: "127.0.0.1",
         allow_protocol: "file",
         run_migrations: false,
+        recovery_acknowledged: false,
         build: true,
         env: BTreeMap::new(),
         execution_id: None,

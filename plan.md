@@ -1570,15 +1570,15 @@ rolls back without lock-out, and every change is audited.
   run build` as the app user → release activated (commit `6672e102`) → managed nginx
   site + php8.4-fpm pool created → app served (`/up` **200**, Laravel boots with
   `APP_KEY`). Database path also works: `agent.register_database` +
-  `database.provision` created a MariaDB db/user. **Blockers found**: (1) the agent
-  **refuses migrations** with a fail-closed "recovery prerequisite not configured
-  yet" stub → DB-backed endpoints 500 (no tables) — this gate must be implemented
-  (phase 15 prose) to finish DB apps; (2) the agent's managed site is HTTP-only and no
-  app certificate is issued during deploy — TLS for a hosted app needs the
-  `certificate.issue` path.
-- Remaining: agent-level migration recovery prerequisite, app TLS issuance, crash/
-  disconnect, Nginx/TLS-failure, SQLite contention, cross-app isolation,
-  signed-release verification, and restore/recovery drills.
+  `database.provision` created a MariaDB db/user. **Migration path implemented**: the
+  agent now runs `php artisan migrate --force` when the caller acknowledges a recovery
+  point (`recovery_acknowledged`), replacing the fail-closed stub; validated by
+  redeploying AssetKOM — homepage + `/login` return **200** with a real migrated DB.
+  **Remaining blocker**: the agent's managed app site is HTTP-only; hosting an app over
+  TLS needs the `certificate.issue` path.
+- Remaining: app TLS issuance, redeploy/rollback, crash/disconnect, Nginx/TLS-failure,
+  SQLite contention, cross-app isolation, signed-release verification, and
+  restore/recovery drills.
 - Depends on: 1–20.8 and disposable VM access.
 - Slices: full cross-process/VM regression, privilege/path/socket abuse cases,
   app isolation, crashes/disconnects, Nginx/TLS failures, SQLite contention,
@@ -1725,6 +1725,11 @@ ask only when the choice materially changes scope, cost, access, or product beha
   hosted-app **TLS is not issued during deploy** (managed site is HTTP-only). Also
   confirmed the installer/package create `/etc/nginx/conf.d/hostnur-sites.conf` (the
   manual deploy was missing it, so the app vhost wasn't loaded until added).
+- **Migration path (Phase 21)**: the agent's fail-closed migration stub is replaced by
+  a real path — `application.deploy` gains a `recovery_acknowledged` parameter, and
+  migrations run (`php artisan migrate --force` as the app user) only when it is set.
+  Panel `DeploymentService` forwards the acknowledgement. Validated: AssetKOM redeploy
+  migrated and the app serves (`/login` 200). Rust 143 tests + clippy; PHP 267 tests.
 - **Agent fix (Phase 21 safety finding)**: request-level errors now return the
   contract's framed error object (`{"error":{code,message,retryable}}`) instead of
   closing the connection silently. Verified on the host: unknown op →
