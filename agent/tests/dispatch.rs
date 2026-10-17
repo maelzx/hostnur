@@ -130,9 +130,9 @@ fn unimplemented_mutation_returns_unsupported_operation() {
             "protocol_version": 1,
             "request_id": "{REQUEST_ID}",
             "idempotency_key": "{IDEMPOTENCY_KEY}",
-            "operation": "application.restart",
+            "operation": "application.rollback",
             "resource": {{"kind": "application", "id": "224065ac-4bc7-4ba4-a06d-8c8bca950c32"}},
-            "parameters": {{}}
+            "parameters": {{"release": "00000000-0000-4000-8000-000000000000"}}
         }}"#
     );
     let parsed = parse_request_str(&text, &Catalog::embedded()).unwrap();
