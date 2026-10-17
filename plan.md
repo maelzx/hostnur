@@ -1989,6 +1989,34 @@ install gate, idempotency-key/per-record ordering, degradation catch scope);
 (4) lows opportunistically. Re-run Rust fmt/clippy (VM) and the root `*_vm`
 suites after any agent edit.
 
+### Session 049 — Fixed the HIGH review findings from session 048 (2026-10-17)
+
+- **Secrets / data integrity**: `journal::canonical_intent` now redacts the
+  `identity` and `dump` parameters before persisting the execution intent (with a
+  regression test), so an age key / SQL dump is never written to `agent.db`; S3
+  artifact/manifest **read failures now propagate** instead of PUTting empty bytes;
+  the backup dir is created `0700` and the plaintext tar is pre-created `0600` and
+  removed on tar/seal failure.
+- **Broken features**: `TaskService` now maps `AgentRemoteException` (including
+  `execution_unknown` during polling) so real-agent error codes aren't discarded as
+  `operation_failed`; `schedule.apply`'s catalog `revision` is retyped to `integer`
+  (matching what the panel sends); `DeploymentPreflight::capability()` now also
+  requires the agent to **advertise the operation**, so unimplemented ops fail
+  preflight instead of at dispatch.
+- **Packaging**: the deb now installs the agent to `/usr/local/bin` (matches the unit's
+  `ExecStart`); the panel `postinst` **merges** the panel UID into `allowed_peer_uids`
+  instead of overwriting operator-approved peers.
+- Checks: Rust **144 tests** + clippy; PHP **267 tests**; `pint`; `bash -n`. Commit
+  `7e6face`. Session 048 remains the detailed reference for the rest.
+- **Remaining (medium/low)**: agent per-request timeout wiring + async long ops; S3
+  request timeout/streaming; restore symlink-walk; approved-package install gate;
+  idempotency-key reuse/record ordering; degradation catch scope (log it); wizard
+  transaction/compensation; secret-valued Livewire properties; `wire:click` XSS in the
+  firewall view; `appstate` log redaction; installer ordering (`psmisc`, node pipe,
+  migrate order); `service.control` resource contract; schedule-delete timer removal;
+  `SetupPanelTls` failure ordering/renewal hook/webroot; `build-repo` fallback hashes;
+  `trustProxies` parity; plus the listed lows.
+
 ### Session 044 — UI/UX revamp + truthful application status (2026-10-15)
 
 - **UI/UX revamp** (using the `ui-ux-pro-max` skill): redesigned the sign-in page
