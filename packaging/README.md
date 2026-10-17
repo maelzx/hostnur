@@ -105,6 +105,31 @@ After install, create the first administrator:
 cd /opt/hostnur-panel && php artisan hostnur:admin:bootstrap
 ```
 
+## Updating an existing install
+
+**Interim installer** — re-run the same command (idempotent). It downloads the new
+release, **stops the agent** before replacing its binary, updates the panel + agent +
+contracts, runs `php artisan migrate`, clears caches, restarts the panel worker, and
+reloads PHP-FPM/nginx. `.env`, the SQLite database and `agent.toml` are preserved.
+
+```bash
+# update to the latest release
+curl -fsSL https://github.com/maelzx/hostnur/releases/latest/download/install.sh \
+  | sudo bash -s -- --domain panel.example.com --email you@example.com
+# or pin a version
+curl -fsSL https://github.com/maelzx/hostnur/releases/latest/download/install.sh \
+  | sudo bash -s -- --version v0.1.3 --domain panel.example.com --email you@example.com
+```
+
+Flags are not persisted between runs — pass the same `--domain`/`--email` (and
+`--php84` if you used it) again. Panel migrations run automatically on update.
+
+**Debian packages** (once the APT repository is published):
+
+```bash
+sudo apt update && sudo apt upgrade hostnur hostnur-agent
+```
+
 ## Private repository (until the repo is public)
 
 Release assets require authentication while the repo is private. Download the

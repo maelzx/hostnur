@@ -146,6 +146,10 @@ PANEL_UID="$(id -u "$PANEL_USER")"
 log "Installing files under ${INSTALL_ROOT}"
 mkdir -p "$INSTALL_ROOT" "$CONFIG_DIR" "$AGENT_STATE" "$(dirname "$AGENT_SOCKET")"
 tar xzf "$WORK/${HOSTNUR_ASSET}" -C "$WORK"
+# Stop the running agent before replacing its binary (avoid "text file busy").
+if systemctl is-active --quiet hostnur-agent 2>/dev/null; then
+  systemctl stop hostnur-agent
+fi
 install -m 0755 "$WORK/hostnur/bin/hostnur-agent" "$AGENT_BIN"
 install -m 0644 "$WORK/hostnur/packaging/hostnur-agent.service" /etc/systemd/system/hostnur-agent.service
 rm -rf "$CONTRACTS_DIR"; mkdir -p "$CONTRACTS_DIR"
@@ -228,6 +232,12 @@ find "$PANEL_DIR/storage" "$PANEL_DIR/bootstrap/cache" -type d -exec chmod 0775 
 if [ -f "$PANEL_DIR/database/database.sqlite" ]; then
   chown "$PANEL_USER:$PANEL_GROUP" "$PANEL_DIR/database/database.sqlite"
 fi
+
+# Apply migrations and refresh caches on both first install and update.
+su -s /bin/sh "$PANEL_USER" -c "cd '$PANEL_DIR' && php artisan migrate --force" \
+  || warn "panel migrations did not run; run them manually"
+su -s /bin/sh "$PANEL_USER" -c "cd '$PANEL_DIR' && php artisan config:clear && php artisan view:clear" \
+  >/dev/null 2>&1 || true
 
 # --- PHP-FPM pool for the panel ---------------------------------------------
 log "Configuring PHP-FPM pool ${PANEL_POOL}"
@@ -371,7 +381,9 @@ WantedBy=timers.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now hostnur-panel-worker.service
+# Restart (not just enable) the worker so an update loads the new panel code.
+systemctl enable hostnur-panel-worker.service
+systemctl restart hostnur-panel-worker.service
 systemctl enable --now hostnur-panel-schedule.timer
 
 # --- firewall ----------------------------------------------------------------
