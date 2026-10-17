@@ -91,8 +91,13 @@ Without `--domain`/`--email` the panel is only reachable on
 - `--domain <fqdn>` — serve the panel on this hostname with Let's Encrypt TLS.
 - `--email <addr>` — ACME contact email (required for `--domain`).
 - `--no-tls` — never request a certificate.
+- `--php84` — also install PHP 8.4 (ondrej PPA) for applications that need it.
 - `--version <tag>` / `HOSTNUR_VERSION` — install a specific release.
 - `HOSTNUR_BASE_URL` — override the download base (private mirror / testing).
+
+Node.js/npm is installed automatically (Laravel frontend builds). When `--email` is
+given it is also written to `agent.toml` as `acme_email`, so the agent can issue
+certificates for hosted applications (not just the panel).
 
 After install, create the first administrator:
 

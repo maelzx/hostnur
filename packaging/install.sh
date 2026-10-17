@@ -24,6 +24,7 @@ HOSTNUR_VERSION="${HOSTNUR_VERSION:-}"
 HOSTNUR_ASSET="hostnur-linux-x86_64.tar.gz"
 
 PHP_VERSION="8.3"
+PHP84=0
 INSTALL_ROOT="/opt/hostnur"
 PANEL_DIR="/opt/hostnur-panel"
 CONTRACTS_DIR="/opt/hostnur/contracts"
@@ -44,7 +45,24 @@ log() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*" >&2; }
 die() { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
 
-usage() { sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() {
+  cat <<'USAGE'
+Hostnur bootstrap installer (interim, curl-and-bash).
+
+Usage:
+  curl -fsSL https://github.com/maelzx/hostnur/releases/latest/download/install.sh | sudo bash
+  ... | sudo bash -s -- --domain panel.example.com --email you@example.com
+
+Flags:
+  --domain <fqdn>   panel hostname (enables Let's Encrypt TLS)
+  --email <addr>    ACME contact email (panel and hosted-app certificates)
+  --no-tls          never request a certificate
+  --php84           also install PHP 8.4 (ondrej PPA) for apps that need it
+  --version <tag>   install a specific release
+  -h, --help        show this help
+USAGE
+  exit 0
+}
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -52,6 +70,7 @@ while [ $# -gt 0 ]; do
     --email) EMAIL="${2:-}"; shift 2 ;;
     --version) HOSTNUR_VERSION="${2:-}"; shift 2 ;;
     --no-tls) ENABLE_TLS=0; shift ;;
+    --php84) PHP84=1; shift ;;
     --help|-h) usage ;;
     *) die "unknown argument: $1" ;;
   esac
@@ -97,6 +116,23 @@ apt-get install -y -qq nginx php${PHP_VERSION}-fpm php${PHP_VERSION}-cli php${PH
   php${PHP_VERSION}-mbstring php${PHP_VERSION}-xml php${PHP_VERSION}-curl php${PHP_VERSION}-zip \
   php${PHP_VERSION}-intl composer git unzip sqlite3 rsync curl ca-certificates python3 >/dev/null
 
+# Node.js/npm for Laravel frontend builds (`npm ci && npm run build`).
+if ! command -v node >/dev/null 2>&1; then
+  log "Installing Node.js"
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null 2>&1
+  apt-get install -y -qq nodejs >/dev/null
+fi
+
+# Optional PHP 8.4 (operator opt-in; the native 8.3 baseline stays the default).
+if [ "$PHP84" -eq 1 ] && ! command -v php8.4 >/dev/null 2>&1; then
+  log "Installing PHP 8.4 (ondrej PPA)"
+  apt-get install -y -qq software-properties-common >/dev/null
+  add-apt-repository -y ppa:ondrej/php >/dev/null 2>&1
+  apt-get update -qq
+  apt-get install -y -qq php8.4-fpm php8.4-cli php8.4-sqlite3 php8.4-mbstring php8.4-xml \
+    php8.4-curl php8.4-zip php8.4-intl php8.4-gd php8.4-bcmath php8.4-mysql >/dev/null
+fi
+
 # --- service identities ------------------------------------------------------
 log "Creating service identities"
 groupadd -f "$ACCESS_GROUP"
@@ -118,6 +154,8 @@ cp -a "$WORK/hostnur/contracts/." "$CONTRACTS_DIR/"
 # --- agent config ------------------------------------------------------------
 if [ ! -f "$CONFIG_DIR/agent.toml" ]; then
   log "Writing ${CONFIG_DIR}/agent.toml"
+  PHP_VERSIONS='"8.3"'
+  [ "$PHP84" -eq 1 ] && PHP_VERSIONS='"8.3", "8.4"'
   cat > "$CONFIG_DIR/agent.toml" <<EOF
 version = 1
 socket_path = "${AGENT_SOCKET}"
@@ -127,11 +165,17 @@ socket_mode = 432
 socket_group = "${ACCESS_GROUP}"
 connection_read_timeout_seconds = 5
 allowed_peer_uids = [${PANEL_UID}]
-php_versions = ["8.3", "8.4"]
+php_versions = [${PHP_VERSIONS}]
 EOF
   chmod 0644 "$CONFIG_DIR/agent.toml"
 else
   log "Keeping existing ${CONFIG_DIR}/agent.toml"
+fi
+
+# Record the ACME contact email so the agent can issue certificates for hosted
+# apps (the panel's own TLS is handled separately).
+if [ -n "$EMAIL" ] && ! grep -q '^acme_email' "$CONFIG_DIR/agent.toml"; then
+  printf 'acme_email = "%s"\n' "$EMAIL" >> "$CONFIG_DIR/agent.toml"
 fi
 
 systemctl daemon-reload

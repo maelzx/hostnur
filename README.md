@@ -22,6 +22,7 @@ Flags:
 - `--domain <fqdn>` — serve the panel on this hostname and request a Let's Encrypt certificate.
 - `--email <addr>` — ACME contact email (required together with `--domain`).
 - `--no-tls` — never request a certificate.
+- `--php84` — also install PHP 8.4 (for applications that need it).
 
 Without `--domain`/`--email`, TLS is skipped and the panel is only reachable on
 `http://127.0.0.1:8080` (connect over an SSH tunnel).
