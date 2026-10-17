@@ -73,6 +73,7 @@ build_panel() {
     install -D -m 0644 "$SYSTEMD_DIR/hostnur-panel-scheduler.timer" "$root/lib/systemd/system/hostnur-panel-scheduler.timer"
     install -D -m 0644 "$DEB_DIR/hostnur/hostnur-panel.nginx" "$root/etc/nginx/sites-available/hostnur-panel"
     install -D -m 0644 "$DEB_DIR/hostnur/hostnur-sites.conf" "$root/etc/nginx/conf.d/hostnur-sites.conf"
+    install -D -m 0644 "$REPO_ROOT/packaging/hostnur-panel.logrotate" "$root/etc/logrotate.d/hostnur-panel"
     install -D -m 0644 "$DEB_DIR/hostnur/hostnur-panel.fpm.conf" "$root/etc/php/8.3/fpm/pool.d/hostnur-panel.conf"
     install -D -m 0644 "$DEB_DIR/hostnur/panel-tls.conf.example" "$root/etc/hostnur/panel-tls.conf.example"
     mkdir -p "$root/DEBIAN"

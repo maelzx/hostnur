@@ -1,0 +1,8 @@
+/var/log/php-fpm-hostnur-panel.log {
+    weekly
+    rotate 8
+    missingok
+    notifempty
+    compress
+    copytruncate
+}

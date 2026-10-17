@@ -10,6 +10,12 @@ use std::time::Duration;
 
 use crate::process::{CommandSpec, ProcessError, run, validate_spec};
 
+/// A pending update: (package, current, candidate, security).
+pub type UpdateEntry = (String, String, String, bool);
+
+/// Result of listing pending updates: entries plus a truncation flag.
+pub type UpdateList = Result<(Vec<UpdateEntry>, bool), String>;
+
 /// An approved package catalog entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApprovedPackage {
@@ -153,15 +159,22 @@ impl PackagePolicy {
 
     /// Read pending package updates via `apt list --upgradable` (bounded,
     /// read-only; uses the cached lists and never runs `apt-get update`).
-    pub fn list_updates(&self) -> (Vec<(String, String, String, bool)>, bool) {
+    pub fn list_updates(&self) -> UpdateList {
         let mut spec = CommandSpec::new(PathBuf::from("/usr/bin/apt"), Duration::from_secs(30));
         spec.args = vec!["list".to_string(), "--upgradable".to_string()];
         spec.env = installer_env();
         spec.output_cap_bytes = 65_536;
-        let Ok(outcome) = run(&spec) else {
-            return (Vec::new(), false);
-        };
-        parse_upgradable(&String::from_utf8_lossy(&outcome.stdout))
+
+        let outcome = run(&spec).map_err(|error| error.to_string())?;
+
+        if !outcome.succeeded() && outcome.stdout.is_empty() {
+            return Err(format!(
+                "apt list --upgradable failed (exit {:?})",
+                outcome.exit_code
+            ));
+        }
+
+        Ok(parse_upgradable(&String::from_utf8_lossy(&outcome.stdout)))
     }
 
     /// Install an already-validated package name (bounded). Used for
@@ -200,7 +213,7 @@ impl PackagePolicy {
     /// Upgrade already-installed pending packages only (never installs new
     /// packages). Returns how many were upgraded.
     pub fn upgrade(&self, security_only: bool) -> Result<usize, PackageError> {
-        let (updates, _) = self.list_updates();
+        let (updates, _) = self.list_updates().map_err(PackageError::ToolFailed)?;
         let names: Vec<String> = updates
             .into_iter()
             .filter(|(_, _, _, security)| !security_only || *security)
@@ -235,8 +248,28 @@ impl PackagePolicy {
             )));
         }
 
-        Ok(names.len())
+        let text = String::from_utf8_lossy(&outcome.stdout);
+        Ok(parse_upgraded_count(&text).unwrap_or(names.len()))
     }
+}
+
+/// Parse the "N upgraded, ..." summary apt prints.
+fn parse_upgraded_count(text: &str) -> Option<usize> {
+    for line in text.lines() {
+        if !line.contains("upgraded") {
+            continue;
+        }
+        let tokens: Vec<&str> = line.split_whitespace().collect();
+        for (index, token) in tokens.iter().enumerate() {
+            if token.starts_with("upgraded")
+                && let Some(previous) = index.checked_sub(1).and_then(|i| tokens.get(i))
+                && let Ok(count) = previous.parse::<usize>()
+            {
+                return Some(count);
+            }
+        }
+    }
+    None
 }
 
 /// Validate an APT package name (`[a-z0-9][a-z0-9+.-]{0,63}`).
@@ -254,7 +287,7 @@ pub fn is_valid_package_name(name: &str) -> bool {
 }
 
 /// Parse `apt list --upgradable` into `(package, current, candidate, security)`.
-pub fn parse_upgradable(text: &str) -> (Vec<(String, String, String, bool)>, bool) {
+pub fn parse_upgradable(text: &str) -> (Vec<UpdateEntry>, bool) {
     let mut updates = Vec::new();
     let mut truncated = false;
 

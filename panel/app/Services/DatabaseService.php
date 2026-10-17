@@ -185,11 +185,19 @@ final class DatabaseService
             ]);
         }
 
-        if (isset($response['database'], $response['username'])) {
-            $request->forceFill([
-                'database_name' => $response['database'],
-                'username' => $response['username'],
-            ])->save();
+        $database = $response['database'] ?? null;
+        $username = $response['username'] ?? null;
+
+        if (! is_string($database) || preg_match('/^[a-z][a-z0-9_]{0,63}$/', $database) !== 1
+            || ! is_string($username) || preg_match('/^[a-z][a-z0-9_]{0,63}$/', $username) !== 1) {
+            throw ValidationException::withMessages([
+                'database_name' => 'The agent returned an invalid database identity.',
+            ]);
         }
+
+        $request->forceFill([
+            'database_name' => $database,
+            'username' => $username,
+        ])->save();
     }
 }

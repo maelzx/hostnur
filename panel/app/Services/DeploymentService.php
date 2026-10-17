@@ -285,7 +285,7 @@ final class DeploymentService
                 'server_name' => (string) $domain->hostname,
                 'provider' => (string) $application->provider,
                 'runtime' => (string) $application->runtime,
-                'runtime_version' => (string) ($application->runtime_version ?? ''),
+                'runtime_version' => (string) ($application->runtime_version ?: $application->runtime),
             ],
             timeoutSeconds: null,
         );

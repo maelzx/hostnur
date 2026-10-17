@@ -6,6 +6,7 @@
 //! end-to-end. No long-lived credentials are logged.
 
 use std::os::unix::fs::PermissionsExt;
+use std::time::Duration;
 
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
@@ -150,6 +151,7 @@ pub fn put_object(
     );
 
     let response = ureq::request("PUT", &url)
+        .timeout(Duration::from_secs(120))
         .set("x-amz-content-sha256", &payload_hash)
         .set("x-amz-date", &amzdate)
         .set("Authorization", &signed.authorization)

@@ -578,6 +578,64 @@ impl Journal {
         Ok(())
     }
 
+    /// Atomically record a terminal status, result and completion event, so an
+    /// inspector can never see `succeeded` with a missing result.
+    pub fn finish_execution(
+        &self,
+        execution_id: &Uuid,
+        status: OperationStatus,
+        result: Option<&str>,
+        event: &str,
+    ) -> Result<(), JournalError> {
+        let at = clock::now_rfc3339();
+
+        self.connection
+            .execute("BEGIN IMMEDIATE", [])
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+
+        let outcome = (|| -> Result<(), JournalError> {
+            self.connection
+                .execute(
+                    "UPDATE executions
+                     SET status = ?2, progress = 100, result = ?3, updated_at = ?4
+                     WHERE execution_id = ?1",
+                    params![execution_id.as_str(), status_str(status), result, at],
+                )
+                .map_err(|err| JournalError::Query(err.to_string()))?;
+
+            let next: i64 = self
+                .connection
+                .query_row(
+                    "SELECT COALESCE(MAX(sequence), 0) + 1 FROM execution_events WHERE execution_id = ?1",
+                    params![execution_id.as_str()],
+                    |row| row.get(0),
+                )
+                .map_err(|err| JournalError::Query(err.to_string()))?;
+
+            self.connection
+                .execute(
+                    "INSERT INTO execution_events (execution_id, sequence, at, message)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![execution_id.as_str(), next, at, event],
+                )
+                .map_err(|err| JournalError::Query(err.to_string()))?;
+
+            Ok(())
+        })();
+
+        match outcome {
+            Ok(()) => self
+                .connection
+                .execute("COMMIT", [])
+                .map(|_| ())
+                .map_err(|err| JournalError::Query(err.to_string())),
+            Err(error) => {
+                let _ = self.connection.execute("ROLLBACK", []);
+                Err(error)
+            }
+        }
+    }
+
     /// Insert a managed resource if it is not already registered.
     ///
     /// Returns `true` when a new row was created, `false` when the id already

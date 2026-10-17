@@ -851,15 +851,13 @@ impl<'a> AgentHandler<'a> {
             } else {
                 OperationStatus::Succeeded
             };
-            let _ = self
-                .journal
-                .set_status(&acceptance.execution_id, status, Some(100));
-            let _ = self
-                .journal
-                .set_execution_result(&acceptance.execution_id, Some(&outcome.to_string()));
-            let _ = self.journal.append_event(
+            let result = outcome.to_string();
+            let event = if failed { "Failed." } else { "Completed." };
+            let _ = self.journal.finish_execution(
                 &acceptance.execution_id,
-                if failed { "Failed." } else { "Completed." },
+                status,
+                Some(&result),
+                event,
             );
         }
 
@@ -1652,7 +1650,10 @@ impl<'a> AgentHandler<'a> {
     }
 
     fn server_updates(&self) -> Value {
-        let (updates, truncated) = self.packages.list_updates();
+        let (updates, truncated) = match self.packages.list_updates() {
+            Ok(value) => value,
+            Err(message) => return error_body(ContractErrorCode::OperationFailed, &message),
+        };
 
         let entries: Vec<Value> = updates
             .into_iter()

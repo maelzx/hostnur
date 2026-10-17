@@ -30,7 +30,13 @@ pub fn read_logs(apps_root: &Path, application_id: &Uuid) -> Result<(Vec<String>
         .join("storage")
         .join("logs");
 
-    let entries = std::fs::read_dir(&logs_dir).map_err(|error| error.to_string())?;
+    let entries = match std::fs::read_dir(&logs_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok((Vec::new(), false));
+        }
+        Err(error) => return Err(error.to_string()),
+    };
 
     let mut newest: Option<(std::time::SystemTime, PathBuf)> = None;
     for entry in entries.flatten() {
@@ -50,7 +56,9 @@ pub fn read_logs(apps_root: &Path, application_id: &Uuid) -> Result<(Vec<String>
         }
     }
 
-    let (_, path) = newest.ok_or_else(|| "no application log file found".to_string())?;
+    let Some((_, path)) = newest else {
+        return Ok((Vec::new(), false));
+    };
 
     let length = std::fs::metadata(&path)
         .map_err(|error| error.to_string())?
@@ -196,9 +204,10 @@ mod tests {
     }
 
     #[test]
-    fn reads_missing_logs_as_error() {
+    fn reads_missing_logs_as_empty() {
         let dir = tempfile::tempdir().unwrap();
         let id = Uuid::parse("224065ac-4bc7-4ba4-a06d-8c8bca950c32").unwrap();
-        assert!(read_logs(dir.path(), &id).is_err());
+        // No logs is an empty observation, not an error.
+        assert_eq!(read_logs(dir.path(), &id).unwrap(), (Vec::new(), false));
     }
 }

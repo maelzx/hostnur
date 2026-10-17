@@ -331,7 +331,9 @@ fn parse_rule_line(trimmed: &str) -> Option<FirewallRule> {
 
 fn parse_to_column(to: &str) -> Option<(i64, String)> {
     let (port, protocol) = to.split_once('/')?;
-    let port: i64 = port.trim().parse().ok()?;
+    // Handle ranges/rules like `443:444/tcp` by taking the first port.
+    let port_part = port.trim().split(':').next().unwrap_or("").trim();
+    let port: i64 = port_part.parse().ok()?;
     let protocol = protocol.trim().to_ascii_lowercase();
     if !(1..=65535).contains(&port) || (protocol != "tcp" && protocol != "udp") {
         return None;

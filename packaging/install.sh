@@ -252,6 +252,16 @@ chdir = ${PANEL_DIR}
 catch_workers_output = yes
 php_admin_value[error_log] = /var/log/php-fpm-${PANEL_POOL}.log
 EOF
+cat > /etc/logrotate.d/hostnur-panel <<'EOF'
+/var/log/php-fpm-hostnur-panel.log {
+    weekly
+    rotate 8
+    missingok
+    notifempty
+    compress
+    copytruncate
+}
+EOF
 systemctl restart "php${PHP_VERSION}-fpm"
 
 # --- nginx -------------------------------------------------------------------

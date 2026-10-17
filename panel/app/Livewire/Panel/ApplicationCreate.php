@@ -13,6 +13,7 @@ use App\Services\DatabaseService;
 use App\Services\DeploymentService;
 use App\Services\ScheduleService;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -191,84 +192,84 @@ class ApplicationCreate extends Component
         $actor = $this->actor();
 
         try {
-            $application = $applications->create($actor, [
-                'name' => $this->name,
-                'slug' => $this->slug,
-                'provider' => $this->provider,
-                'runtime' => $this->runtime,
-                'runtime_version' => $this->runtime_version !== '' ? $this->runtime_version : null,
-            ]);
-        } catch (ValidationException $exception) {
-            $this->mapValidationErrors($exception);
-
-            return;
-        }
-
-        try {
-            if (trim($this->repository_url) !== '') {
-                $applications->updateSource($actor, $application, [
-                    'repository_url' => $this->repository_url,
-                    'git_ref' => $this->git_ref !== '' ? $this->git_ref : null,
-                    'source_credential_id' => $this->source_credential_id !== '' ? $this->source_credential_id : null,
-                ]);
-            }
-
-            if ($this->hasRuntimeOverrides()) {
-                $applications->updateConfiguration($actor, $application->refresh(), [
+            // One transaction: a mid-way failure must not leave a half-built app
+            // (which would also dead-end retries on "slug already in use").
+            $application = DB::transaction(function () use ($actor, $applications, $certificates, $databases, $schedules): Application {
+                $application = $applications->create($actor, [
+                    'name' => $this->name,
+                    'slug' => $this->slug,
+                    'provider' => $this->provider,
                     'runtime' => $this->runtime,
                     'runtime_version' => $this->runtime_version !== '' ? $this->runtime_version : null,
-                    'build_command' => $this->build_command !== '' ? $this->build_command : null,
-                    'start_command' => $this->start_command !== '' ? $this->start_command : null,
-                    'workers' => $this->workers,
-                    'scheduler' => $this->scheduler,
-                    'health_path' => $this->health_path !== '' ? $this->health_path : null,
-                    'persistent_paths' => $this->persistentPaths(),
                 ]);
-            }
 
-            if (trim($this->hostname) !== '') {
-                $domain = $applications->addDomain(
-                    $actor,
-                    $application,
-                    $this->hostname,
-                    DomainHttpsPolicy::from($this->https_policy),
-                );
-
-                if ($this->request_certificate) {
-                    $certificates->requestManaged($actor, $domain, $this->certificateKey);
-                }
-            }
-
-            if ($this->provision_database) {
-                $databases->request(
-                    $actor,
-                    $application,
-                    $this->engine,
-                    $this->database_name,
-                    $this->database_username,
-                    $this->databaseKey,
-                );
-            }
-
-            foreach ($this->secrets as $secret) {
-                $name = trim((string) ($secret['name'] ?? ''));
-
-                if ($name === '') {
-                    continue;
+                if (trim($this->repository_url) !== '') {
+                    $applications->updateSource($actor, $application, [
+                        'repository_url' => $this->repository_url,
+                        'git_ref' => $this->git_ref !== '' ? $this->git_ref : null,
+                        'source_credential_id' => $this->source_credential_id !== '' ? $this->source_credential_id : null,
+                    ]);
                 }
 
-                $applications->setSecret($actor, $application, $name, (string) ($secret['value'] ?? ''));
-            }
+                if ($this->hasRuntimeOverrides()) {
+                    $applications->updateConfiguration($actor, $application->refresh(), [
+                        'runtime' => $this->runtime,
+                        'runtime_version' => $this->runtime_version !== '' ? $this->runtime_version : null,
+                        'build_command' => $this->build_command !== '' ? $this->build_command : null,
+                        'start_command' => $this->start_command !== '' ? $this->start_command : null,
+                        'workers' => $this->workers,
+                        'scheduler' => $this->scheduler,
+                        'health_path' => $this->health_path !== '' ? $this->health_path : null,
+                        'persistent_paths' => $this->persistentPaths(),
+                    ]);
+                }
 
-            if ($this->schedule_enabled) {
-                $schedules->save($actor, $application, [
-                    'name' => $this->schedule_name,
-                    'expression' => $this->schedule_expression,
-                    'timezone' => $this->schedule_timezone,
-                    'command_reference' => $this->schedule_command_reference,
-                    'enabled' => true,
-                ]);
-            }
+                if (trim($this->hostname) !== '') {
+                    $domain = $applications->addDomain(
+                        $actor,
+                        $application,
+                        $this->hostname,
+                        DomainHttpsPolicy::from($this->https_policy),
+                    );
+
+                    if ($this->request_certificate) {
+                        $certificates->requestManaged($actor, $domain, $this->certificateKey);
+                    }
+                }
+
+                if ($this->provision_database) {
+                    $databases->request(
+                        $actor,
+                        $application,
+                        $this->engine,
+                        $this->database_name,
+                        $this->database_username,
+                        $this->databaseKey,
+                    );
+                }
+
+                foreach ($this->secrets as $secret) {
+                    $name = trim((string) ($secret['name'] ?? ''));
+
+                    if ($name === '') {
+                        continue;
+                    }
+
+                    $applications->setSecret($actor, $application, $name, (string) ($secret['value'] ?? ''));
+                }
+
+                if ($this->schedule_enabled) {
+                    $schedules->save($actor, $application, [
+                        'name' => $this->schedule_name,
+                        'expression' => $this->schedule_expression,
+                        'timezone' => $this->schedule_timezone,
+                        'command_reference' => $this->schedule_command_reference,
+                        'enabled' => true,
+                    ]);
+                }
+
+                return $application;
+            });
         } catch (ValidationException $exception) {
             $this->mapValidationErrors($exception);
 
