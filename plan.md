@@ -2029,14 +2029,18 @@ suites after any agent edit.
     configured webroot; `build-repo` **requires** `apt-ftparchive` rather than emitting an
     invalid Release. **Disproved:** transport `max_message_bytes` already comes from
     config (`runtime.rs:133`).
-- **Remaining (lower priority / architectural)**: **agent async long mutations + request
-  timeout enforcement** (the top item — currently blocks reads while running); wizard
-  `finish()` single transaction/compensation; secret-valued Livewire properties
-  (session-snapshot exposure); `control_state`/`server` backup scopes; S3
-  streaming/timeout + restore symlink-walk; update-list/upgrade count semantics;
-  `read_logs`/`arguments` error propagation; firewall range parsing; atomic
-  `complete_operation` finish; static `runtime_version` edge; `registerDatabase` DTO;
-  FPM log rotation.
+- **Completed second round** (commit `4f3f528`): wizard `finish()` runs in one DB
+  transaction; `complete_operation` finishes status+result+event atomically; update
+  list/upgrade count semantics (apt-failure propagates, real "N upgraded" parsed);
+  firewall rule ranges parse; missing logs = empty (real IO errors propagate); S3
+  request timeout; `registerDatabase` response validated; static-app `runtime_version`
+  fallback; FPM log rotation installed.
+- **Remaining (architectural / larger)**: **agent async long mutations + request-timeout
+  enforcement** (top item — long ops still block reads, panel degrades to "busy");
+  **restore symlink-walk defense** (pre-existing links in `shared/`); **S3 restore
+  streaming** (currently buffers); secret-valued **Livewire properties**
+  (page-snapshot exposure); `control_state`/`server` backup scopes; `arguments` JSON
+  error propagation.
 
 ### Session 044 — UI/UX revamp + truthful application status (2026-10-15)
 
