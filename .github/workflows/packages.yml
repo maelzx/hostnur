@@ -165,9 +165,11 @@ jobs:
   publish-apt:
     name: Build and publish signed APT repository
     needs: build
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && secrets.GPG_PRIVATE_KEY != ''
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -180,8 +182,7 @@ jobs:
           name: packages
 
       - name: Import signing key
-        env:
-          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        if: env.GPG_PRIVATE_KEY != ''
         run: |
           set -euo pipefail
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
@@ -189,12 +190,14 @@ jobs:
           echo "SIGNING_KEY=$KEYID" >> "$GITHUB_ENV"
 
       - name: Assemble signed repository
+        if: env.GPG_PRIVATE_KEY != ''
         run: |
           set -euo pipefail
           packaging/apt/build-repo.sh --debs . --out public --key "$SIGNING_KEY"
           test -f public/dists/stable/InRelease
 
       - name: Publish to gh-pages
+        if: env.GPG_PRIVATE_KEY != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
