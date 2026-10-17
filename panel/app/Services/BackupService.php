@@ -16,6 +16,7 @@ use App\Models\SourceCredential;
 use App\Models\User;
 use Cron\CronExpression;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -98,49 +99,51 @@ final class BackupService
 
     public function requestBackup(User $actor, BackupPolicy $policy, string $idempotencyKey): Backup
     {
-        $backup = Backup::create([
-            'backup_policy_id' => $policy->getKey(),
-            'application_id' => $policy->application_id,
-            'mode' => (string) config('hostnur.agent_mode', 'unavailable'),
-            'state' => RequestState::Requested,
-            'verification_status' => 'unverified',
-        ]);
+        return DB::transaction(function () use ($actor, $policy, $idempotencyKey): Backup {
+            $backup = Backup::create([
+                'backup_policy_id' => $policy->getKey(),
+                'application_id' => $policy->application_id,
+                'mode' => (string) config('hostnur.agent_mode', 'unavailable'),
+                'state' => RequestState::Requested,
+                'verification_status' => 'unverified',
+            ]);
 
-        if (config('hostnur.agent_mode') === 'real') {
-            $this->agent->registerBackup(new OperationRequest(
+            if (config('hostnur.agent_mode') === 'real') {
+                $this->agent->registerBackup(new OperationRequest(
+                    protocolVersion: (int) config('hostnur.protocol_version', 1),
+                    requestId: (string) Str::uuid(),
+                    idempotencyKey: (string) Str::uuid(),
+                    operation: 'agent.register_backup',
+                    resource: null,
+                    parameters: array_filter([
+                        'backup' => $backup->getKey(),
+                        'scope' => $policy->scope === BackupScope::Application ? 'application_data' : 'server',
+                        'application' => $policy->application_id,
+                    ], static fn (mixed $value): bool => $value !== null),
+                    timeoutSeconds: null,
+                ));
+            }
+
+            $task = $this->tasks->requestApproved($actor, new OperationRequest(
                 protocolVersion: (int) config('hostnur.protocol_version', 1),
                 requestId: (string) Str::uuid(),
-                idempotencyKey: (string) Str::uuid(),
-                operation: 'agent.register_backup',
-                resource: null,
-                parameters: array_filter([
-                    'backup' => $backup->getKey(),
-                    'scope' => $policy->scope === BackupScope::Application ? 'application_data' : 'server',
-                    'application' => $policy->application_id,
-                ], static fn (mixed $value): bool => $value !== null),
-                timeoutSeconds: null,
+                idempotencyKey: $idempotencyKey,
+                operation: 'backup.create',
+                resource: new ResourceRef(ResourceKind::Backup, $backup->getKey()),
+                parameters: ['policy' => $policy->getKey()],
+                timeoutSeconds: 1800,
             ));
-        }
 
-        $task = $this->tasks->requestApproved($actor, new OperationRequest(
-            protocolVersion: (int) config('hostnur.protocol_version', 1),
-            requestId: (string) Str::uuid(),
-            idempotencyKey: $idempotencyKey,
-            operation: 'backup.create',
-            resource: new ResourceRef(ResourceKind::Backup, $backup->getKey()),
-            parameters: ['policy' => $policy->getKey()],
-            timeoutSeconds: 1800,
-        ));
+            $backup->forceFill(['task_id' => $task->getKey()])->save();
 
-        $backup->forceFill(['task_id' => $task->getKey()])->save();
+            $this->audit->record($actor, AuditAction::BackupRequested, AuditOutcome::Requested, [
+                'resource_kind' => 'application',
+                'resource_id' => $policy->application_id,
+                'metadata' => ['operation' => 'backup.create'],
+            ]);
 
-        $this->audit->record($actor, AuditAction::BackupRequested, AuditOutcome::Requested, [
-            'resource_kind' => 'application',
-            'resource_id' => $policy->application_id,
-            'metadata' => ['operation' => 'backup.create'],
-        ]);
-
-        return $backup;
+            return $backup;
+        });
     }
 
     public function syncState(Backup $backup): Backup

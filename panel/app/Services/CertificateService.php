@@ -15,6 +15,7 @@ use App\Models\Certificate;
 use App\Models\Task;
 use App\Models\User;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -33,39 +34,41 @@ final class CertificateService
 
     public function requestManaged(User $actor, ApplicationDomain $domain, string $idempotencyKey): Certificate
     {
-        if (str_starts_with($domain->hostname, '*')) {
-            throw ValidationException::withMessages(['hostname' => 'Wildcard certificates are not supported.']);
-        }
+        return DB::transaction(function () use ($actor, $domain, $idempotencyKey): Certificate {
+            if (str_starts_with($domain->hostname, '*')) {
+                throw ValidationException::withMessages(['hostname' => 'Wildcard certificates are not supported.']);
+            }
 
-        $certificate = Certificate::create([
-            'application_domain_id' => $domain->getKey(),
-            'hostname' => $domain->hostname,
-            'source' => CertificateSource::ManagedHttp01,
-            'provider' => 'http01',
-            'state' => RequestState::Requested,
-        ]);
+            $certificate = Certificate::create([
+                'application_domain_id' => $domain->getKey(),
+                'hostname' => $domain->hostname,
+                'source' => CertificateSource::ManagedHttp01,
+                'provider' => 'http01',
+                'state' => RequestState::Requested,
+            ]);
 
-        $this->registerWithAgent($domain);
+            $this->registerWithAgent($domain);
 
-        $task = $this->tasks->requestApproved($actor, new OperationRequest(
-            protocolVersion: (int) config('hostnur.protocol_version', 1),
-            requestId: (string) Str::uuid(),
-            idempotencyKey: $idempotencyKey,
-            operation: 'certificate.issue',
-            resource: new ResourceRef(ResourceKind::Domain, $domain->getKey()),
-            parameters: ['provider' => 'http01'],
-            timeoutSeconds: 300,
-        ));
+            $task = $this->tasks->requestApproved($actor, new OperationRequest(
+                protocolVersion: (int) config('hostnur.protocol_version', 1),
+                requestId: (string) Str::uuid(),
+                idempotencyKey: $idempotencyKey,
+                operation: 'certificate.issue',
+                resource: new ResourceRef(ResourceKind::Domain, $domain->getKey()),
+                parameters: ['provider' => 'http01'],
+                timeoutSeconds: 300,
+            ));
 
-        $certificate->forceFill(['task_id' => $task->getKey()])->save();
+            $certificate->forceFill(['task_id' => $task->getKey()])->save();
 
-        $this->audit->record($actor, AuditAction::CertificateIssueRequested, AuditOutcome::Requested, [
-            'resource_kind' => 'application',
-            'resource_id' => $domain->application_id,
-            'metadata' => ['operation' => 'certificate.issue'],
-        ]);
+            $this->audit->record($actor, AuditAction::CertificateIssueRequested, AuditOutcome::Requested, [
+                'resource_kind' => 'application',
+                'resource_id' => $domain->application_id,
+                'metadata' => ['operation' => 'certificate.issue'],
+            ]);
 
-        return $certificate;
+            return $certificate;
+        });
     }
 
     public function ingestUserSupplied(User $actor, ApplicationDomain $domain, string $pem, string $key, ?string $passphrase): Certificate

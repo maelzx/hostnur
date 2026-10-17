@@ -58,7 +58,7 @@ class BackupIndex extends Component
     {
         $this->authorize('viewAny', Application::class);
         $policy = BackupPolicy::query()->findOrFail($policyId);
-        $service->requestBackup($this->actor(), $policy, $this->backupKey);
+        $service->requestBackup($this->actor(), $policy, (string) Str::uuid());
 
         session()->flash('status', 'Backup requested.');
         $this->redirect(route('panel.backups.index'));

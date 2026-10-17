@@ -12,6 +12,7 @@ use App\Models\Application;
 use App\Models\DatabaseRequest;
 use App\Models\Task;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -30,48 +31,50 @@ final class DatabaseService
 
     public function request(User $actor, Application $application, string $engine, string $name, string $username, string $idempotencyKey): DatabaseRequest
     {
-        if (! in_array($engine, config('hostnur.server.database_engines', []), true)) {
-            throw ValidationException::withMessages(['engine' => 'Select a supported database engine.']);
-        }
+        return DB::transaction(function () use ($actor, $application, $engine, $name, $username, $idempotencyKey): DatabaseRequest {
+            if (! in_array($engine, config('hostnur.server.database_engines', []), true)) {
+                throw ValidationException::withMessages(['engine' => 'Select a supported database engine.']);
+            }
 
-        $validated = validator([
-            'database_name' => $name,
-            'username' => $username,
-        ], [
-            'database_name' => ['required', 'string', 'regex:/^[a-z][a-z0-9_]{0,63}$/'],
-            'username' => ['required', 'string', 'regex:/^[a-z][a-z0-9_]{0,63}$/'],
-        ])->validate();
+            $validated = validator([
+                'database_name' => $name,
+                'username' => $username,
+            ], [
+                'database_name' => ['required', 'string', 'regex:/^[a-z][a-z0-9_]{0,63}$/'],
+                'username' => ['required', 'string', 'regex:/^[a-z][a-z0-9_]{0,63}$/'],
+            ])->validate();
 
-        $request = DatabaseRequest::create([
-            'application_id' => $application->getKey(),
-            'engine' => DatabaseEngine::from($engine),
-            'database_name' => $validated['database_name'],
-            'username' => $validated['username'],
-            'password' => Str::password(32, symbols: false),
-            'state' => RequestState::Requested,
-        ]);
+            $request = DatabaseRequest::create([
+                'application_id' => $application->getKey(),
+                'engine' => DatabaseEngine::from($engine),
+                'database_name' => $validated['database_name'],
+                'username' => $validated['username'],
+                'password' => Str::password(32, symbols: false),
+                'state' => RequestState::Requested,
+            ]);
 
-        $this->registerWithAgent($application, $request);
+            $this->registerWithAgent($application, $request);
 
-        $task = $this->tasks->requestApproved($actor, new OperationRequest(
-            protocolVersion: (int) config('hostnur.protocol_version', 1),
-            requestId: (string) Str::uuid(),
-            idempotencyKey: $idempotencyKey,
-            operation: 'database.provision',
-            resource: null,
-            parameters: ['request' => $request->getKey()],
-            timeoutSeconds: 300,
-        ));
+            $task = $this->tasks->requestApproved($actor, new OperationRequest(
+                protocolVersion: (int) config('hostnur.protocol_version', 1),
+                requestId: (string) Str::uuid(),
+                idempotencyKey: $idempotencyKey,
+                operation: 'database.provision',
+                resource: null,
+                parameters: ['request' => $request->getKey()],
+                timeoutSeconds: 300,
+            ));
 
-        $request->forceFill(['task_id' => $task->getKey()])->save();
+            $request->forceFill(['task_id' => $task->getKey()])->save();
 
-        $this->audit->record($actor, AuditAction::DatabaseRequested, AuditOutcome::Requested, [
-            'resource_kind' => 'application',
-            'resource_id' => $application->getKey(),
-            'metadata' => ['operation' => 'database.provision'],
-        ]);
+            $this->audit->record($actor, AuditAction::DatabaseRequested, AuditOutcome::Requested, [
+                'resource_kind' => 'application',
+                'resource_id' => $application->getKey(),
+                'metadata' => ['operation' => 'database.provision'],
+            ]);
 
-        return $request;
+            return $request;
+        });
     }
 
     public function syncState(DatabaseRequest $request): DatabaseRequest

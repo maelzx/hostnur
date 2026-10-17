@@ -34,7 +34,7 @@ class FirewallIndex extends Component
 
     public function addRule(ServerService $service): void
     {
-        $task = $service->addFirewallRule($this->actor(), $this->port, $this->protocol, $this->source, $this->action, $this->ruleKey);
+        $task = $service->addFirewallRule($this->actor(), $this->port, $this->protocol, $this->source, $this->action, (string) Str::uuid());
 
         session()->flash('status', 'Firewall rule change requested.');
         $this->redirect(route('panel.tasks.show', ['task' => $task->getKey()]));
@@ -50,7 +50,7 @@ class FirewallIndex extends Component
 
     public function setWeb(ServerService $service): void
     {
-        $task = $service->setWebHttpsOnly($this->actor(), $this->https_only, $this->webKey);
+        $task = $service->setWebHttpsOnly($this->actor(), $this->https_only, (string) Str::uuid());
 
         session()->flash('status', 'Web access policy requested.');
         $this->redirect(route('panel.tasks.show', ['task' => $task->getKey()]));

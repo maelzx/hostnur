@@ -38,7 +38,7 @@ class PackagesIndex extends Component
 
     public function control(ServerService $service): void
     {
-        $task = $service->control($this->actor(), $this->serviceId, ServiceAction::from($this->service_action), $this->controlKey);
+        $task = $service->control($this->actor(), $this->serviceId, ServiceAction::from($this->service_action), (string) Str::uuid());
 
         session()->flash('status', 'Service control requested.');
         $this->redirect(route('panel.tasks.show', ['task' => $task->getKey()]));
@@ -46,7 +46,7 @@ class PackagesIndex extends Component
 
     public function install(ServerService $service): void
     {
-        $task = $service->installPackage($this->actor(), $this->packageId, $this->installKey);
+        $task = $service->installPackage($this->actor(), $this->packageId, (string) Str::uuid());
 
         session()->flash('status', 'Package install requested.');
         $this->redirect(route('panel.tasks.show', ['task' => $task->getKey()]));
@@ -82,7 +82,7 @@ class PackagesIndex extends Component
 
     private function applyUpdates(ServerService $service, bool $securityOnly): void
     {
-        $task = $service->upgradePackages($this->actor(), $securityOnly, $this->upgradeKey);
+        $task = $service->upgradePackages($this->actor(), $securityOnly, (string) Str::uuid());
 
         session()->flash('status', 'Package upgrade requested.');
         $this->redirect(route('panel.tasks.show', ['task' => $task->getKey()]));
