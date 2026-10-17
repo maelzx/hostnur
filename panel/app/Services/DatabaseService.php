@@ -128,7 +128,9 @@ final class DatabaseService
     public function rotate(User $actor, DatabaseRequest $request): void
     {
         if (config('hostnur.agent_mode') !== 'real' || $request->state !== RequestState::Succeeded) {
-            return;
+            throw ValidationException::withMessages([
+                'database' => 'Credential rotation requires a provisioned database in real agent mode.',
+            ]);
         }
 
         try {

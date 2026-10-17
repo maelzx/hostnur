@@ -110,12 +110,20 @@ final class CertificateService
         }
 
         if ($certificate->state !== RequestState::Succeeded) {
-            $certificate->forceFill([
+            $simulated = $certificate->task->mode === 'fake';
+
+            $updates = [
                 'state' => RequestState::Succeeded,
                 'observed_state' => 'issued',
-                'observed_provenance' => 'fake',
-                'expires_at' => $certificate->expires_at ?? now()->addDays(90),
-            ])->save();
+                'observed_provenance' => $simulated ? 'fake' : 'real',
+            ];
+
+            // Never fabricate a real expiry; only simulated runs get a placeholder.
+            if ($simulated && $certificate->expires_at === null) {
+                $updates['expires_at'] = now()->addDays(90);
+            }
+
+            $certificate->forceFill($updates)->save();
         }
 
         return $certificate;
