@@ -23,7 +23,7 @@ return [
     |
     | "unavailable" is the safe default and is the only mode allowed in
     | production until a real transport exists (phase 11). "fake" may be selected
-    | only in local/testing environments. "real" reports unavailable for now.
+    | only in local/testing environments. "real" talks to the local agent socket.
     |
     */
 

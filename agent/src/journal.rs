@@ -927,6 +927,14 @@ impl Journal {
 
     /// Register (or update) a backup intent.
     pub fn set_backup(&self, record: &BackupRecord) -> Result<(), JournalError> {
+        if let Ok(Some(existing)) = self.backup(&record.backup_id)
+            && existing.application_id != record.application_id
+        {
+            return Err(JournalError::Query(
+                "backup identity conflicts with another application".to_string(),
+            ));
+        }
+
         self.connection
             .execute(
                 "INSERT INTO backups (backup_id, scope, application_id, created_at, updated_at)

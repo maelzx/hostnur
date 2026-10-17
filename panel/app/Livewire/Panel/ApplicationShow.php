@@ -2,8 +2,12 @@
 
 namespace App\Livewire\Panel;
 
+use App\Agent\AgentContractException;
 use App\Agent\Dto\OperationRequest;
 use App\Agent\Dto\ResourceRef;
+use App\Agent\Exceptions\AgentRemoteException;
+use App\Agent\Exceptions\AgentTransportException;
+use App\Agent\Exceptions\AgentUnavailableException;
 use App\Contracts\AgentClient;
 use App\Enums\DomainHttpsPolicy;
 use App\Enums\ResourceKind;
@@ -22,6 +26,7 @@ use App\Services\DeploymentService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -144,7 +149,8 @@ class ApplicationShow extends Component
             $logs = $agent->applicationLogs($this->observationRequest('application.logs'));
             $this->logLines = $logs->lines;
             $this->logTruncated = $logs->truncated;
-        } catch (\Throwable) {
+        } catch (AgentTransportException|AgentUnavailableException|AgentRemoteException|AgentContractException $exception) {
+            Log::warning('Application observation unavailable', ['exception' => $exception::class, 'message' => $exception->getMessage()]);
             $this->logLines = [];
             $this->logTruncated = false;
             $this->logsUnavailable = 'Application logs are unavailable.';
@@ -154,7 +160,8 @@ class ApplicationShow extends Component
             $metrics = $agent->applicationMetrics($this->observationRequest('application.metrics'));
             $this->storageUsedBytes = $metrics->storageUsedBytes;
             $this->storageTotalBytes = $metrics->storageTotalBytes;
-        } catch (\Throwable) {
+        } catch (AgentTransportException|AgentUnavailableException|AgentRemoteException|AgentContractException $exception) {
+            Log::warning('Application observation unavailable', ['exception' => $exception::class, 'message' => $exception->getMessage()]);
             $this->storageUsedBytes = null;
             $this->storageTotalBytes = null;
         }
@@ -174,7 +181,8 @@ class ApplicationShow extends Component
                     'observed_at' => Carbon::parse($observation->sampledAt),
                 ])->save();
             }
-        } catch (\Throwable) {
+        } catch (AgentTransportException|AgentUnavailableException|AgentRemoteException|AgentContractException $exception) {
+            Log::warning('Application observation unavailable', ['exception' => $exception::class, 'message' => $exception->getMessage()]);
             $this->observedLifecycle = null;
             $this->observedMode = null;
             $this->observedAt = null;

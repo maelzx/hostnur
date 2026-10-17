@@ -31,7 +31,7 @@
                                 <x-ui.button
                                     type="button"
                                     variant="danger"
-                                    wire:click="removeRule({{ $rule['port'] }}, '{{ $rule['protocol'] }}', '{{ $rule['source'] }}', '{{ $rule['action'] }}')"
+                                    wire:click="removeRule({{ (int) $rule['port'] }}, @js($rule['protocol']), @js($rule['source']), @js($rule['action']))"
                                 >Remove</x-ui.button>
                             @endif
                         </li>

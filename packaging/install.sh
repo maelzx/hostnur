@@ -114,7 +114,7 @@ done
 apt-get update -qq
 apt-get install -y -qq nginx php${PHP_VERSION}-fpm php${PHP_VERSION}-cli php${PHP_VERSION}-sqlite3 \
   php${PHP_VERSION}-mbstring php${PHP_VERSION}-xml php${PHP_VERSION}-curl php${PHP_VERSION}-zip \
-  php${PHP_VERSION}-intl composer git unzip sqlite3 rsync curl ca-certificates python3 >/dev/null
+  php${PHP_VERSION}-intl composer git unzip sqlite3 rsync curl ca-certificates python3 psmisc >/dev/null
 
 # Node.js/npm for Laravel frontend builds (`npm ci && npm run build`).
 if ! command -v node >/dev/null 2>&1; then
@@ -212,15 +212,8 @@ HOSTNUR_AGENT_MODE=real
 HOSTNUR_AGENT_SOCKET=${AGENT_SOCKET}
 HOSTNUR_CONTRACTS_PATH=${CONTRACTS_DIR}/v1
 EOF
-    php artisan key:generate --force >/dev/null
     touch database/database.sqlite
     php artisan migrate --force
-    python3 - <<'PY'
-p="bootstrap/app.php"; s=open(p).read()
-if "trustProxies" not in s:
-    s=s.replace("        ]);\n    })", "        ]);\n        $middleware->trustProxies(at: \"*\");\n    })",1)
-    open(p,"w").write(s)
-PY
     php artisan config:clear >/dev/null 2>&1 || true
     php artisan view:clear >/dev/null 2>&1 || true
   )

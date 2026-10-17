@@ -86,7 +86,14 @@ final class BackupService
 
     public function deletePolicy(User $actor, BackupPolicy $policy): void
     {
+        $applicationId = $policy->application_id;
         $policy->delete();
+
+        $this->audit->record($actor, AuditAction::BackupPolicyDeleted, AuditOutcome::Success, [
+            'resource_kind' => 'application',
+            'resource_id' => $applicationId,
+            'metadata' => ['operation' => 'backup.policy_deleted'],
+        ]);
     }
 
     public function requestBackup(User $actor, BackupPolicy $policy, string $idempotencyKey): Backup

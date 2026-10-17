@@ -1,3 +1,4 @@
 /etc/nginx/sites-available/hostnur-panel
 /etc/nginx/conf.d/hostnur-sites.conf
 /etc/php/8.3/fpm/pool.d/hostnur-panel.conf
+/etc/hostnur/panel-tls.conf.example

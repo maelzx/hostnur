@@ -25,7 +25,7 @@ Flags:
 - `--php84` — also install PHP 8.4 (for applications that need it).
 
 Without `--domain`/`--email`, TLS is skipped and the panel is only reachable on
-`http://127.0.0.1:8080` (connect over an SSH tunnel).
+`http://<server-ip>:80` (open port 80; add a domain + TLS later).
 
 ## Create the first administrator
 

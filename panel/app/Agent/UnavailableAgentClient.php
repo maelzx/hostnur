@@ -74,6 +74,11 @@ final class UnavailableAgentClient implements AgentClient
         throw new AgentUnavailableException('The agent is unavailable, so the schedule was not registered.');
     }
 
+    public function removeSchedule(OperationRequest $request): void
+    {
+        throw new AgentUnavailableException('The agent is unavailable, so the schedule was not removed.');
+    }
+
     public function registerDatabase(OperationRequest $request): array
     {
         throw new AgentUnavailableException('The agent is unavailable, so the database was not registered.');

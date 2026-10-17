@@ -144,7 +144,7 @@ final class DatabaseService
             ]);
         }
 
-        $this->audit->record($actor, AuditAction::DatabaseRequested, AuditOutcome::Requested, [
+        $this->audit->record($actor, AuditAction::DatabaseCredentialRotated, AuditOutcome::Requested, [
             'resource_kind' => 'application',
             'resource_id' => $request->application_id,
             'metadata' => ['operation' => 'database.rotate'],

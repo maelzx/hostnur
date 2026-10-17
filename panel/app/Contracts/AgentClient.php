@@ -53,6 +53,11 @@ interface AgentClient
     public function registerSchedule(OperationRequest $request): void;
 
     /**
+     * Remove an application schedule from the agent registry (and its timers).
+     */
+    public function removeSchedule(OperationRequest $request): void;
+
+    /**
      * Register a database allocation and return the agent-derived identifiers
      * (`database`, `username`). Real adapters return the registry response;
      * others return an empty array.

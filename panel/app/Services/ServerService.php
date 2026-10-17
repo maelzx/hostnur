@@ -2,9 +2,13 @@
 
 namespace App\Services;
 
+use App\Agent\AgentContractException;
 use App\Agent\Dto\OperationRequest;
 use App\Agent\Dto\ResourceRef;
 use App\Agent\Dto\ServerSnapshot;
+use App\Agent\Exceptions\AgentRemoteException;
+use App\Agent\Exceptions\AgentTransportException;
+use App\Agent\Exceptions\AgentUnavailableException;
 use App\Agent\OperationCatalog;
 use App\Contracts\AgentClient;
 use App\Enums\AgentMode;
@@ -12,8 +16,10 @@ use App\Enums\AuditAction;
 use App\Enums\AuditOutcome;
 use App\Enums\ResourceKind;
 use App\Enums\ServiceAction;
+use App\Models\ApprovedPackage;
 use App\Models\Task;
 use App\Models\User;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -35,9 +41,9 @@ final class ServerService
     {
         try {
             return $this->agent->snapshot();
-        } catch (\Throwable) {
-            // Reads degrade to an unavailable observation rather than erroring the
-            // page, so a busy/unreachable agent never blanks a screen.
+        } catch (AgentTransportException|AgentUnavailableException|AgentRemoteException|AgentContractException $exception) {
+            Log::warning('Server snapshot unavailable', ['exception' => $exception::class, 'message' => $exception->getMessage()]);
+
             return new ServerSnapshot(
                 protocolVersion: (int) config('hostnur.protocol_version', 1),
                 mode: AgentMode::Unavailable,
@@ -93,7 +99,10 @@ final class ServerService
     {
         $this->assertAgentAvailable();
 
-        if (! in_array($packageId, config('hostnur.server.packages', []), true)) {
+        $approved = in_array($packageId, config('hostnur.server.packages', []), true)
+            || ApprovedPackage::query()->where('name', $packageId)->exists();
+
+        if (! $approved) {
             throw ValidationException::withMessages(['package' => 'Select a package from the approved catalog.']);
         }
 

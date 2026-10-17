@@ -65,11 +65,9 @@ gen_release() {
             -o "APT::FTPArchive::Release::Components=$COMPONENT" \
             release "dists/$CODENAME" > "dists/$CODENAME/Release" )
     else
-        {
-            printf 'Origin: %s\nLabel: %s\nSuite: %s\nCodename: %s\nArchitectures: %s\nComponents: %s\n' \
-                "$ORIGIN" "$LABEL" "$CODENAME" "$CODENAME" "$ARCH" "$COMPONENT"
-            ( cd "$DIST" && printf 'MD5Sum:\n' && find binary-$ARCH -type f -printf ' %s %p\n' )
-        } > "$OUT/dists/$CODENAME/Release"
+        # Do not emit an invalid Release (no hashes / unprefixed paths).
+        echo "apt-ftparchive is required to build a valid Release file" >&2
+        exit 1
     fi
 }
 

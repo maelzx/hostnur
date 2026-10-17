@@ -94,9 +94,18 @@ pub fn storage(apps_root: &Path, application_id: &Uuid) -> Option<(u64, u64)> {
 /// Start or stop every application-owned `hn-<fragment>-*` service.
 pub fn control_units(app_fragment: &str, action: &str) -> Result<Vec<String>, String> {
     let units = list_units(app_fragment)?;
+
+    if units.len() > MAX_UNITS {
+        // Refuse rather than leave some units running after a "stop".
+        return Err(format!(
+            "too many application units ({}) to control safely",
+            units.len()
+        ));
+    }
+
     let mut controlled = Vec::new();
 
-    for unit in units.into_iter().take(MAX_UNITS) {
+    for unit in units {
         run_systemctl(&[action, &unit])?;
         controlled.push(unit);
     }
@@ -163,8 +172,14 @@ fn run_systemctl_raw(args: &[&str]) -> Result<Vec<u8>, String> {
 fn redact(line: &str) -> String {
     let lower = line.to_ascii_lowercase();
     for needle in ["password=", "secret=", "app_key=", "token="] {
-        if lower.contains(needle) && !lower.contains("[redacted]") {
-            return format!("{line} [redacted]");
+        if let Some(position) = lower.find(needle) {
+            let start = position + needle.len();
+            let end = line[start..]
+                .find(char::is_whitespace)
+                .map(|offset| start + offset)
+                .unwrap_or(line.len());
+            // Mask the value; never return the secret-bearing line intact.
+            return format!("{}[redacted]{}", &line[..start], &line[end..]);
         }
     }
     line.to_string()

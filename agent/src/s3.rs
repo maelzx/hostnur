@@ -5,6 +5,8 @@
 //! are signed; the payload hash is sent explicitly so the request can be verified
 //! end-to-end. No long-lived credentials are logged.
 
+use std::os::unix::fs::PermissionsExt;
+
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 
@@ -36,6 +38,12 @@ impl S3Config {
     /// Load destination settings from a small TOML file. Returns `None` when the
     /// file is absent or incomplete, so backups simply stay local.
     pub fn load(path: &std::path::Path) -> Option<S3Config> {
+        // Destination credentials must not be readable by group/other.
+        let metadata = std::fs::metadata(path).ok()?;
+        if metadata.permissions().mode() & 0o077 != 0 {
+            return None;
+        }
+
         let text = std::fs::read_to_string(path).ok()?;
         let value: toml::Value = toml::from_str(&text).ok()?;
         let table = value.as_table()?;
@@ -44,6 +52,7 @@ impl S3Config {
                 .get(key)
                 .and_then(toml::Value::as_str)
                 .unwrap_or("")
+                .trim()
                 .to_string()
         };
 
@@ -229,6 +238,9 @@ fn split_endpoint(endpoint: &str) -> Result<(String, String), String> {
         .ok_or_else(|| "endpoint must start with https:// or http://".to_string())?;
     if rest.is_empty() {
         return Err("endpoint is missing a host".to_string());
+    }
+    if rest.contains('/') {
+        return Err("endpoint must be scheme://host[:port] without a path".to_string());
     }
     Ok((scheme.to_string(), rest.to_string()))
 }

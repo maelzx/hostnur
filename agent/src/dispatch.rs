@@ -1099,7 +1099,7 @@ impl<'a> AgentHandler<'a> {
                     backup_id.as_str(),
                     "application_data",
                     &recipient,
-                    "quiesced",
+                    "best-effort",
                     &clock::now_rfc3339(),
                     archive_len,
                     sealed_bytes,
@@ -1638,16 +1638,9 @@ impl<'a> AgentHandler<'a> {
         let last_idle = self.cpu_last_idle.swap(idle, Ordering::Relaxed);
 
         if last_total == 0 || total <= last_total {
-            std::thread::sleep(Duration::from_millis(200));
-            let (total2, idle2) = observe::cpu_times()?;
-            self.cpu_last_total.store(total2, Ordering::Relaxed);
-            self.cpu_last_idle.store(idle2, Ordering::Relaxed);
-            let delta_total = total2.saturating_sub(total);
-            let delta_idle = idle2.saturating_sub(idle);
-            if delta_total == 0 {
-                return None;
-            }
-            return Some(((delta_total - delta_idle) as f64 / delta_total as f64) * 100.0);
+            // First observation: the sample is stored above; the next snapshot
+            // computes a real interval. Avoid blocking the serve loop with a sleep.
+            return None;
         }
 
         let delta_total = total - last_total;

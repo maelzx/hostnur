@@ -15,6 +15,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Served behind the host's nginx (unix socket); trust its forwarding
+        // headers so scheme and client IP are correct.
+        $middleware->trustProxies(at: '*');
+
         $middleware->alias([
             'administrator' => EnsureAdministrator::class,
             'mfa' => EnsureMfaVerified::class,

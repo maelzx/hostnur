@@ -65,6 +65,8 @@ enum AuditAction: string
     case DatabaseRequested = 'application.database_requested';
 
     case DatabaseRemoved = 'application.database_removed';
+    case DatabaseCredentialRotated = 'application.database_credential_rotated';
     case BackupPolicyCreated = 'application.backup_policy_created';
+    case BackupPolicyDeleted = 'application.backup_policy_deleted';
     case BackupRequested = 'application.backup_requested';
 }

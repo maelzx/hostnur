@@ -108,6 +108,11 @@ final class FakeAgentClient implements AgentClient
         // No durable registry in the fake adapter.
     }
 
+    public function removeSchedule(OperationRequest $request): void
+    {
+        // No durable registry in the fake adapter.
+    }
+
     public function removePackage(OperationRequest $request): void
     {
         // No durable registry in the fake adapter.

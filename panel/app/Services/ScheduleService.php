@@ -69,6 +69,20 @@ final class ScheduleService
     public function delete(User $actor, ScheduledJob $job): void
     {
         $applicationId = $job->application_id;
+
+        if (config('hostnur.agent_mode') === 'real') {
+            // Remove the registered timers/services before dropping the record.
+            $this->agent->removeSchedule(new OperationRequest(
+                protocolVersion: (int) config('hostnur.protocol_version', 1),
+                requestId: (string) Str::uuid(),
+                idempotencyKey: (string) Str::uuid(),
+                operation: 'agent.remove_schedule',
+                resource: null,
+                parameters: ['schedule' => $job->getKey()],
+                timeoutSeconds: null,
+            ));
+        }
+
         $job->delete();
 
         $this->audit->record($actor, AuditAction::ScheduleDeleted, AuditOutcome::Success, [

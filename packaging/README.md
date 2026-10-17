@@ -86,7 +86,7 @@ curl -fsSL https://github.com/maelzx/hostnur/releases/latest/download/install.sh
 ```
 
 Without `--domain`/`--email` the panel is only reachable on
-`http://127.0.0.1:8080` (use an SSH tunnel); TLS is skipped. Flags/env:
+`http://<server-ip>:80`; TLS is skipped. Flags/env:
 
 - `--domain <fqdn>` — serve the panel on this hostname with Let's Encrypt TLS.
 - `--email <addr>` — ACME contact email (required for `--domain`).

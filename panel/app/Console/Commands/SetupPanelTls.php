@@ -87,10 +87,17 @@ class SetupPanelTls extends Command
                 'certbot', 'certonly', '--webroot', '-w', $webroot,
                 '-d', $domain, '--agree-tos', '--no-eff-email',
                 '-m', $email, '--non-interactive',
+                // Reload nginx after future renewals (saved by certbot).
+                '--deploy-hook', 'systemctl reload nginx',
             ]);
 
             if (! $result->successful()) {
                 $this->error('Certificate issuance failed: '.trim($result->errorOutput() ?: $result->output()));
+
+                // Keep the panel reachable over HTTP (avoid a 301-only site).
+                $this->writeSite($site, $this->httpServeSite($domain, $root.'/public', $socket));
+                $this->enableSite($site);
+                $this->nginxReload();
 
                 return self::FAILURE;
             }
@@ -99,7 +106,7 @@ class SetupPanelTls extends Command
         }
 
         // 3. Final HTTPS site with an HTTP redirect.
-        $this->writeSite($site, $this->httpsSite($domain, $root.'/public', $socket));
+        $this->writeSite($site, $this->httpsSite($domain, $root.'/public', $socket, $webroot));
         $this->enableSite($site);
 
         if (! $this->nginxReload()) {
@@ -127,13 +134,13 @@ class SetupPanelTls extends Command
         NGINX;
     }
 
-    private function httpsSite(string $domain, string $public, string $socket): string
+    private function httpsSite(string $domain, string $public, string $socket, string $webroot): string
     {
         return <<<NGINX
         server {
             listen 80 default_server;
             server_name {$domain} _;
-            location ^~ /.well-known/acme-challenge/ { root /var/www/hostnur-acme; }
+            location ^~ /.well-known/acme-challenge/ { root {$webroot}; }
             location / { return 301 https://{$domain}\$request_uri; }
         }
         server {

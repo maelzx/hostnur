@@ -2,9 +2,13 @@
 
 namespace App\Livewire\Panel;
 
+use App\Agent\AgentContractException;
 use App\Agent\Dto\OperationRequest;
 use App\Agent\Dto\ServerSnapshot;
 use App\Agent\Dto\ServerUpdatesSnapshot;
+use App\Agent\Exceptions\AgentRemoteException;
+use App\Agent\Exceptions\AgentTransportException;
+use App\Agent\Exceptions\AgentUnavailableException;
 use App\Contracts\AgentClient;
 use App\Enums\AgentMode;
 use App\Enums\ApplicationStatus;
@@ -13,6 +17,7 @@ use App\Models\Application;
 use App\Models\Task;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -84,8 +89,9 @@ class Dashboard extends Component
             );
 
             return ServerSnapshot::fromArray($sample);
-        } catch (\Throwable) {
-            // A busy/unreachable agent must not blank the whole page.
+        } catch (AgentTransportException|AgentUnavailableException|AgentRemoteException|AgentContractException $exception) {
+            Log::warning('Dashboard snapshot unavailable', ['exception' => $exception::class, 'message' => $exception->getMessage()]);
+
             return new ServerSnapshot(
                 protocolVersion: (int) config('hostnur.protocol_version', 1),
                 mode: AgentMode::Unavailable,

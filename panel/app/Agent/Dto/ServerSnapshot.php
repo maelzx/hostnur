@@ -277,6 +277,7 @@ final readonly class ServerSnapshot
             if (! is_int($port) || $port < 1 || $port > 65535
                 || ! in_array($protocol, ['tcp', 'udp'], true)
                 || ! is_string($source) || $source === ''
+                || preg_match('#^[A-Za-z0-9.:_/-]+$#', $source) !== 1
                 || ! in_array($action, ['allow', 'deny'], true)) {
                 throw AgentContractException::invalidParameters('Firewall rule is invalid.');
             }
