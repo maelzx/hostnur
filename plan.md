@@ -2008,14 +2008,35 @@ suites after any agent edit.
   instead of overwriting operator-approved peers.
 - Checks: Rust **144 tests** + clippy; PHP **267 tests**; `pint`; `bash -n`. Commit
   `7e6face`. Session 048 remains the detailed reference for the rest.
-- **Remaining (medium/low)**: agent per-request timeout wiring + async long ops; S3
-  request timeout/streaming; restore symlink-walk; approved-package install gate;
-  idempotency-key reuse/record ordering; degradation catch scope (log it); wizard
-  transaction/compensation; secret-valued Livewire properties; `wire:click` XSS in the
-  firewall view; `appstate` log redaction; installer ordering (`psmisc`, node pipe,
-  migrate order); `service.control` resource contract; schedule-delete timer removal;
-  `SetupPanelTls` failure ordering/renewal hook/webroot; `build-repo` fallback hashes;
-  `trustProxies` parity; plus the listed lows.
+- **Also fixed** (commit `a52eb46`, `1495ed2`, `9c4df28`):
+  - Panel: approved-package **install gate** includes the operator catalog; agent reads
+    degrade only for **agent/transport contract errors** (logged, not arbitrary
+    Throwables); firewall view uses `@js` + a source charset check (**XSS**); audit for
+    backup-policy delete and a correct database-credential-rotation action; schedule
+    delete removes the agent's **timers**; backup/database/certificate **request records
+    are transactional**; **per-action idempotency keys**; certificate observed
+    **provenance/expiry are truthful** for real mode; credential rotation refuses
+    outside real mode.
+  - Agent: service resources accept **bounded safe ids** (PHP matches Rust); archive log
+    "redaction" masks the **value**; CPU first sample no longer sleeps inline;
+    `control_units` errors above the cap; `/etc/hostnur/s3.toml` must be **0600** and
+    values are trimmed; backup identity conflicts are refused; S3 endpoint paths are
+    rejected; manifest consistency is `best-effort`.
+  - Packaging: `trustProxies` **baked into `bootstrap/app.php`** (removes installer/deb
+    divergence); installer drops the redundant `key:generate` and installs `psmisc`;
+    `agent.toml.example`, conffiles and README corrected; `SetupPanelTls` keeps the
+    panel reachable over **HTTP on failure**, adds a renewal `--deploy-hook`, and uses the
+    configured webroot; `build-repo` **requires** `apt-ftparchive` rather than emitting an
+    invalid Release. **Disproved:** transport `max_message_bytes` already comes from
+    config (`runtime.rs:133`).
+- **Remaining (lower priority / architectural)**: **agent async long mutations + request
+  timeout enforcement** (the top item — currently blocks reads while running); wizard
+  `finish()` single transaction/compensation; secret-valued Livewire properties
+  (session-snapshot exposure); `control_state`/`server` backup scopes; S3
+  streaming/timeout + restore symlink-walk; update-list/upgrade count semantics;
+  `read_logs`/`arguments` error propagation; firewall range parsing; atomic
+  `complete_operation` finish; static `runtime_version` edge; `registerDatabase` DTO;
+  FPM log rotation.
 
 ### Session 044 — UI/UX revamp + truthful application status (2026-10-15)
 
