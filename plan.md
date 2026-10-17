@@ -1790,6 +1790,11 @@ ask only when the choice materially changes scope, cost, access, or product beha
 - **Real CI run** of `.github/workflows/packages.yml` (needs a push/tag) + real-host
   `.deb` install/upgrade validation; choose the **signing key** and publish the signed
   APT repo (install-time TLS is wired via `panel-tls.conf`).
+- **Interim installer gaps for app deploys** (panel deploy is fine): it does not install
+  **Node/npm** (Laravel `npm run build` fails), does not write **`acme_email`** into
+  `agent.toml` even when `--email` is passed (hosted-app `certificate.issue` fails), and
+  installs only **PHP 8.3** (apps pinned to 8.4 need php8.4). Fix in `packaging/install.sh`
+  before relying on it for a full app deploy on a clean VPS.
 
 **Open decisions gating release:** official product domain; license/public-beta terms;
 release signing key/hosting; a separate restore VM.
