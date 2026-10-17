@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Agent\AgentContractException;
 use App\Agent\Dto\OperationRequest;
 use App\Agent\Dto\ResourceRef;
+use App\Agent\Exceptions\AgentRemoteException;
 use App\Agent\Exceptions\AgentUnavailableException;
 use App\Agent\OperationCatalog;
 use App\Contracts\AgentClient;
@@ -367,16 +368,22 @@ final class TaskService
 
         try {
             $snapshot = $this->agent->inspect($task->execution_id);
-        } catch (AgentContractException $exception) {
-            if ($exception->errorCode === ErrorCode::ExecutionUnknown) {
+        } catch (Throwable $exception) {
+            $code = match (true) {
+                $exception instanceof AgentRemoteException => $exception->errorCode(),
+                $exception instanceof AgentContractException => $exception->errorCode,
+                default => null,
+            };
+
+            if ($code === ErrorCode::ExecutionUnknown) {
                 $task->transitionTo(TaskStatus::Unknown);
                 $task->finished_at ??= now();
-                $task->error_code = $exception->errorCode->value;
+                $task->error_code = $code->value;
                 $task->error_message = Redactor::message($exception->getMessage());
                 $task->save();
 
                 $this->audit->forTask($task->actor, AuditAction::TaskUnknown, AuditOutcome::Failure, $task);
-                $task->recordEvent('unknown', TaskEventLevel::Warning, 'Execution outcome is unknown and needs investigation.', ['code' => $exception->errorCode->value]);
+                $task->recordEvent('unknown', TaskEventLevel::Warning, 'Execution outcome is unknown and needs investigation.', ['code' => $code->value]);
             }
 
             return;
@@ -460,6 +467,7 @@ final class TaskService
 
         $code = match (true) {
             $exception instanceof AgentUnavailableException => $exception->errorCode(),
+            $exception instanceof AgentRemoteException => $exception->errorCode(),
             $exception instanceof AgentContractException => $exception->errorCode,
             $exception instanceof TaskNotAuthorizedException => $exception->errorCode(),
             default => ErrorCode::OperationFailed,

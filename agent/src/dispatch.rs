@@ -8,6 +8,7 @@
 //! pretending to run.
 
 use std::collections::BTreeMap;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
@@ -1062,6 +1063,8 @@ impl<'a> AgentHandler<'a> {
         if let Err(error) = std::fs::create_dir_all(&self.backup_dir) {
             return error_body(ContractErrorCode::OperationFailed, &error.to_string());
         }
+        // Sealed artifacts (and the brief plaintext window) are operator-only.
+        let _ = std::fs::set_permissions(&self.backup_dir, std::fs::Permissions::from_mode(0o700));
 
         match record.scope.as_str() {
             "application_data" => {
@@ -1083,6 +1086,7 @@ impl<'a> AgentHandler<'a> {
                     match crate::backup::seal_file(&archive, &sealed_path, &recipient) {
                         Ok(value) => value,
                         Err(message) => {
+                            let _ = std::fs::remove_file(&archive);
                             return error_body(ContractErrorCode::OperationFailed, &message);
                         }
                     };
@@ -1114,8 +1118,24 @@ impl<'a> AgentHandler<'a> {
                 if let Some(s3) = &self.s3 {
                     let artifact_key = format!("{backup_id}.tar.gz.age");
                     let manifest_key = format!("{backup_id}.manifest.json");
-                    let artifact_bytes = std::fs::read(&sealed_path).unwrap_or_default();
-                    let manifest_bytes = std::fs::read(&manifest_path).unwrap_or_default();
+                    let artifact_bytes = match std::fs::read(&sealed_path) {
+                        Ok(bytes) => bytes,
+                        Err(error) => {
+                            return error_body(
+                                ContractErrorCode::OperationFailed,
+                                &format!("could not read sealed artifact: {error}"),
+                            );
+                        }
+                    };
+                    let manifest_bytes = match std::fs::read(&manifest_path) {
+                        Ok(bytes) => bytes,
+                        Err(error) => {
+                            return error_body(
+                                ContractErrorCode::OperationFailed,
+                                &format!("could not read manifest: {error}"),
+                            );
+                        }
+                    };
 
                     let uploaded = crate::s3::put_object(
                         s3,

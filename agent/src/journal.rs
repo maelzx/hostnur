@@ -1201,10 +1201,22 @@ fn row_to_managed_application(row: &rusqlite::Row<'_>) -> rusqlite::Result<Manag
 
 /// Canonical, order-stable representation of an intent for dedupe comparison.
 fn canonical_intent(request: &OperationRequest) -> Result<String, JournalError> {
+    // Never persist secret-bearing parameters (age identity, SQL dump) in the
+    // durable execution journal; keep only a marker for conflict detection.
+    let mut parameters = request.parameters.clone();
+    for key in ["identity", "dump"] {
+        if parameters.contains_key(key) {
+            parameters.insert(
+                key.to_string(),
+                serde_json::Value::String("[redacted]".to_string()),
+            );
+        }
+    }
+
     let intent = serde_json::json!({
         "operation": request.operation,
         "resource": request.resource,
-        "parameters": request.parameters,
+        "parameters": parameters,
     });
     serde_json::to_string(&intent).map_err(|err| JournalError::Query(err.to_string()))
 }
@@ -1234,4 +1246,39 @@ const fn status_str(status: OperationStatus) -> &'static str {
 
 fn query_err(error: crate::contract::ContractError) -> JournalError {
     JournalError::Query(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn canonical_intent_redacts_secret_parameters() {
+        let request = OperationRequest {
+            protocol_version: 1,
+            request_id: Uuid::parse("b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e").unwrap(),
+            idempotency_key: Uuid::parse("c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f").unwrap(),
+            operation: "backup.restore".to_string(),
+            resource: None,
+            parameters: [
+                (
+                    "identity".to_string(),
+                    serde_json::json!("AGE-SECRET-KEY-1TEST"),
+                ),
+                (
+                    "dump".to_string(),
+                    serde_json::json!("INSERT INTO t VALUES (1)"),
+                ),
+                ("artifact".to_string(), serde_json::json!("x.age")),
+            ]
+            .into_iter()
+            .collect(),
+            timeout_seconds: None,
+        };
+
+        let canonical = canonical_intent(&request).unwrap();
+        assert!(!canonical.contains("AGE-SECRET-KEY"));
+        assert!(!canonical.contains("INSERT INTO"));
+        assert!(canonical.contains("x.age"));
+    }
 }

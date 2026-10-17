@@ -54,7 +54,7 @@ copy_maintainer_scripts() {
 
 build_agent() {
     local root="$WORK/hostnur-agent"
-    install -D -m 0755 "$BUNDLE/bin/hostnur-agent" "$root/usr/bin/hostnur-agent"
+    install -D -m 0755 "$BUNDLE/bin/hostnur-agent" "$root/usr/local/bin/hostnur-agent"
     install -D -m 0644 "$SYSTEMD_DIR/hostnur-agent.service" "$root/lib/systemd/system/hostnur-agent.service"
     install -D -m 0644 "$DEB_DIR/hostnur-agent/agent.toml" "$root/etc/hostnur/agent.toml"
     mkdir -p "$root/DEBIAN"

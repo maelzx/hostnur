@@ -190,7 +190,7 @@
         "schedule.apply": {
             "resource": "schedule",
             "parameters": {
-                "revision": { "type": "uuid", "required": true }
+                "revision": { "type": "integer", "required": true }
             },
             "read_only": false,
             "retry": "no_blind_replay"

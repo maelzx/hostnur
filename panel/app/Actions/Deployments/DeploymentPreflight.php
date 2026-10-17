@@ -83,7 +83,9 @@ final class DeploymentPreflight
     private function capability(string $operation): array
     {
         $capabilities = $this->agent->capabilities();
-        $supported = $this->catalog->supports($operation) && $capabilities->available;
+        $supported = $this->catalog->supports($operation)
+            && $capabilities->available
+            && in_array($operation, $capabilities->operations, true);
 
         return $this->check(
             'capability',

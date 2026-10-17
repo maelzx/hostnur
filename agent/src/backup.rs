@@ -8,6 +8,7 @@
 
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
@@ -120,6 +121,19 @@ pub fn archive_directory(source_dir: &Path, archive_path: &Path) -> Result<(), S
         return Err("backup source directory does not exist".to_string());
     }
 
+    // Pre-create the (still plaintext) archive with owner-only permissions so
+    // there is no world-readable window before sealing. `tar -f` truncates the
+    // existing file and keeps its mode.
+    if let Err(error) = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(archive_path)
+    {
+        return Err(error.to_string());
+    }
+    let _ = std::fs::set_permissions(archive_path, std::fs::Permissions::from_mode(0o600));
+
     let mut spec = CommandSpec::new(Path::new("/usr/bin/tar"), Duration::from_secs(1800));
     spec.args = vec![
         "-C".to_string(),
@@ -136,8 +150,10 @@ pub fn archive_directory(source_dir: &Path, archive_path: &Path) -> Result<(), S
 
     let outcome = run(&spec).map_err(|error| error.to_string())?;
     if outcome.succeeded() {
+        let _ = std::fs::set_permissions(archive_path, std::fs::Permissions::from_mode(0o600));
         Ok(())
     } else {
+        let _ = std::fs::remove_file(archive_path);
         Err(format!("tar exited with code {:?}", outcome.exit_code))
     }
 }

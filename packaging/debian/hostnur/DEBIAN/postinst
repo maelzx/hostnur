@@ -26,7 +26,17 @@ PANEL_UID="$(id -u "$PANEL_USER")"
 # peer allowlist is managed here, and only to add the panel UID).
 if [ -f "$AGENT_CONFIG" ]; then
     if grep -q '^allowed_peer_uids' "$AGENT_CONFIG"; then
-        sed -i "s/^allowed_peer_uids.*/allowed_peer_uids = [${PANEL_UID}]/" "$AGENT_CONFIG"
+        # Add the panel UID without discarding operator-approved peers.
+        CURRENT="$(sed -n 's/^allowed_peer_uids[[:space:]]*=[[:space:]]*\[\(.*\)\].*/\1/p' "$AGENT_CONFIG")"
+        if ! printf '%s' "$CURRENT" | tr ',' '\n' | tr -d ' ' | grep -qx "$PANEL_UID"; then
+            EXISTING="$(printf '%s' "$CURRENT" | tr -d '[:space:]')"
+            if [ -n "$EXISTING" ]; then
+                MERGED="${EXISTING},${PANEL_UID}"
+            else
+                MERGED="${PANEL_UID}"
+            fi
+            sed -i "s/^allowed_peer_uids.*/allowed_peer_uids = [${MERGED}]/" "$AGENT_CONFIG"
+        fi
     else
         printf '\nallowed_peer_uids = [%s]\n' "$PANEL_UID" >> "$AGENT_CONFIG"
     fi

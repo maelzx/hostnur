@@ -1806,6 +1806,189 @@ existing `APP_KEY` (beware hand-written `.env`).
 **Droplet rebuild:** destroy + recreate per `docs/p16-test-host.md` (new IP); the panel/
 agent manual-deploy specifics from this session are appended there.
 
+### Session 048 — Full review of 2c2e53b..e869725; issue log (2026-10-17)
+
+Read-only code review of all 30 commits since the agent-defect audit (133 files,
++9.3k lines: phases 19–21, packaging, installer, dashboard/wizard). Every finding
+below was checked against current source; ✓ = re-verified by the reviewer
+directly. Gates run in this session: `php -l` on all changed panel files ✓,
+`vendor/bin/pint --test` ✓ passed. **Blocked:** Rust `cargo fmt --check` /
+`clippy --all-targets -D warnings` — the `hostnur-rust` Lima VM is stopped;
+start it and re-run both before touching agent code.
+
+**HIGH — agent (Rust):**
+- ✓ **AGE secret key persisted in the journal plaintext.** `backup.restore`
+  takes `identity` as a request parameter (`dispatch.rs:1204`) and
+  `complete_operation` → `journal.accept` writes every parameter into
+  `executions.payload_canonical` (never pruned; audit deferral #6). Every
+  restore permanently stores a decryption key in `agent.db`. Same class:
+  `database.import` stores the whole `dump` text. Strip `identity` (and
+  `dump`) from the canonical intent, or run those ops outside the intent
+  pipeline.
+- ✓ **Silent empty S3 uploads report success.** `std::fs::read(...).unwrap_or_default()`
+  (`dispatch.rs:1117-1118`) — a failed artifact/manifest read PUTs 0 bytes with a
+  valid SigV4 and returns a `sha256` matching nothing in the bucket. Propagate.
+- ✓ **World-readable plaintext archive window + leak on failure.** `backup_dir`
+  created via bare `create_dir_all` (0755) and `tar -czf` creates the *unsealed*
+  archive at umask mode (`dispatch.rs:1062,1076`; `backup.rs:123`): tenant app
+  accounts can read live `shared/` data while it exists; on seal/manifest
+  failure the plaintext dump is stranded (removed only on success). Regresses
+  the 2c2e53b creation-time-mode discipline.
+- **S3 PUT has no timeout, inline in the serve loop.** Bare `ureq::request`
+  (`s3.rs:143`; ureq 2 defaults to no timeout): a blackholed endpoint wedges
+  the whole agent indefinitely. Also unbounded in-memory buffering:
+  `restore_archive` slurps the sealed file and decrypts the full archive into
+  one `Vec` (`backup.rs:202-205`) despite `seal_file`'s never-wholesale-buffer
+  doc; multi-GB restore OOM-kills the root agent mid-run.
+- **Restore follows pre-existing symlinks in the destination.** Archive entry
+  paths are sanitized and symlink entries skipped (`backup.rs:222-234`) — but
+  `unpack_in(dest)` writes *through* symlinks already present in the
+  app-writable `shared/`; a planted link lets the next root restore deposit
+  content outside `dest`. Needs an lstat/openat walk. `set_preserve_permissions(false)`
+  (`backup.rs:207`) also drops exec bits.
+
+**HIGH — panel (PHP):**
+- ✓ **Real-agent framed error codes bypass task mapping.**
+  `AgentRemoteException extends RuntimeException`, but `TaskService.php:370`
+  and the error-code `match` handle only `AgentContractException` /
+  `AgentUnavailableException`. `execution_unknown` from the real agent falls
+  to the generic `Throwable` path → task marked **failed** /
+  `operation_failed`, discarding the code the agent deliberately returns
+  (c9d67cf) and permanently failing possibly-running operations. Give
+  `AgentRemoteException` an `ErrorCode` and map it.
+- ✓ **`schedule.apply` is dead in real mode (contract drift).** Catalog declares
+  `revision` as `"type": "uuid"` (`catalog.json:190-197`);
+  `ScheduleService.php:91` sends the integer revision → agent's `is_uuid`
+  rejects every request before dispatch (the agent never reads the field
+  anyway). Retype the parameter or send the schedule UUID. No
+  `request-schedule-apply` fixture exists to catch it.
+- ✓ **Declared-but-unimplemented ops pass preflight.**
+  `application.rollback`, `domain.apply`, `certificate.install` are in the
+  catalog and panel flows but absent from the agent's `handle` arms;
+  `DeploymentPreflight::capability()` (`DeploymentPreflight.php:83-88`) checks
+  only `$capabilities->available`, never `operations` → rollback passes
+  preflight, then fails `unsupported_operation` at the agent.
+
+**HIGH — packaging:**
+- ✓ **Deb's agent service cannot start.** `hostnur-agent.service:23`
+  `ExecStart=/usr/local/bin/hostnur-agent` but the .deb installs to
+  `/usr/bin` (`build-deb.sh:57`); `postinst`'s `systemctl restart ... || true`
+  masks it and CI (`packages.yml`) never checks `is-active`.
+- ✓ **Panel `postinst` overwrites the agent allowlist.**
+  `sed -i "s/^allowed_peer_uids.*/allowed_peer_uids = [${PANEL_UID}]/"`
+  (`hostnur/DEBIAN/postinst:29`) replaces the whole line (deletes
+  operator-added UIDs) and edits a conffile owned by the *other* package →
+  conffile conflicts on every agent upgrade.
+- (Disproved during verification: the "deb contracts path missing /v1" claim
+  is **wrong** — both `install.sh:213` and the deb postinst consistently use
+  `/opt/hostnur/contracts/v1`.)
+
+**MEDIUM:**
+- ✓ `timeout_seconds` is still never applied agent-side (only validated
+  1..=86400); commit 31e39ef ("honor per-request timeouts") only raised the
+  **panel's** socket timeout — `TaskService.php:348` hardcodes
+  `timeoutSeconds: null`, so `UnixSocketAgentTransport.php:43`'s per-payload
+  branch is dead code, and `deadline_at` is written but never enforced.
+  Inline work got *longer* (tar 1800 s `backup.rs:123`, upgrade 900 s).
+  Audit-doc deferrals #1/#2 stay accurate; the commit message overstates.
+- ✓ New approved-package catalog is not wired to the install path:
+  `ServerService.php:96` gates on `config('hostnur.server.packages')` while
+  the UI lists `ApprovedPackage` rows → catalog-added packages can never be
+  installed.
+- Mount-`()`-minted idempotency keys reused for different payloads
+  (`FirewallIndex.php:31/37`, `BackupIndex.php:36/61`,
+  `PackagesIndex.php:36/85`) → uncaught `conflict` 500s (e.g. `applySecurity`
+  then `applyAll`); `Backup::create` (and Certificate/DatabaseRequest analogues)
+  inserts the row *before* task acceptance → orphan "Requested" records on
+  throw; double-click creates two rows for one task.
+- `catch (\Throwable)` degradation (`ServerService.php:36-50`,
+  `Dashboard.php:79-98`, `ApplicationShow.php:143-181`) also swallows contract
+  violations, TypeErrors and a DB `forceFill` as "agent unavailable", unlogged.
+- Wizard `finish()` (`ApplicationCreate.php:193-294`): six sequential writes,
+  no transaction/compensation → a mid-way failure leaves a half-built app and
+  the retry dead-ends on "slug already in use".
+- Secret material in **public Livewire properties** (`ApplicationCreate.php:85`
+  `$secrets`, `ApplicationShow.php:63-71`, `CertificateIndex.php:21-23`) —
+  values round-trip inside the page snapshot payload between entry and submit.
+- ✓ `firewall-index.blade.php:34` interpolates agent-supplied `source`/
+  `protocol` into a `wire:click` JS expression; `{{ }}` escaping is
+  entity-decoded in the attribute's JS context → a compromised agent response
+  is stored-XSS in the admin session. Mirror the panel's rule regex in
+  `ServerSnapshot::firewallRules()`.
+- `appstate.rs:167` log "redaction" appends `[redacted]` but returns the
+  secret-bearing line intact (`APP_KEY=...`, `password=...` transit whole).
+- `install.sh` update order: agent re-enabled (:185) and fpm restarted (:262)
+  run **before** `migrate` (:237); worker restarts only at :384 → old worker
+  consumes jobs against new schema. Node install pipe under `set -e` (:120)
+  can kill the run though Node is unused; apt-lock wait calls `fuser` (psmisc)
+  which is never installed (:110).
+- `service.control` contract inconsistent three ways: schema/fixture say UUID
+  resource ids; real traffic sends unit names; PHP
+  `ResourceRef::fromArray` *requires* UUID and would reject real payloads.
+- `agent.remove_schedule` implemented agent-side but `ScheduleService::delete`
+  (:67-77) never calls it → systemd timers survive deletion.
+- `SetupPanelTls`: certbot failure exits *after* the HTTP→301 site is live
+  (panel unreachable until rerun, `:96` vs `:125`); no certbot deploy-hook so
+  renewals never reload; `httpsSite` hardcodes the ACME webroot while
+  `httpOnlySite` uses config (:143 vs :133); deb `postinst` runs
+  `migrate --force || true` (:64) and wraps the whole TLS block in `|| true` →
+  dpkg reports success on an unmigrated panel.
+- `apt/build-repo.sh` fallback `Release` (:63-69) has no hashes and unprefixed
+  paths → invalid repo when `apt-ftparchive` is absent.
+- `trustProxies(at: "*")` patched by `install.sh` (:218) but not by the deb →
+  any client can spoof X-Forwarded-For; the two install paths diverge.
+
+**LOW:** first-sample `cpu_percent` sleeps 200 ms inline in the serve loop
+(`dispatch.rs:1621`; delta math itself correct ✓); `list_updates` maps
+apt-failure to "all up to date" and `upgrade` reports `names.len()` as done
+(`packages.rs:161,238`); `read_logs`/`arguments` `unwrap_or_default` erase real
+errors (`dispatch.rs:1364`, `783`); `parse_to_column` drops range/app rules →
+false `HttpsRequired` (`firewall.rs:332-336`); `take(MAX_UNITS)` can leave a
+51st worker running after "stop" (`appstate.rs:99`); `/etc/hostnur/s3.toml`
+mode never checked and `secret_key` untrimmed (`s3.rs:29-34`, `runtime.rs:127`);
+`set_backup` ON CONFLICT silently moves `application_id` (`journal.rs:929-950`);
+`complete_operation` terminal status+result are two statements → `inspect` can
+see `succeeded` with `result: null` (`dispatch.rs:853-858`); `split_endpoint`
+folds a trailing path into the host → silent SignatureDoesNotMatch
+(`s3.rs:225-233`); manifest claims `consistency: "quiesced"` although nothing
+quiesces (`dispatch.rs:1094-1103`); `runtime_version: ''` for static apps is
+rejected by both validators (catalog requires non-empty string,
+`DeploymentService.php:288`); real-mode certificate writes
+`observed_provenance => 'fake'` + fabricated 90-day expiry
+(`CertificateService.php:109-116`); `registerDatabase` response persisted
+without a strict DTO (`DatabaseService.php:183-188`); delete/rotate no-op
+silently outside real mode yet flash success (`DatabaseService.php:92,127`);
+`BackupService::deletePolicy` is the only destructive action with no audit
+(:87-90); `rotate` mislabeled under `DatabaseRequested` (`:147`); transport
+hardcodes 1 MiB vs config `limits.max_message_bytes` (:16);
+`config/hostnur.php:27` stale "real reports unavailable" comment;
+`agent.toml.example` lacks `socket_group`/`php_versions` (following it leaves
+the socket unreachable by the panel); `panel-tls.conf.example` shipped to
+`/etc` but not in conffiles; README drift (":8080" vs `:80 default_server`,
+dead `write_panel_site on` path); FPM error-log path nobody creates/rotates;
+`install.sh:215` regenerates the APP key right after writing it to `.env`.
+
+**Verified correct (highlights):** route+persistent-Livewire middleware cover
+every new component; per-action policy checks; approvals fingerprint +
+mfa_version bound; no `{!! !!}` in new views; `ApprovedPackage` fillable +
+migration clean; DTOs strict on unexpected keys/bounds; SigV4 canonicalization
+matches AWS vectors with no secret in URL/logs; my 2c2e53b guards all still
+present (unit-file allowlist, stdin SQL, SSRF literals, unique temps,
+cancellation boundaries, journal busy_timeout, transactional events); all
+packaging scripts are `set -euo pipefail` with quoted expansions (safe under
+the space-containing repo path); maintainer scripts idempotent; deb never
+bundles `.env`; conffiles match staged paths; agent unit matches the root-run
+privilege model.
+
+**Suggested fix order:** (1) the three secrets/data-integrity highs — journal
+secret strip, S3 read-failure propagate, backup archive modes+cleanup; (2) the
+three dead/broken features — `AgentRemoteException` mapping, `schedule.apply`
+type, deb ExecStart + postinst allowlist edit; (3) mediums (timeout wiring +
+async long ops per session 047's highest-priority note, approved-package
+install gate, idempotency-key/per-record ordering, degradation catch scope);
+(4) lows opportunistically. Re-run Rust fmt/clippy (VM) and the root `*_vm`
+suites after any agent edit.
+
 ### Session 044 — UI/UX revamp + truthful application status (2026-10-15)
 
 - **UI/UX revamp** (using the `ui-ux-pro-max` skill): redesigned the sign-in page
