@@ -631,7 +631,7 @@ dependencies = [
 
 [[package]]
 name = "hostnur-agent"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "age",
  "flate2",
