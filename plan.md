@@ -1,14 +1,9 @@
 # Hostnur — implementation plan and session handoff
 
-Last updated: 2026-10-13.
-
-**Development handoff:** this plan records phases **1–9 complete** (web milestone)
-and **phase 10 complete** (Rust foundation) with blocked manual/VM checks retained
-in sessions 023 and 025. The next implementation slice is **P11.1** (cross-language
-contract), which needs the prepared agent environment (now a Lima Ubuntu 24.04 VM).
-Detailed phases 10–20 are expanded directly under their headings in section 5.
-Section 9 remains the web implementation playbook. Host/package designs below are
-proposed work, not implemented features or verified host behavior.
+Last updated: 2026-10-25. **Current state, beta checklist status and next steps
+live in [`STATUS.md`](STATUS.md) — read that first.** This file is the detailed
+archive: decisions (§2), phase designs (§5), the beta checklist definition (§7)
+and per-session logs (§8, newest first from session 053; older entries follow).
 
 ## 1. Purpose and planning authority
 
@@ -3667,32 +3662,9 @@ Closes the three catalog operations the agent did not implement (session 048 HIG
 
 ### Next session's single slice
 
-**The web milestone (phases 1–9) and the phase-10 Rust foundation are complete.**
-The panel is independently runnable and tested; the agent crate builds, tests and
-runs unprivileged in the Lima VM. See `docs/web-milestone.md` and
-`docs/agent-development.md` for passed gates, blocked checks and acceptance maps.
+Superseded — see [`STATUS.md`](STATUS.md) for the current next steps.
 
-**Phases 11–18 are complete and validated on the VM** (sessions 026–042); phase 16
-is now panel-wired too. **Paused at the user's request** — the throwaway droplet is
-being destroyed, and the next planned work is a **full UI/UX revamp** (the user is
-deciding scope). The interim **curl + bash installer** and release pipeline exist
-(committed locally; push + tag to publish). Deferred items remain: phase 16
-supplied-certificate install + expiry UI; per-app `public/` ACLs; the migration
-recovery gate; phase 19 backup/restore; Debian/APT packaging.
-
-Scope decisions (session 034): MariaDB for phase 18; phase 19 backup/restore
-deferred; phase 20 Debian/APT deferred in favour of a curl+bash bootstrap script;
-phase 21 reuses the throwaway droplet; PHP/Laravel only (other runtimes deferred);
-phase 25 (AI) and phase 26 (platforms) deferred. Recorded follow-ups: per-app
-`public/` ACLs, the migration recovery-prerequisite gate, a dedicated non-root
-panel identity, and pushing commits to observe CI.
-
-Push the phase-10 commit to observe the agent CI workflow; a real CI run is still
-outstanding. The remaining genuine web gates (real browser keyboard/screen-reader
-and 375 px/desktop review; disposable-VM install/systemd/TLS/upgrade/restore/
-isolation) are unchanged and recorded in `docs/web-milestone.md`.
-
-### Current blockers
+### Current blockers (historical, sessions ≤ 033; see STATUS.md)
 
 - No blocker to local web work; the full suite and static gates pass locally and on
   both CI runtimes. Prior Composer-tool diagnostic findings remain recorded, and the

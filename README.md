@@ -5,6 +5,8 @@ It pairs a Laravel/Livewire web panel with a separate privileged Rust agent, and
 hosts apps natively on the server using Linux users, systemd, Nginx and PHP-FPM.
 It targets Ubuntu 24.04 LTS (amd64) and currently provisions PHP/Laravel apps.
 
+Project status and next steps: [`STATUS.md`](STATUS.md).
+
 ## Requirements
 
 - A fresh Ubuntu 24.04 LTS **amd64** server with root access.
