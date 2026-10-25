@@ -44,6 +44,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check the agent version matches the tag
+        run: |
+          crate="$(sed -n 's/^version = "\(.*\)"/\1/p' agent/Cargo.toml | head -1)"
+          tag="${{ steps.version.outputs.tag }}"
+          [ "v${crate}" = "${tag}" ] || { echo "agent/Cargo.toml version ${crate} does not match tag ${tag}" >&2; exit 1; }
+
       - name: Install pinned Rust toolchain
         run: |
           rustup toolchain install 1.99.0 --profile minimal

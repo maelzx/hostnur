@@ -114,7 +114,11 @@ done
 apt-get update -qq
 apt-get install -y -qq nginx php${PHP_VERSION}-fpm php${PHP_VERSION}-cli php${PHP_VERSION}-sqlite3 \
   php${PHP_VERSION}-mbstring php${PHP_VERSION}-xml php${PHP_VERSION}-curl php${PHP_VERSION}-zip \
-  php${PHP_VERSION}-intl composer git unzip sqlite3 rsync curl ca-certificates python3 psmisc >/dev/null
+  php${PHP_VERSION}-intl php${PHP_VERSION}-mysql composer git unzip sqlite3 rsync curl ca-certificates \
+  python3 psmisc mariadb-server >/dev/null
+# Application databases are provisioned in the local MariaDB (agent connects
+# over the unix socket as root).
+systemctl enable --now mariadb >/dev/null 2>&1 || warn "could not start MariaDB."
 
 # Node.js/npm for Laravel frontend builds (`npm ci && npm run build`).
 if ! command -v node >/dev/null 2>&1; then
@@ -145,6 +149,8 @@ PANEL_UID="$(id -u "$PANEL_USER")"
 # --- extract -----------------------------------------------------------------
 log "Installing files under ${INSTALL_ROOT}"
 mkdir -p "$INSTALL_ROOT" "$CONFIG_DIR" "$AGENT_STATE" "$(dirname "$AGENT_SOCKET")"
+# Managed application trees live here: a root-owned, traversable parent.
+install -d -m 0755 -o root -g root "$INSTALL_ROOT/apps"
 tar xzf "$WORK/${HOSTNUR_ASSET}" -C "$WORK"
 # Stop the running agent before replacing its binary (avoid "text file busy").
 if systemctl is-active --quiet hostnur-agent 2>/dev/null; then

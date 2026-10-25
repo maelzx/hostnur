@@ -32,7 +32,8 @@
                 "server_name": { "type": "string", "required": true, "max": 253 },
                 "provider": { "type": "string", "required": true, "max": 64 },
                 "runtime": { "type": "string", "required": true, "max": 32 },
-                "runtime_version": { "type": "string", "required": true, "max": 32 }
+                "runtime_version": { "type": "string", "required": true, "max": 32 },
+                "health_path": { "type": "string", "required": false, "max": 255 }
             },
             "read_only": false,
             "retry": "capability_declared"

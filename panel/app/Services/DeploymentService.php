@@ -292,6 +292,7 @@ final class DeploymentService
                 'provider' => (string) $application->provider,
                 'runtime' => (string) $application->runtime,
                 'runtime_version' => (string) ($application->runtime_version ?: $application->runtime),
+                'health_path' => (string) ($application->revisions()->first()?->settings['health_path'] ?? 'up'),
             ],
             timeoutSeconds: null,
         );

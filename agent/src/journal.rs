@@ -237,6 +237,8 @@ pub struct ApplicationSource {
     pub provider: String,
     pub runtime: String,
     pub runtime_version: String,
+    /// Absolute request path the deploy health gate probes (default `/`).
+    pub health_path: String,
 }
 
 /// A registered application schedule (phase 17.3), supplied by the panel and
@@ -319,6 +321,11 @@ impl Journal {
         let _ = connection.execute("ALTER TABLE executions ADD COLUMN result TEXT", []);
         // Additive migration: the policy a backup belongs to (for retention).
         let _ = connection.execute("ALTER TABLE backups ADD COLUMN policy_id TEXT", []);
+        // Additive migration: the panel-configured health check path.
+        let _ = connection.execute(
+            "ALTER TABLE application_sources ADD COLUMN health_path TEXT NOT NULL DEFAULT '/'",
+            [],
+        );
         connection
             .execute(
                 "INSERT INTO schema_meta(key, value) VALUES ('schema_version', ?1)
@@ -931,14 +938,16 @@ impl Journal {
         self.connection
             .execute(
                 "INSERT INTO application_sources (
-                    application_id, repository_url, server_name, provider, runtime, runtime_version, updated_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                    application_id, repository_url, server_name, provider, runtime, runtime_version,
+                    health_path, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                  ON CONFLICT(application_id) DO UPDATE SET
                     repository_url = excluded.repository_url,
                     server_name = excluded.server_name,
                     provider = excluded.provider,
                     runtime = excluded.runtime,
                     runtime_version = excluded.runtime_version,
+                    health_path = excluded.health_path,
                     updated_at = excluded.updated_at",
                 params![
                     source.application_id.as_str(),
@@ -947,6 +956,7 @@ impl Journal {
                     source.provider,
                     source.runtime,
                     source.runtime_version,
+                    source.health_path,
                     clock::now_rfc3339(),
                 ],
             )
@@ -960,7 +970,8 @@ impl Journal {
     ) -> Result<Option<ApplicationSource>, JournalError> {
         self.connection
             .query_row(
-                "SELECT application_id, repository_url, server_name, provider, runtime, runtime_version
+                "SELECT application_id, repository_url, server_name, provider, runtime, runtime_version,
+                        health_path
                  FROM application_sources WHERE application_id = ?1",
                 params![application_id.as_str()],
                 |row| {
@@ -972,6 +983,7 @@ impl Journal {
                         provider: row.get(3)?,
                         runtime: row.get(4)?,
                         runtime_version: row.get(5)?,
+                        health_path: row.get(6)?,
                     })
                 },
             )
@@ -1324,7 +1336,8 @@ impl Journal {
     ) -> Result<Option<ApplicationSource>, JournalError> {
         self.connection
             .query_row(
-                "SELECT application_id, repository_url, server_name, provider, runtime, runtime_version
+                "SELECT application_id, repository_url, server_name, provider, runtime, runtime_version,
+                        health_path
                  FROM application_sources WHERE server_name = ?1 LIMIT 1",
                 params![hostname],
                 |row| {
@@ -1336,6 +1349,7 @@ impl Journal {
                         provider: row.get(3)?,
                         runtime: row.get(4)?,
                         runtime_version: row.get(5)?,
+                        health_path: row.get(6)?,
                     })
                 },
             )

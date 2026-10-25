@@ -2404,6 +2404,10 @@ impl<'a> AgentHandler<'a> {
             return error_body(ContractErrorCode::InvalidParameters, &error.to_string());
         }
 
+        let health_path = match validate_health_path(parameter("health_path").unwrap_or("/")) {
+            Ok(path) => path,
+            Err(message) => return error_body(ContractErrorCode::InvalidParameters, message),
+        };
         let source = ApplicationSource {
             application_id: application.clone(),
             repository_url,
@@ -2411,6 +2415,7 @@ impl<'a> AgentHandler<'a> {
             provider: provider.to_string(),
             runtime: runtime.to_string(),
             runtime_version: runtime_version.to_string(),
+            health_path,
         };
         match self.journal.set_application_source(&source) {
             Ok(()) => json!({
@@ -2635,12 +2640,30 @@ fn run_bounded(program: &Path, args: &[&str]) -> Result<(), String> {
 
 fn firewall_error(error: FirewallError) -> Value {
     let code = match error {
-        FirewallError::ProtectedPort => ContractErrorCode::PermissionDenied,
+        FirewallError::ProtectedPort | FirewallError::SshLockout => {
+            ContractErrorCode::PermissionDenied
+        }
         FirewallError::HttpsRequired => ContractErrorCode::Conflict,
         FirewallError::InvalidInput(_) => ContractErrorCode::InvalidParameters,
         FirewallError::Tool(_) => ContractErrorCode::OperationFailed,
     };
     error_body(code, &error.to_string())
+}
+
+/// Normalize a panel-configured health check path (`up`, `/up`, `/health/ready`)
+/// to an absolute request path. Only plain path characters are accepted, so the
+/// value can never smuggle a query, a scheme or a request-line break.
+fn validate_health_path(raw: &str) -> Result<String, &'static str> {
+    let trimmed = raw.trim().trim_start_matches('/');
+    if trimmed.len() > 255
+        || trimmed.split('/').any(|segment| segment == "..")
+        || !trimmed
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '-' | '_' | '.' | '~'))
+    {
+        return Err("health_path must be a plain relative path");
+    }
+    Ok(format!("/{trimmed}"))
 }
 
 fn error_body(code: ContractErrorCode, message: &str) -> Value {

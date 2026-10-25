@@ -28,6 +28,9 @@ use crate::provider::{FpmManager, NginxManager, RuntimePolicy};
 use crate::provision::SystemAccounts;
 use crate::transport::{self, Listener, ServerContext};
 
+/// Root of the managed application trees.
+const APPS_ROOT: &str = "/opt/hostnur/apps";
+
 /// Poll interval for the shutdown flag.
 pub const TICK: Duration = Duration::from_millis(100);
 
@@ -86,6 +89,21 @@ pub fn run(config: &AgentConfig) -> Result<(), AgentError> {
             format!("creating state directory: {}", err.kind()),
         )
     })?;
+    // Managed application trees live under a root-owned, traversable parent;
+    // a fresh install may not have created it yet.
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o755)
+            .create(APPS_ROOT)
+            .map_err(|err| {
+                AgentError::new(
+                    ErrorCode::Journal,
+                    format!("creating applications root: {}", err.kind()),
+                )
+            })?;
+    }
     let journal = Journal::open(&config.state_dir.join("agent.db"))
         .map_err(|err| AgentError::new(ErrorCode::Journal, format!("opening journal: {err}")))?;
 
@@ -168,7 +186,7 @@ pub fn run(config: &AgentConfig) -> Result<(), AgentError> {
 fn build_handler<'j>(journal: &'j Journal, config: &AgentConfig) -> AgentHandler<'j> {
     let deploy = DeployRuntime {
         db_path: config.state_dir.join("agent.db"),
-        apps_root: PathBuf::from("/opt/hostnur/apps"),
+        apps_root: PathBuf::from(APPS_ROOT),
         accounts: SystemAccounts::default(),
         git: GitRunner::default(),
         nginx: NginxManager::default(),

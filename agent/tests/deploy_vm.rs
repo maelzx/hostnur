@@ -169,6 +169,7 @@ fn deploy_activate_health_redeploy_and_rollback() {
         repository_url: &repo_url,
         git_ref: GitRef::Commit(commit.to_string()),
         server_name: "127.0.0.1",
+        health_path: "/",
         allow_protocol: "file",
         run_migrations: false,
         recovery_acknowledged: false,
@@ -214,7 +215,7 @@ fn deploy_activate_health_redeploy_and_rollback() {
     // Roll back to v1.
     let r1_id = Uuid::parse(r1).unwrap();
     deployer
-        .rollback(&app, &r1_id, "127.0.0.1")
+        .rollback(&app, &r1_id, "127.0.0.1", "/")
         .expect("rollback to v1");
     assert!(wait_until(
         || curl_marker().contains("marker-v1"),

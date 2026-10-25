@@ -36,6 +36,8 @@ pub struct DeployInput<'a> {
     pub repository_url: &'a str,
     pub git_ref: crate::git::GitRef,
     pub server_name: &'a str,
+    /// Request path the activation health gate probes.
+    pub health_path: &'a str,
     pub allow_protocol: &'a str,
     pub run_migrations: bool,
     /// The operator explicitly acknowledged a recovery point for migrations.
@@ -213,6 +215,7 @@ impl<'a> Deployer<'a> {
         }
 
         let mut health = HealthClient::new(input.server_name);
+        health.path = input.health_path.to_string();
         health.expect_body_contains = None;
         // Reloads settle asynchronously; poll briefly before declaring failure.
         let mut result = health.probe();
@@ -260,6 +263,7 @@ impl<'a> Deployer<'a> {
         application_id: &Uuid,
         release_id: &Uuid,
         server_name: &str,
+        health_path: &str,
     ) -> Result<HealthResult, DeployError> {
         let release_dir = self
             .app_root(application_id)
@@ -283,6 +287,7 @@ impl<'a> Deployer<'a> {
             return Err(error);
         }
         let mut health = HealthClient::new(server_name);
+        health.path = health_path.to_string();
         health.expect_body_contains = None;
         let mut result = health.probe();
         for _ in 0..20 {
@@ -850,8 +855,12 @@ impl DeployRuntime {
             .ok_or(DeployError::MissingLayout)?;
         let root = ManagedRoot::open(&self.apps_root)
             .map_err(|error| DeployError::Io(error.to_string()))?;
-        self.deployer(journal, &root)
-            .rollback(application_id, release_id, &source.server_name)
+        self.deployer(journal, &root).rollback(
+            application_id,
+            release_id,
+            &source.server_name,
+            &source.health_path,
+        )
     }
 
     fn deployer<'j>(&'j self, journal: &'j Journal, root: &'j ManagedRoot) -> Deployer<'j> {
@@ -893,6 +902,7 @@ impl DeployRuntime {
             repository_url: &source.repository_url,
             git_ref,
             server_name: &source.server_name,
+            health_path: &source.health_path,
             allow_protocol: &self.allow_protocol,
             run_migrations,
             recovery_acknowledged,

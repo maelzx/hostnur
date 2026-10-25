@@ -16,6 +16,10 @@ use crate::process::{CommandSpec, ProcessOutcome, run};
 /// Ports the agent refuses to manage generically.
 const PROTECTED_PORTS: [i64; 2] = [80, 443];
 
+/// The SSH port the operator reaches the host on. It can never be closed to
+/// everyone (a lockout); blocking one specific source stays allowed.
+const SSH_PORT: i64 = 22;
+
 /// A firewall observer and guarded rule manager.
 #[derive(Debug, Clone)]
 pub struct FirewallPolicy {
@@ -37,6 +41,8 @@ impl Default for FirewallPolicy {
 pub enum FirewallError {
     /// A protected web port (80/443) was targeted.
     ProtectedPort,
+    /// The change would close SSH to everyone and lock the operator out.
+    SshLockout,
     /// HTTPS-only was requested but 443 is not open.
     HttpsRequired,
     /// A parameter was invalid or unsafe.
@@ -51,6 +57,10 @@ impl std::fmt::Display for FirewallError {
             Self::ProtectedPort => write!(
                 f,
                 "ports 80 and 443 are protected and cannot be changed directly"
+            ),
+            Self::SshLockout => write!(
+                f,
+                "SSH (port 22) cannot be closed to all sources; that would lock the operator out"
             ),
             Self::HttpsRequired => write!(f, "port 443 must be open before port 80 can be closed"),
             Self::InvalidInput(message) => write!(f, "{message}"),
@@ -90,6 +100,9 @@ impl FirewallPolicy {
             ));
         }
         let source = normalize_source(source)?;
+        if port == SSH_PORT && protocol == "tcp" && action == "deny" && is_everyone(&source) {
+            return Err(FirewallError::SshLockout);
+        }
         let outcome = self.run_ufw(&rule_args(action, port, protocol, &source))?;
         require_success(&outcome)
     }
@@ -111,6 +124,9 @@ impl FirewallPolicy {
             ));
         }
         let source = normalize_source(source)?;
+        if port == SSH_PORT && protocol == "tcp" && action == "allow" && is_everyone(&source) {
+            return Err(FirewallError::SshLockout);
+        }
         let mut args = vec!["delete".to_string()];
         args.extend(rule_args(action, port, protocol, &source));
         let outcome = self.run_ufw(&args)?;
@@ -200,6 +216,11 @@ fn normalize_source(source: Option<&str>) -> Result<String, FirewallError> {
         ));
     }
     Ok(value.to_string())
+}
+
+/// Whether a normalized source matches every address.
+fn is_everyone(source: &str) -> bool {
+    matches!(source, "any" | "0.0.0.0/0" | "::/0")
 }
 
 fn rule_args(action: &str, port: i64, protocol: &str, source: &str) -> Vec<String> {
@@ -408,6 +429,27 @@ mod tests {
         assert_eq!(
             policy.remove_rule(443, "tcp", None, "allow"),
             Err(FirewallError::ProtectedPort)
+        );
+    }
+
+    #[test]
+    fn never_closes_ssh_to_everyone() {
+        let policy = FirewallPolicy::default();
+        assert_eq!(
+            policy.add_rule(22, "tcp", None, "deny"),
+            Err(FirewallError::SshLockout)
+        );
+        assert_eq!(
+            policy.add_rule(22, "tcp", Some("any"), "deny"),
+            Err(FirewallError::SshLockout)
+        );
+        assert_eq!(
+            policy.add_rule(22, "tcp", Some("0.0.0.0/0"), "deny"),
+            Err(FirewallError::SshLockout)
+        );
+        assert_eq!(
+            policy.remove_rule(22, "tcp", None, "allow"),
+            Err(FirewallError::SshLockout)
         );
     }
 

@@ -1009,3 +1009,72 @@ fn retention_days_out_of_range_is_rejected_before_any_work() {
         );
     }
 }
+
+#[test]
+fn registration_stores_a_normalized_health_path_and_rejects_unsafe_ones() {
+    let journal = Journal::open_in_memory().unwrap();
+    let handler = AgentHandler::new(&journal);
+    let app = Uuid::parse("224065ac-4bc7-4ba4-a06d-8c8bca950c32").unwrap();
+    let register = |health: Option<&str>| {
+        let mut parameters =
+            register_params("https://github.com/example/app.git", "app.example.com");
+        if let Some(path) = health {
+            parameters.insert("health_path".into(), json!(path));
+        }
+        handler
+            .handle(&request("agent.register_application", parameters))
+            .unwrap()
+    };
+
+    assert_eq!(register(None)["registered"], true);
+    assert_eq!(
+        journal
+            .application_source(&app)
+            .unwrap()
+            .unwrap()
+            .health_path,
+        "/"
+    );
+
+    assert_eq!(register(Some("up"))["registered"], true);
+    assert_eq!(
+        journal
+            .application_source(&app)
+            .unwrap()
+            .unwrap()
+            .health_path,
+        "/up"
+    );
+
+    assert_eq!(register(Some("/health/ready"))["registered"], true);
+    assert_eq!(
+        journal
+            .application_source(&app)
+            .unwrap()
+            .unwrap()
+            .health_path,
+        "/health/ready"
+    );
+
+    for unsafe_path in [
+        "../etc/passwd",
+        "up?x=1",
+        "up\r\nHost: evil",
+        "http://evil/",
+        "up#frag",
+    ] {
+        let body = register(Some(unsafe_path));
+        assert_eq!(
+            body["error"]["code"], "invalid_parameters",
+            "{unsafe_path} accepted"
+        );
+    }
+    assert_eq!(
+        journal
+            .application_source(&app)
+            .unwrap()
+            .unwrap()
+            .health_path,
+        "/health/ready"
+    );
+}
