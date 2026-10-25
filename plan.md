@@ -2037,6 +2037,68 @@ suites after any agent edit.
   (page-snapshot exposure); `control_state`/`server` backup scopes; `arguments` JSON
   error propagation.
 
+### Session 054 — Droplet validation pass from the GitHub releases (2026-10-25)
+
+Host: DigitalOcean Ubuntu 24.04 amd64, 1 vCPU / 1 GB (`209.97.175.210`), DNS
+`hostnur-p16.kom.my` + `assetkom.hostnur-p16.kom.my`. Installed `v0.1.4` with the curl
+one-liner from the GitHub release, upgraded in place to `v0.1.5`, then ran agent fixes
+from `main` (cross-built amd64) for re-verification. Apps: AssetKOM (panel path via
+`hostnur:smoke`/panel services, MariaDB, migrations, Let's Encrypt) and a throwaway
+`crash` app registered through the agent socket only.
+
+- **Passed**: install with real LE cert for the panel; MFA admin bootstrap (owner);
+  peer-uid gate (root refused and logged, `nobody` cannot open the socket); abuse suite
+  (unknown ops, injected params, unmanaged `ssh` unit, unapproved/flag-injected
+  packages, `file://` and metadata-IP repos, nginx-injection hostname, traversal,
+  oversized/invalid frames all refused); async `system.upgrade` (77 packages, 126 s)
+  with 50/50 snapshots served meanwhile (p50 0.44 s, max 1.41 s); agent restart
+  mid-deploy → `failed`/`execution_unknown`, build processes killed, redeploy OK;
+  broken nginx config refused with site file and `current` untouched; deploy health
+  gate refuses a 500 release and keeps `current`; panel create → DB → migrated deploy →
+  LE cert → HTTPS 200 → redeploy → rollback; uploaded certificate install (panel and
+  agent both refuse a wrong-host or mismatched-key certificate, host unchanged on
+  refusal; key encrypted at rest; staged material removed); `control_state`/`server`
+  backups decrypt with `age` (26 panel tables, `APP_KEY`, journal `integrity_check`
+  OK); planted-symlink restore writes nothing outside the app; `v0.1.4 → v0.1.5`
+  upgrade keeps admin+MFA, audit, `APP_KEY`, `agent.toml`, journal, backups and the
+  serving app; SQLite contention (4 writers × 600 audit writes + 200 HTTP requests at
+  concurrency 10): 0 errors, 2400/2400 rows, writer p95 ≤134 ms, HTTP p95 1.07 s vs
+  0.68 s idle (CPU-bound on 1 vCPU, no lock errors); audit review: every panel event
+  attributed to the admin, metadata limited to operation/status fields, no app DB
+  password / `APP_KEY` / TLS private key in panel DB, agent journal, Laravel log,
+  journald or nginx logs.
+- **Fixed in `c2d644b` (shipped in `v0.1.5`)**: missing `/opt/hostnur/apps` (deploy io
+  error 2); MariaDB not installed by the installer/deb; a firewall rule denying port 22
+  was accepted (`SshLockout`); the deploy health probe ignored the app's health path
+  (new `health_path` on `agent.register_application`); agent reported `0.1.0`
+  (crate version now checked against the tag in the release workflow).
+- **Fixed in `8e64f5b` (not yet released)**: a redeploy or rollback re-rendered the
+  HTTP-only site and dropped the installed certificate. Deploys now render the TLS site
+  whenever `/etc/hostnur/tls/<site>` has both chain and key. Verified on the host:
+  redeploy and rollback keep HTTPS 200 with the app's own certificate.
+- **Fixed in `a4b0f2b` (not yet released), HIGH**: any app account could read the panel
+  `.env` (`APP_KEY`, which decrypts every stored secret) and `database.sqlite`, and
+  read another app's release tree, logs and session files. Panel tree is now
+  `hostnur-panel:www-data 0750` with `.env`/DB `0600` (installer + deb, every
+  upgrade); each app root is `root:<app group> 0750` and `www-data` joins every app
+  group before the layout tightens (every deploy reconciles, so older hosts tighten
+  on their next deploy). Verified on the host with a two-app read matrix (all denied)
+  while panel, AssetKOM and static assets keep serving; root `provision_vm` suite passes.
+- **Open defects**: (1) app certificates are never refreshed after renewal — certbot's
+  timer renews `/etc/letsencrypt/live/<host>` but nothing copies it into
+  `/etc/hostnur/tls/<site>` or reloads nginx (no deploy hook for app certs; the 049
+  hook covers only the panel), so an app certificate lapses ~90 days after issue;
+  (2) installer prints "Create the first administrator" on upgrades (cosmetic);
+  (3) supplied-certificate install writes the full chain into `cert.pem`/`chain.pem`
+  as well (nginx uses only `fullchain.pem`, cosmetic); (4) failed releases are kept in
+  `releases/` (disk growth).
+- **Not covered**: failed-login / lockout audit (needs a credential entry the owner must
+  perform), restore on a separate VM, SSH deploy keys, signed artifacts.
+- **Owner decision**: the installer leaves ufw inactive.
+- Test state left on the host: age keypair at `/root/backup-identity.txt` with
+  `backup_recipient` set; the `crash` app; agent binary from `main` (`a4b0f2b`)
+  with the `v0.1.5` binary kept at `/usr/local/bin/hostnur-agent.v0.1.5`.
+
 ### Session 053 — Backup safety: staged restore, control/server scopes, retention (2026-10-25)
 
 - **Restore can no longer be redirected (session 048 HIGH)**: `backup.restore` never
