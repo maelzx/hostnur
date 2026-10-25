@@ -2,18 +2,14 @@
 
 namespace App\Livewire\Panel;
 
+use App\Actions\Applications\CreateApplication;
 use App\Enums\DomainHttpsPolicy;
 use App\Exceptions\DeploymentPreflightException;
 use App\Models\Application;
 use App\Models\SourceCredential;
 use App\Models\User;
-use App\Services\ApplicationService;
-use App\Services\CertificateService;
-use App\Services\DatabaseService;
 use App\Services\DeploymentService;
-use App\Services\ScheduleService;
 use Illuminate\Contracts\View\View;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -176,13 +172,8 @@ class ApplicationCreate extends Component
         }
     }
 
-    public function finish(
-        ApplicationService $applications,
-        CertificateService $certificates,
-        DatabaseService $databases,
-        DeploymentService $deployments,
-        ScheduleService $schedules,
-    ): void {
+    public function finish(CreateApplication $create, DeploymentService $deployments): void
+    {
         $this->authorize('create', Application::class);
 
         foreach (range(0, count(self::STEPS) - 1) as $step) {
@@ -192,84 +183,7 @@ class ApplicationCreate extends Component
         $actor = $this->actor();
 
         try {
-            // One transaction: a mid-way failure must not leave a half-built app
-            // (which would also dead-end retries on "slug already in use").
-            $application = DB::transaction(function () use ($actor, $applications, $certificates, $databases, $schedules): Application {
-                $application = $applications->create($actor, [
-                    'name' => $this->name,
-                    'slug' => $this->slug,
-                    'provider' => $this->provider,
-                    'runtime' => $this->runtime,
-                    'runtime_version' => $this->runtime_version !== '' ? $this->runtime_version : null,
-                ]);
-
-                if (trim($this->repository_url) !== '') {
-                    $applications->updateSource($actor, $application, [
-                        'repository_url' => $this->repository_url,
-                        'git_ref' => $this->git_ref !== '' ? $this->git_ref : null,
-                        'source_credential_id' => $this->source_credential_id !== '' ? $this->source_credential_id : null,
-                    ]);
-                }
-
-                if ($this->hasRuntimeOverrides()) {
-                    $applications->updateConfiguration($actor, $application->refresh(), [
-                        'runtime' => $this->runtime,
-                        'runtime_version' => $this->runtime_version !== '' ? $this->runtime_version : null,
-                        'build_command' => $this->build_command !== '' ? $this->build_command : null,
-                        'start_command' => $this->start_command !== '' ? $this->start_command : null,
-                        'workers' => $this->workers,
-                        'scheduler' => $this->scheduler,
-                        'health_path' => $this->health_path !== '' ? $this->health_path : null,
-                        'persistent_paths' => $this->persistentPaths(),
-                    ]);
-                }
-
-                if (trim($this->hostname) !== '') {
-                    $domain = $applications->addDomain(
-                        $actor,
-                        $application,
-                        $this->hostname,
-                        DomainHttpsPolicy::from($this->https_policy),
-                    );
-
-                    if ($this->request_certificate) {
-                        $certificates->requestManaged($actor, $domain, $this->certificateKey);
-                    }
-                }
-
-                if ($this->provision_database) {
-                    $databases->request(
-                        $actor,
-                        $application,
-                        $this->engine,
-                        $this->database_name,
-                        $this->database_username,
-                        $this->databaseKey,
-                    );
-                }
-
-                foreach ($this->secrets as $secret) {
-                    $name = trim((string) ($secret['name'] ?? ''));
-
-                    if ($name === '') {
-                        continue;
-                    }
-
-                    $applications->setSecret($actor, $application, $name, (string) ($secret['value'] ?? ''));
-                }
-
-                if ($this->schedule_enabled) {
-                    $schedules->save($actor, $application, [
-                        'name' => $this->schedule_name,
-                        'expression' => $this->schedule_expression,
-                        'timezone' => $this->schedule_timezone,
-                        'command_reference' => $this->schedule_command_reference,
-                        'enabled' => true,
-                    ]);
-                }
-
-                return $application;
-            });
+            $application = $create->handle($actor, $this->createInput());
         } catch (ValidationException $exception) {
             $this->mapValidationErrors($exception);
 
@@ -392,6 +306,60 @@ class ApplicationCreate extends Component
     /**
      * @return list<string>
      */
+    /**
+     * @return array<string, mixed>
+     */
+    private function createInput(): array
+    {
+        $secrets = [];
+
+        foreach ($this->secrets as $secret) {
+            $name = trim((string) ($secret['name'] ?? ''));
+
+            if ($name !== '') {
+                $secrets[$name] = (string) ($secret['value'] ?? '');
+            }
+        }
+
+        return [
+            'name' => $this->name,
+            'slug' => $this->slug,
+            'provider' => $this->provider,
+            'runtime' => $this->runtime,
+            'runtime_version' => $this->runtime_version !== '' ? $this->runtime_version : null,
+            'repository_url' => $this->repository_url,
+            'git_ref' => $this->git_ref !== '' ? $this->git_ref : null,
+            'source_credential_id' => $this->source_credential_id !== '' ? $this->source_credential_id : null,
+            'configuration' => $this->hasRuntimeOverrides() ? [
+                'runtime' => $this->runtime,
+                'runtime_version' => $this->runtime_version !== '' ? $this->runtime_version : null,
+                'build_command' => $this->build_command !== '' ? $this->build_command : null,
+                'start_command' => $this->start_command !== '' ? $this->start_command : null,
+                'workers' => $this->workers,
+                'scheduler' => $this->scheduler,
+                'health_path' => $this->health_path !== '' ? $this->health_path : null,
+                'persistent_paths' => $this->persistentPaths(),
+            ] : null,
+            'hostname' => $this->hostname,
+            'https_policy' => DomainHttpsPolicy::from($this->https_policy),
+            'certificate_key' => $this->request_certificate ? $this->certificateKey : null,
+            'database' => $this->provision_database ? [
+                'engine' => $this->engine,
+                'name' => $this->database_name,
+                'username' => $this->database_username,
+                'key' => $this->databaseKey,
+            ] : null,
+            'secrets' => $secrets,
+            'schedule' => $this->schedule_enabled ? [
+                'name' => $this->schedule_name,
+                'expression' => $this->schedule_expression,
+                'timezone' => $this->schedule_timezone,
+                'command_reference' => $this->schedule_command_reference,
+                'enabled' => true,
+            ] : null,
+        ];
+    }
+
     private function persistentPaths(): array
     {
         return array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', $this->persistent_paths_text) ?: [])));

@@ -2042,6 +2042,24 @@ suites after any agent edit.
   (page-snapshot exposure); `control_state`/`server` backup scopes; `arguments` JSON
   error propagation.
 
+### Session 052 — Panel-driven end-to-end driver (`hostnur:smoke`) (2026-10-25)
+
+- Addresses session 047's "panel UI path not exercised end-to-end (MFA blocks
+  automation)". The create wizard's one-transaction orchestration moved into
+  `App\Actions\Applications\CreateApplication`; the wizard and the new
+  **`php artisan hostnur:smoke`** command both call it, so the command walks the same
+  panel path as the UI: create app (+domain, optional DB request) → deploy →
+  optional Let's Encrypt cert → HTTP health check → optional redeploy + rollback to
+  the first release → HTTP check. Each task runs through `TaskService::run` (leased)
+  until terminal, echoing agent events; prints a pass/FAIL table; non-zero exit on
+  the first failure. Requires confirmation (or `--force`), refuses `unavailable`
+  mode, and needs `--actor` when several administrators exist. Only login/MFA is
+  skipped — shell access on the host already supersedes it (same trust as
+  `hostnur:admin:bootstrap`/recovery).
+- Runbook: `docs/p16-test-host.md` §7b replaces the socket probe for deploy checks.
+- Checks: PHP **277** (7 new, fake agent with a Carbon-synced fake sleep) + pint.
+  Not yet run against a real agent — first use is the next droplet session.
+
 ### Session 051 — Rollback, supplied-certificate install, `domain.apply` removed (2026-10-25)
 
 Closes the three catalog operations the agent did not implement (session 048 HIGH).

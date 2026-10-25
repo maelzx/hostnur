@@ -283,6 +283,25 @@ build` → `.env` from `.env.example` → `key:generate` → SQLite → `migrate
 `storage:link` → PHP-FPM pool (by runtime version) → Nginx route rooted at
 `<app>/current/public` → atomic `current` switch → health check.
 
+## 7b. Deploy through the panel itself (`hostnur:smoke`, session 052)
+
+Prefer this to the socket probe in §7: it populates the panel DB and exercises
+panel → task → preflight → agent exactly as the UI does (only login/MFA is
+skipped). Run as the panel identity so the socket peer check matches:
+
+```bash
+cd /opt/hostnur-panel && sudo -u hostnur-panel php artisan hostnur:smoke \
+  --repo=https://github.com/<owner>/<app>.git --ref=main \
+  --hostname=smoke.hostnur-p16.kom.my --php=8.4 \
+  --database --migrate --certificate --rollback --force
+```
+
+It prints each task's agent events, then a pass/FAIL table, and exits non-zero
+on the first failure. `--rollback` deploys twice and rolls back to the first
+release (checks agent release ids end to end); `--certificate` needs DNS for the
+hostname. A queue worker running alongside is harmless (tasks are leased). The
+created application stays in the panel for inspection; archive it afterwards.
+
 ## 8. Make AssetKOM actually usable (remaining)
 
 Deploying gets the app serving, but to *log in and use it*:
