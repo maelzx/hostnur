@@ -181,7 +181,7 @@ impl<'a> AgentHandler<'a> {
             certbot: CertbotClient::default(),
             certs: CertificateManager::default(),
             tls_nginx: NginxManager::default(),
-            acme_webroot: PathBuf::from("/var/www/hostnur-acme"),
+            acme_webroot: PathBuf::from(crate::tls::ACME_WEBROOT),
             acme_email: None,
             acme_staging: false,
             backup_recipient: None,
@@ -212,7 +212,7 @@ impl<'a> AgentHandler<'a> {
             certbot: CertbotClient::default(),
             certs: CertificateManager::default(),
             tls_nginx: NginxManager::default(),
-            acme_webroot: PathBuf::from("/var/www/hostnur-acme"),
+            acme_webroot: PathBuf::from(crate::tls::ACME_WEBROOT),
             acme_email: None,
             acme_staging: false,
             backup_recipient: None,
@@ -625,7 +625,7 @@ impl<'a> AgentHandler<'a> {
             Ok(resolved) => resolved,
             Err(body) => return body,
         };
-        let dest = PathBuf::from(format!("/etc/hostnur/tls/{name}"));
+        let dest = PathBuf::from(crate::tls::TLS_DIR).join(&name);
         let source = crate::tls::CertificatePaths {
             fullchain: staged_cert.clone(),
             key: staged_key.clone(),
@@ -727,7 +727,7 @@ impl<'a> AgentHandler<'a> {
                 return error_body(ContractErrorCode::OperationFailed, &error.to_string());
             }
         };
-        let dest = PathBuf::from(format!("/etc/hostnur/tls/{name}"));
+        let dest = PathBuf::from(crate::tls::TLS_DIR).join(&name);
         let installed = match self.certs.install(&live, &dest) {
             Ok(installed) => installed,
             Err(error) => {

@@ -31,7 +31,41 @@ impl std::fmt::Display for TlsError {
 
 impl std::error::Error for TlsError {}
 
+/// Where managed sites' installed certificates live (`<dir>/<site>/`).
+pub const TLS_DIR: &str = "/etc/hostnur/tls";
+
+/// Base of the per-site ACME HTTP-01 webroots (`<base>/<site>`).
+pub const ACME_WEBROOT: &str = "/var/www/hostnur-acme";
+
+/// The certificate installed for a managed site, when both the chain and the
+/// key are present. A redeploy uses it to keep serving HTTPS instead of
+/// re-rendering the site as plain HTTP.
+pub fn installed_site_certificate(tls_dir: &Path, site: &str) -> Option<CertificatePaths> {
+    let paths = from_live_dir(&tls_dir.join(site));
+    (paths.fullchain.is_file() && paths.key.is_file()).then_some(paths)
+}
+
 /// Per-site HTTP-01 webroot beneath a managed base directory.
 pub fn webroot_for(base: &Path, name: &str) -> PathBuf {
     base.join(name).join(".well-known").join("acme-challenge")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn installed_site_certificate_needs_both_chain_and_key() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(installed_site_certificate(dir.path(), "hn-app").is_none());
+
+        std::fs::create_dir_all(dir.path().join("hn-app")).unwrap();
+        std::fs::write(dir.path().join("hn-app/fullchain.pem"), "chain").unwrap();
+        assert!(installed_site_certificate(dir.path(), "hn-app").is_none());
+
+        std::fs::write(dir.path().join("hn-app/privkey.pem"), "key").unwrap();
+        let paths = installed_site_certificate(dir.path(), "hn-app").unwrap();
+        assert_eq!(paths.fullchain, dir.path().join("hn-app/fullchain.pem"));
+        assert_eq!(paths.key, dir.path().join("hn-app/privkey.pem"));
+    }
 }

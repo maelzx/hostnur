@@ -19,6 +19,7 @@ use crate::journal::{DeploymentRecord, Journal};
 use crate::process::{CommandSpec, run};
 use crate::provider::{
     FpmManager, ManagedPool, ManagedSite, NginxManager, SiteKind, render_pool, render_site,
+    render_tls_site,
 };
 use crate::provision::{
     Accounts, ManagedRoot, ProvisioningService, SystemHostProbe, policy as provision_policy,
@@ -188,8 +189,20 @@ impl<'a> Deployer<'a> {
             fpm_socket: Some(pool.socket.clone()),
             kind: SiteKind::Laravel,
         };
-        let site_config =
-            render_site(&site).map_err(|error| DeployError::Provider(error.to_string()))?;
+        // A site that already has a certificate keeps its HTTPS server block.
+        let site_config = match crate::tls::installed_site_certificate(
+            Path::new(crate::tls::TLS_DIR),
+            &site.name,
+        ) {
+            Some(certificate) => render_tls_site(
+                &site,
+                &Path::new(crate::tls::ACME_WEBROOT).join(&site.name),
+                &certificate.fullchain,
+                &certificate.key,
+            ),
+            None => render_site(&site),
+        }
+        .map_err(|error| DeployError::Provider(error.to_string()))?;
         self.nginx
             .apply(&site.name, &site_config)
             .map_err(|error| DeployError::Provider(error.to_string()))?;
