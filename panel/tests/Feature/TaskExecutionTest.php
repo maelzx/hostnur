@@ -2,8 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Agent\Dto\OperationReceipt;
 use App\Agent\Dto\OperationRequest;
+use App\Agent\Dto\OperationSnapshot;
 use App\Agent\Dto\ResourceRef;
+use App\Contracts\AgentClient;
+use App\Enums\OperationStatus;
 use App\Enums\ResourceKind;
 use App\Enums\TaskStatus;
 use App\Jobs\RunTask;
@@ -247,5 +251,83 @@ class TaskExecutionTest extends TestCase
         $this->assertSame(1, $result['leases_expired']);
         Queue::assertPushed(RunTask::class);
         $this->assertNull($task->refresh()->lease_token);
+    }
+
+    private function timedRequest(?int $timeoutSeconds): OperationRequest
+    {
+        return new OperationRequest(
+            protocolVersion: 1,
+            requestId: '6c9dc595-fc9c-4c13-8c72-ed9a489ab9e7',
+            idempotencyKey: 'cf36a770-2abf-42e6-83cf-a0f042bcfc3c',
+            operation: 'server.snapshot',
+            resource: null,
+            parameters: [],
+            timeoutSeconds: $timeoutSeconds,
+        );
+    }
+
+    private function receipt(): OperationReceipt
+    {
+        return new OperationReceipt(
+            protocolVersion: 1,
+            requestId: '6c9dc595-fc9c-4c13-8c72-ed9a489ab9e7',
+            executionId: '5d1c8f0e-7b1a-4e0f-9a51-3c1b2e4d6f70',
+            operation: 'server.snapshot',
+            status: OperationStatus::Accepted,
+            acceptedAt: '2026-10-25T02:00:00Z',
+        );
+    }
+
+    public function test_submission_forwards_the_timeout_and_starts_the_deadline(): void
+    {
+        $this->travelTo(Carbon::parse('2026-10-25T02:00:00Z'));
+        Queue::fake();
+        $this->mock(AgentClient::class, function ($agent): void {
+            $agent->shouldReceive('submit')
+                ->once()
+                ->withArgs(fn (OperationRequest $request): bool => $request->timeoutSeconds === 900)
+                ->andReturn($this->receipt());
+            $agent->shouldReceive('inspect')->andThrow(new \RuntimeException('not polled in this test'));
+        });
+
+        $task = $this->service()->request($this->admin(), $this->timedRequest(900));
+        $this->assertSame(900, $task->timeout_seconds);
+        $this->assertNull($task->deadline_at);
+
+        // Time spent before submission (e.g. awaiting approval) is not charged.
+        $this->travel(10)->minutes();
+        $this->service()->run($task->getKey());
+
+        $task->refresh();
+        $this->assertSame(TaskStatus::Running, $task->status);
+        $this->assertTrue($task->deadline_at->equalTo(now()->addSeconds(900)));
+    }
+
+    public function test_an_agent_result_error_sets_the_task_error_code(): void
+    {
+        Queue::fake();
+        $this->mock(AgentClient::class, function ($agent): void {
+            $agent->shouldReceive('submit')->andReturn($this->receipt());
+            $agent->shouldReceive('inspect')->andReturn(new OperationSnapshot(
+                protocolVersion: 1,
+                executionId: '5d1c8f0e-7b1a-4e0f-9a51-3c1b2e4d6f70',
+                requestId: '6c9dc595-fc9c-4c13-8c72-ed9a489ab9e7',
+                operation: 'server.snapshot',
+                status: OperationStatus::TimedOut,
+                progress: 100,
+                events: [],
+                result: ['error' => ['code' => 'timeout', 'message' => 'the operation exceeded its deadline', 'retryable' => false]],
+                error: null,
+                updatedAt: '2026-10-25T02:15:00Z',
+            ));
+        });
+
+        $task = $this->service()->request($this->admin(), $this->timedRequest(60));
+        $this->service()->run($task->getKey());
+
+        $task->refresh();
+        $this->assertSame(TaskStatus::Failed, $task->status);
+        $this->assertSame('timeout', $task->error_code);
+        $this->assertSame('the operation exceeded its deadline', $task->error_message);
     }
 }

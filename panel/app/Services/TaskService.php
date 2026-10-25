@@ -79,7 +79,9 @@ final class TaskService
                 'payload_fingerprint' => $fingerprint,
                 'requested_at' => now(),
                 'queued_at' => $requiresApproval ? null : now(),
-                'deadline_at' => $request->timeoutSeconds !== null ? now()->addSeconds($request->timeoutSeconds) : null,
+                // The execution budget; the deadline starts at submission so time
+                // spent awaiting approval is not charged against it.
+                'timeout_seconds' => $request->timeoutSeconds,
             ]);
 
             $this->audit->forTask($actor, AuditAction::TaskRequested, AuditOutcome::Requested, $task);
@@ -204,6 +206,7 @@ final class TaskService
             'idempotency_key' => $idempotencyKey,
             'parameters' => $task->parameters ?? [],
             'payload_fingerprint' => $task->payload_fingerprint,
+            'timeout_seconds' => $task->timeout_seconds,
             'requested_at' => now(),
             'queued_at' => $requiresApproval ? null : now(),
         ]);
@@ -346,12 +349,15 @@ final class TaskService
                 ? new ResourceRef(ResourceKind::from($task->resource_kind), $task->resource_id)
                 : null,
             parameters: $task->parameters ?? [],
-            timeoutSeconds: null,
+            timeoutSeconds: $task->timeout_seconds,
         );
 
         $receipt = $this->agent->submit($request);
 
-        $task->forceFill(['execution_id' => $receipt->executionId]);
+        $task->forceFill([
+            'execution_id' => $receipt->executionId,
+            'deadline_at' => $task->timeout_seconds !== null ? now()->addSeconds($task->timeout_seconds) : null,
+        ]);
         $task->transitionTo(TaskStatus::Running);
         $task->started_at ??= now();
         $task->save();
@@ -400,6 +406,11 @@ final class TaskService
         if ($snapshot->error !== null) {
             $task->error_code = $snapshot->error->code->value;
             $task->error_message = Redactor::message($snapshot->error->message);
+        } elseif ($task->status === TaskStatus::Failed && ($code = $this->resultErrorCode($snapshot->result)) !== null) {
+            // The real agent reports a mutation's failure (timeout, refusal,
+            // interruption) as the result's contract error object.
+            $task->error_code = $code->value;
+            $task->error_message = Redactor::message((string) ($snapshot->result['error']['message'] ?? ''));
         }
 
         if ($snapshot->result !== null) {
@@ -413,6 +424,16 @@ final class TaskService
         $task->save();
 
         $this->auditTerminal($task);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $result
+     */
+    private function resultErrorCode(?array $result): ?ErrorCode
+    {
+        $code = $result['error']['code'] ?? null;
+
+        return is_string($code) ? ErrorCode::tryFrom($code) : null;
     }
 
     /**

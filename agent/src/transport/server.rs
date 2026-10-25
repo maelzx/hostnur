@@ -175,9 +175,9 @@ fn send_response(
 
 /// Accept and handle connections until `shutdown` is set.
 ///
-/// Acceptance is non-blocking so the shutdown flag is observed promptly;
-/// connections are handled one at a time, which bounds concurrency to one
-/// in-flight request for this initial transport.
+/// Acceptance is non-blocking so the shutdown flag is observed promptly.
+/// Connections are handled one at a time; this stays responsive because
+/// journaled mutations only accept here and execute on the mutation worker.
 pub fn serve(
     listener: &Listener,
     context: &ServerContext<'_>,

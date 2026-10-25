@@ -7,6 +7,7 @@
 //! resolved and validated every argument; this module does not interpret shell
 //! syntax.
 
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::io::{self, Read};
 use std::os::unix::process::CommandExt;
@@ -21,6 +22,44 @@ use nix::unistd::Pid;
 pub const MAX_OUTPUT_BYTES: usize = 262_144;
 /// Upper bound for an execution deadline.
 pub const MAX_DEADLINE: Duration = Duration::from_secs(3_600);
+
+thread_local! {
+    /// Wall-clock deadline of the operation running on this thread, if any.
+    static OPERATION_DEADLINE: Cell<Option<Instant>> = const { Cell::new(None) };
+}
+
+/// Run `work` with an operation deadline: every `run` on this thread is capped
+/// at the time remaining, and none starts once it has passed. Restores the
+/// previous deadline afterwards, so nesting keeps the outer bound.
+pub fn with_deadline<R>(deadline: Option<Instant>, work: impl FnOnce() -> R) -> R {
+    struct Restore(Option<Instant>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            OPERATION_DEADLINE.with(|cell| cell.set(self.0));
+        }
+    }
+
+    let previous = OPERATION_DEADLINE.with(Cell::get);
+    let effective = match (previous, deadline) {
+        (Some(outer), Some(inner)) => Some(outer.min(inner)),
+        (outer, inner) => outer.or(inner),
+    };
+    OPERATION_DEADLINE.with(|cell| cell.set(effective));
+    let _restore = Restore(previous);
+    work()
+}
+
+/// The command deadline after applying this thread's operation deadline.
+/// `None` means the operation deadline has already passed.
+fn effective_deadline(requested: Duration) -> Option<Duration> {
+    match OPERATION_DEADLINE.with(Cell::get) {
+        None => Some(requested),
+        Some(deadline) => {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            (!remaining.is_zero()).then(|| requested.min(remaining))
+        }
+    }
+}
 
 /// A fully resolved process invocation.
 #[derive(Debug, Clone)]
@@ -184,6 +223,21 @@ pub fn validate_spec(spec: &CommandSpec) -> Result<(), ProcessError> {
 pub fn run(spec: &CommandSpec) -> Result<ProcessOutcome, ProcessError> {
     validate_spec(spec)?;
 
+    // An operation past its deadline starts no further commands; report it the
+    // same way as a command that ran out of time.
+    let Some(deadline) = effective_deadline(spec.deadline) else {
+        return Ok(ProcessOutcome {
+            pid: 0,
+            exit_code: None,
+            timed_out: true,
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+            stdout_truncated: false,
+            stderr_truncated: false,
+            duration: Duration::ZERO,
+        });
+    };
+
     let mut command = Command::new(&spec.program);
     command
         .args(&spec.args)
@@ -256,7 +310,7 @@ pub fn run(spec: &CommandSpec) -> Result<ProcessOutcome, ProcessError> {
         match child.try_wait() {
             Ok(Some(status)) => break status.code(),
             Ok(None) => {
-                if started.elapsed() >= spec.deadline {
+                if started.elapsed() >= deadline {
                     timed_out = true;
                     let _ = killpg(Pid::from_raw(pid as i32), Signal::SIGKILL);
                     let status = child
@@ -357,5 +411,39 @@ mod tests {
 
         let allowed = CommandSpec::new("/usr/bin/systemctl", Duration::from_secs(1));
         assert!(policy.validate(&allowed).is_ok());
+    }
+
+    #[test]
+    fn operation_deadline_caps_a_running_command() {
+        let mut spec = CommandSpec::new("/bin/sleep", Duration::from_secs(30));
+        spec.args = vec!["5".into()];
+        let started = Instant::now();
+        let outcome = with_deadline(Some(Instant::now() + Duration::from_millis(200)), || {
+            run(&spec)
+        })
+        .expect("sleep runs");
+        assert!(outcome.timed_out);
+        assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
+    #[test]
+    fn passed_operation_deadline_starts_nothing() {
+        let spec = CommandSpec::new("/bin/true", Duration::from_secs(5));
+        let outcome = with_deadline(Some(Instant::now()), || run(&spec)).expect("no spawn error");
+        assert!(outcome.timed_out);
+        assert_eq!(outcome.pid, 0);
+        assert!(!outcome.succeeded());
+    }
+
+    #[test]
+    fn deadline_is_restored_and_nesting_keeps_the_tighter_bound() {
+        let outer = Instant::now() + Duration::from_secs(1);
+        with_deadline(Some(outer), || {
+            with_deadline(Some(outer + Duration::from_secs(60)), || {
+                assert_eq!(OPERATION_DEADLINE.with(Cell::get), Some(outer));
+            });
+            assert_eq!(OPERATION_DEADLINE.with(Cell::get), Some(outer));
+        });
+        assert_eq!(OPERATION_DEADLINE.with(Cell::get), None);
     }
 }

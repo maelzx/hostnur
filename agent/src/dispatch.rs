@@ -9,9 +9,11 @@
 
 use std::collections::BTreeMap;
 use std::os::unix::fs::PermissionsExt;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError, sync_channel};
+use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
@@ -108,6 +110,30 @@ impl Drop for DeployTicket {
     }
 }
 
+/// Upper bound on accepted mutations waiting for the worker. A full queue
+/// refuses new work (`agent_unavailable`, retryable) instead of growing.
+pub const MUTATION_QUEUE_CAPACITY: usize = 32;
+
+/// An accepted, journaled mutation waiting for the mutation worker.
+pub struct Job {
+    pub execution_id: Uuid,
+    pub request: OperationRequest,
+    /// Wall-clock bound from the request's `timeout_seconds`, if any.
+    pub deadline: Option<Instant>,
+}
+
+/// The bounded channel between the serve loop and the mutation worker.
+pub fn mutation_queue() -> (SyncSender<Job>, Receiver<Job>) {
+    sync_channel(MUTATION_QUEUE_CAPACITY)
+}
+
+fn request_deadline(request: &OperationRequest) -> Option<Instant> {
+    request
+        .timeout_seconds
+        .and_then(|seconds| u64::try_from(seconds).ok())
+        .map(|seconds| Instant::now() + Duration::from_secs(seconds))
+}
+
 /// Handler backed by the durable journal.
 pub struct AgentHandler<'a> {
     journal: &'a Journal,
@@ -132,6 +158,7 @@ pub struct AgentHandler<'a> {
     s3: Option<crate::s3::S3Config>,
     cpu_last_total: AtomicU64,
     cpu_last_idle: AtomicU64,
+    jobs: Option<SyncSender<Job>>,
 }
 
 impl<'a> AgentHandler<'a> {
@@ -159,6 +186,7 @@ impl<'a> AgentHandler<'a> {
             s3: None,
             cpu_last_total: AtomicU64::new(0),
             cpu_last_idle: AtomicU64::new(0),
+            jobs: None,
         }
     }
 
@@ -187,6 +215,7 @@ impl<'a> AgentHandler<'a> {
             s3: None,
             cpu_last_total: AtomicU64::new(0),
             cpu_last_idle: AtomicU64::new(0),
+            jobs: None,
         }
     }
 
@@ -347,6 +376,12 @@ impl<'a> AgentHandler<'a> {
     /// Configure the S3-compatible backup destination, if any.
     pub fn configure_s3(&mut self, s3: Option<crate::s3::S3Config>) {
         self.s3 = s3;
+    }
+
+    /// Hand journaled mutations to a mutation worker instead of running them
+    /// inside the serve loop. Without a queue they run inline (tests).
+    pub fn configure_jobs(&mut self, jobs: SyncSender<Job>) {
+        self.jobs = Some(jobs);
     }
 
     fn site_name(&self, application_id: &Uuid) -> String {
@@ -830,35 +865,42 @@ impl<'a> AgentHandler<'a> {
         json!({"protocol_version": 1, "removed": true, "schedule": schedule_id.as_str()})
     }
 
-    /// Run a task-driven mutation as accept→execute→receipt, persisting the
-    /// terminal status and result so the panel's `inspect` poll sees the outcome.
-    /// Read-only/control methods (capabilities/snapshot/register_*) stay immediate.
-    fn complete_operation(
-        &self,
-        request: &OperationRequest,
-        work: impl FnOnce() -> Value,
-    ) -> Value {
+    /// Accept a task-driven mutation and hand it to the mutation worker (or
+    /// run it inline when no worker is configured). The receipt returns at once;
+    /// the panel's `inspect` poll sees progress and the terminal outcome, so a
+    /// long mutation never holds the serve loop.
+    fn complete_operation(&self, request: &OperationRequest) -> Value {
         let acceptance = match self.journal.accept(request) {
             Ok(acceptance) => acceptance,
             Err(error) => return error_body(ContractErrorCode::Conflict, &error.to_string()),
         };
 
         if !acceptance.reused {
-            let outcome = work();
-            let failed = outcome.get("error").is_some();
-            let status = if failed {
-                OperationStatus::Failed
-            } else {
-                OperationStatus::Succeeded
+            let job = Job {
+                execution_id: acceptance.execution_id.clone(),
+                request: request.clone(),
+                deadline: request_deadline(request),
             };
-            let result = outcome.to_string();
-            let event = if failed { "Failed." } else { "Completed." };
-            let _ = self.journal.finish_execution(
-                &acceptance.execution_id,
-                status,
-                Some(&result),
-                event,
-            );
+            match &self.jobs {
+                None => self.execute_job(job),
+                Some(queue) => {
+                    if let Err(TrySendError::Full(job) | TrySendError::Disconnected(job)) =
+                        queue.try_send(job)
+                    {
+                        let refusal = json!({"error": {
+                            "code": ContractErrorCode::AgentUnavailable.as_str(),
+                            "message": "the agent's operation queue is full; retry shortly",
+                            "retryable": true,
+                        }});
+                        let _ = self.journal.finish_execution(
+                            &job.execution_id,
+                            OperationStatus::Failed,
+                            Some(&refusal.to_string()),
+                            "Refused: the agent's operation queue is full.",
+                        );
+                    }
+                }
+            }
         }
 
         to_value(OperationReceipt {
@@ -869,6 +911,109 @@ impl<'a> AgentHandler<'a> {
             status: acceptance.status,
             accepted_at: acceptance.accepted_at.clone(),
         })
+    }
+
+    /// Execute one accepted mutation to a terminal journal state, bounded by
+    /// its deadline. Every exit path records a terminal status.
+    pub fn execute_job(&self, job: Job) {
+        let Job {
+            execution_id,
+            request,
+            deadline,
+        } = job;
+
+        if let Ok(Some(OperationStatus::Cancelled)) = self.journal.execution_status(&execution_id) {
+            let _ = self.journal.append_event(
+                &execution_id,
+                "Cancelled before it started; nothing was changed.",
+            );
+            return;
+        }
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            let outcome = error_body(
+                ContractErrorCode::Timeout,
+                "the operation's deadline passed before it started",
+            );
+            let _ = self.journal.finish_execution(
+                &execution_id,
+                OperationStatus::TimedOut,
+                Some(&outcome.to_string()),
+                "Timed out before it started.",
+            );
+            return;
+        }
+
+        let _ = self
+            .journal
+            .set_status(&execution_id, OperationStatus::Running, None);
+        let _ = self.journal.append_event(&execution_id, "Started.");
+
+        let outcome = catch_unwind(AssertUnwindSafe(|| {
+            crate::process::with_deadline(deadline, || self.run_mutation(&request))
+        }))
+        .unwrap_or_else(|_| {
+            error_body(
+                ContractErrorCode::OperationFailed,
+                "the operation stopped unexpectedly; verify the host state",
+            )
+        });
+
+        let failed = outcome.get("error").is_some();
+        let timed_out = failed && deadline.is_some_and(|deadline| Instant::now() >= deadline);
+        let (status, event) = if timed_out {
+            (
+                OperationStatus::TimedOut,
+                "Timed out: the operation exceeded its deadline.",
+            )
+        } else if failed {
+            (OperationStatus::Failed, "Failed.")
+        } else {
+            (OperationStatus::Succeeded, "Completed.")
+        };
+        let _ =
+            self.journal
+                .finish_execution(&execution_id, status, Some(&outcome.to_string()), event);
+    }
+
+    /// Run queued jobs one at a time until the queue closes or `shutdown` is
+    /// set. Mutations are serialized: apt, ufw, systemd and nginx changes are
+    /// not safe to interleave. A job still queued at shutdown stays `accepted`
+    /// and is resolved by the next start's interrupted-execution sweep.
+    pub fn serve_jobs(&self, jobs: &Receiver<Job>, shutdown: &AtomicBool) {
+        loop {
+            match jobs.recv_timeout(Duration::from_millis(200)) {
+                Ok(job) if !shutdown.load(Ordering::Relaxed) => self.execute_job(job),
+                Ok(_) => return,
+                Err(RecvTimeoutError::Timeout) if !shutdown.load(Ordering::Relaxed) => {}
+                Err(_) => return,
+            }
+        }
+    }
+
+    /// The journaled mutations, executed by `execute_job`.
+    fn run_mutation(&self, request: &OperationRequest) -> Value {
+        match request.operation.as_str() {
+            "service.control" => self.service_control(request),
+            "package.install" => self.package_install(request),
+            "package.upgrade" => self.package_upgrade(request),
+            "backup.create" => self.create_backup(request),
+            "backup.restore" => self.restore_backup(request),
+            "firewall.rule.add" => self.firewall_rule_add(request),
+            "firewall.rule.remove" => self.firewall_rule_remove(request),
+            "firewall.web" => self.firewall_web(request),
+            "application.start" => self.application_start(request),
+            "application.stop" => self.application_stop(request),
+            "application.restart" => self.application_restart(request),
+            "database.provision" => self.database_provision(request),
+            "database.rotate" => self.rotate_database(request),
+            "database.import" => self.import_database(request),
+            "schedule.apply" => self.schedule_apply(request),
+            "certificate.issue" => self.certificate_issue(request),
+            _ => error_body(
+                ContractErrorCode::UnsupportedOperation,
+                "the operation is not implemented by this agent build",
+            ),
+        }
     }
 
     fn service_control(&self, request: &OperationRequest) -> Value {
@@ -1569,16 +1714,19 @@ impl<'a> AgentHandler<'a> {
         if !acceptance.reused {
             let runtime = runtime.clone();
             let execution_id = acceptance.execution_id.clone();
+            let deadline = request_deadline(request);
             std::thread::spawn(move || {
                 // The ticket is returned when the worker finishes or panics.
                 let _ticket = ticket;
-                runtime.run_worker(
-                    execution_id,
-                    application_id,
-                    git_ref,
-                    run_migrations,
-                    recovery_acknowledged,
-                );
+                crate::process::with_deadline(deadline, || {
+                    runtime.run_worker(
+                        execution_id,
+                        application_id,
+                        git_ref,
+                        run_migrations,
+                        recovery_acknowledged,
+                    );
+                });
             });
         }
 
@@ -1832,48 +1980,34 @@ impl RequestHandler for AgentHandler<'_> {
             "agent.cancel" => self.cancel(request),
             "agent.register_application" => self.register_application(request),
             "application.deploy" => self.deploy_release(request),
-            "service.control" => self.complete_operation(request, || self.service_control(request)),
-            "package.install" => self.complete_operation(request, || self.package_install(request)),
-            "package.upgrade" => self.complete_operation(request, || self.package_upgrade(request)),
+            "service.control" => self.complete_operation(request),
+            "package.install" => self.complete_operation(request),
+            "package.upgrade" => self.complete_operation(request),
             "agent.register_package" => self.register_package(request),
             "agent.remove_package" => self.remove_package(request),
             "agent.register_backup" => self.register_backup(request),
-            "backup.create" => self.complete_operation(request, || self.create_backup(request)),
-            "backup.restore" => self.complete_operation(request, || self.restore_backup(request)),
-            "firewall.rule.add" => {
-                self.complete_operation(request, || self.firewall_rule_add(request))
-            }
-            "firewall.rule.remove" => {
-                self.complete_operation(request, || self.firewall_rule_remove(request))
-            }
-            "firewall.web" => self.complete_operation(request, || self.firewall_web(request)),
+            "backup.create" => self.complete_operation(request),
+            "backup.restore" => self.complete_operation(request),
+            "firewall.rule.add" => self.complete_operation(request),
+            "firewall.rule.remove" => self.complete_operation(request),
+            "firewall.web" => self.complete_operation(request),
             "application.logs" => self.application_logs(request),
             "application.metrics" => self.application_metrics(request),
             "application.observe" => self.application_observe(request),
-            "application.start" => {
-                self.complete_operation(request, || self.application_start(request))
-            }
-            "application.stop" => {
-                self.complete_operation(request, || self.application_stop(request))
-            }
-            "application.restart" => {
-                self.complete_operation(request, || self.application_restart(request))
-            }
+            "application.start" => self.complete_operation(request),
+            "application.stop" => self.complete_operation(request),
+            "application.restart" => self.complete_operation(request),
             "agent.register_database" => self.register_database(request),
-            "database.provision" => {
-                self.complete_operation(request, || self.database_provision(request))
-            }
-            "database.rotate" => self.complete_operation(request, || self.rotate_database(request)),
+            "database.provision" => self.complete_operation(request),
+            "database.rotate" => self.complete_operation(request),
             "database.export" => self.export_database(request),
-            "database.import" => self.complete_operation(request, || self.import_database(request)),
+            "database.import" => self.complete_operation(request),
             "agent.remove_database" => self.remove_database(request),
             "agent.register_schedule" => self.register_schedule(request),
             "agent.remove_schedule" => self.remove_schedule(request),
-            "schedule.apply" => self.complete_operation(request, || self.schedule_apply(request)),
+            "schedule.apply" => self.complete_operation(request),
             "agent.register_certificate" => self.register_certificate(request),
-            "certificate.issue" => {
-                self.complete_operation(request, || self.certificate_issue(request))
-            }
+            "certificate.issue" => self.complete_operation(request),
             _ => error_body(
                 ContractErrorCode::UnsupportedOperation,
                 "the operation is not implemented by this agent build",

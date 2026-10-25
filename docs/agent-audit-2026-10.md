@@ -45,13 +45,12 @@ for the audit; verification was `cargo fmt --check`,
 
 ## Deferred / recorded for the next slice
 
-1. **Long inline operations**: `package.install` (~900 s deadline) and
-   `certificate.issue` (~600 s) still execute inline on the transport loop, so
-   the panel must use generous read timeouts for them. Proper fix is the async
-   submit/inspect wiring already deferred in `docs/agent-development.md`
-   (phase 15 note); the receipt/inspect pipeline exists to absorb it.
-2. **`timeout_seconds`** is validated (1..=86400) but never applied to
-   execution; wire it when the async submit path lands.
+1. ~~**Long inline operations**~~ — **resolved (session 050)**: journaled
+   mutations are accepted on the serve loop and executed by a serialized
+   mutation worker (`dispatch::serve_jobs`); the panel polls `agent.inspect`.
+2. ~~**`timeout_seconds`**~~ — **resolved (session 050)**: the request's
+   timeout becomes a thread-scoped operation deadline (`process::with_deadline`)
+   capping every subprocess; expiry yields status `timed_out` / code `timeout`.
 3. **DNS-resolution-time SSRF**: URL policy is point-in-time at registration;
    git resolves later and follows HTTP redirects (`http.maxRedirects` not
    capped). Needs a resolve-and-check hook or egress firewall; `nip.io`-style

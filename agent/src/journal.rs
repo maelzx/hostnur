@@ -281,7 +281,8 @@ pub struct CertificateRecord {
     pub state: String,
 }
 
-/// SQLite-backed journal. One connection; the transport is single-threaded.
+/// SQLite-backed journal. One connection per thread: the serve loop, the
+/// mutation worker and each deploy worker open their own (WAL + busy timeout).
 pub struct Journal {
     connection: Connection,
 }
@@ -634,6 +635,45 @@ impl Journal {
                 Err(error)
             }
         }
+    }
+
+    /// Resolve executions a previous agent process left `accepted` or
+    /// `running`. No worker survives a restart, so without this they would stay
+    /// active forever; the outcome is unknown and the host must be checked.
+    /// Call once at startup, before serving or starting workers.
+    pub fn interrupt_active_executions(&self) -> Result<usize, JournalError> {
+        let ids = {
+            let mut statement = self
+                .connection
+                .prepare(
+                    "SELECT execution_id FROM executions WHERE status IN ('accepted', 'running')",
+                )
+                .map_err(|err| JournalError::Query(err.to_string()))?;
+            statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(|err| JournalError::Query(err.to_string()))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|err| JournalError::Query(err.to_string()))?
+        };
+
+        let result = serde_json::json!({
+            "error": {
+                "code": "execution_unknown",
+                "message": "the agent restarted before the operation finished; verify the host state",
+                "retryable": false,
+            }
+        })
+        .to_string();
+        for id in &ids {
+            let execution_id = Uuid::parse(id).map_err(query_err)?;
+            self.finish_execution(
+                &execution_id,
+                OperationStatus::Failed,
+                Some(&result),
+                "Interrupted: the agent restarted before this operation finished; its outcome is unknown.",
+            )?;
+        }
+        Ok(ids.len())
     }
 
     /// Insert a managed resource if it is not already registered.
@@ -1346,5 +1386,69 @@ mod tests {
         assert!(!canonical.contains("AGE-SECRET-KEY"));
         assert!(!canonical.contains("INSERT INTO"));
         assert!(canonical.contains("x.age"));
+    }
+
+    fn request(operation: &str, idempotency_key: &str) -> OperationRequest {
+        OperationRequest {
+            protocol_version: 1,
+            request_id: Uuid::parse("b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e").unwrap(),
+            idempotency_key: Uuid::parse(idempotency_key).unwrap(),
+            operation: operation.to_string(),
+            resource: None,
+            parameters: serde_json::Map::new(),
+            timeout_seconds: None,
+        }
+    }
+
+    #[test]
+    fn interrupt_active_executions_resolves_only_unfinished_work() {
+        let journal = Journal::open_in_memory().unwrap();
+        let queued = journal
+            .accept(&request(
+                "package.upgrade",
+                "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e51",
+            ))
+            .unwrap();
+        let running = journal
+            .accept(&request(
+                "backup.create",
+                "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e52",
+            ))
+            .unwrap();
+        journal
+            .set_status(&running.execution_id, OperationStatus::Running, Some(10))
+            .unwrap();
+        let done = journal
+            .accept(&request(
+                "firewall.web",
+                "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e53",
+            ))
+            .unwrap();
+        journal
+            .finish_execution(
+                &done.execution_id,
+                OperationStatus::Succeeded,
+                Some("{}"),
+                "Completed.",
+            )
+            .unwrap();
+
+        assert_eq!(journal.interrupt_active_executions().unwrap(), 2);
+
+        for id in [&queued.execution_id, &running.execution_id] {
+            let view = journal.inspect(id).unwrap().unwrap();
+            assert_eq!(view.status, OperationStatus::Failed);
+            assert!(view.result.unwrap().contains("execution_unknown"));
+            assert!(
+                view.events
+                    .last()
+                    .unwrap()
+                    .message
+                    .starts_with("Interrupted")
+            );
+        }
+        let view = journal.inspect(&done.execution_id).unwrap().unwrap();
+        assert_eq!(view.status, OperationStatus::Succeeded);
+        assert_eq!(journal.interrupt_active_executions().unwrap(), 0);
     }
 }

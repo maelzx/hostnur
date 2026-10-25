@@ -36,16 +36,10 @@ final class UnixSocketAgentTransport implements AgentTransport
         }
 
         try {
+            // The agent answers every request promptly (mutations are accepted
+            // and run in the background), so the connection timeout always
+            // applies; a request's `timeout_seconds` bounds the agent's execution.
             $this->writeFrame($stream, $payload);
-
-            // Honour a per-request timeout (long mutations such as server-side
-            // package installs/upgrades run synchronously in the agent).
-            $timeout = (float) ($payload['timeout_seconds'] ?? $this->timeoutSeconds);
-            if ($timeout > 0) {
-                $seconds = (int) $timeout;
-                $microseconds = (int) (($timeout - $seconds) * 1_000_000);
-                stream_set_timeout($stream, $seconds, $microseconds);
-            }
 
             return $this->readFrame($stream);
         } finally {

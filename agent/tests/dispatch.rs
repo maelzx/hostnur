@@ -1,7 +1,11 @@
 //! Phase 11.5 dispatch checks: control operations backed by the journal.
 
 use hostnur_agent::contract::{Catalog, OperationRequest, Uuid, parse_request_str};
-use hostnur_agent::dispatch::AgentHandler;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
+
+use hostnur_agent::dispatch::{AgentHandler, mutation_queue};
 use hostnur_agent::journal::Journal;
 use hostnur_agent::transport::RequestHandler;
 use serde_json::{Map, Value, json};
@@ -352,4 +356,142 @@ fn provision_and_remove_require_registration() {
             .unwrap()["error"]["code"],
         "resource_not_found"
     );
+}
+
+fn unapproved_install() -> OperationRequest {
+    let mut parameters = Map::new();
+    parameters.insert("package".into(), json!("cowsay"));
+    request("package.install", parameters)
+}
+
+#[test]
+fn queued_mutation_returns_before_running_and_is_enqueued_once() {
+    let journal = Journal::open_in_memory().unwrap();
+    let mut handler = AgentHandler::new(&journal);
+    let (jobs, queue) = mutation_queue();
+    handler.configure_jobs(jobs);
+
+    let receipt = handler.handle(&unapproved_install()).unwrap();
+    assert_eq!(receipt["status"], "accepted");
+    let execution_id = receipt["execution_id"].as_str().unwrap();
+    // Nothing has run yet: the serve loop only accepted and queued it.
+    let body = handler.handle(&inspect_request(execution_id)).unwrap();
+    assert_eq!(body["status"], "accepted");
+
+    // A retry with the same idempotency key reuses the execution.
+    let again = handler.handle(&unapproved_install()).unwrap();
+    assert_eq!(again["execution_id"], receipt["execution_id"]);
+
+    let job = queue.try_recv().expect("one job queued");
+    assert!(queue.try_recv().is_err());
+    handler.execute_job(job);
+
+    let body = handler.handle(&inspect_request(execution_id)).unwrap();
+    assert_eq!(body["status"], "failed");
+    assert_eq!(body["result"]["error"]["code"], "invalid_parameters");
+    let events: Vec<&str> = body["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|event| event["message"].as_str().unwrap())
+        .collect();
+    assert_eq!(events, ["Started.", "Failed."]);
+}
+
+#[test]
+fn job_cancelled_while_queued_never_runs() {
+    let journal = Journal::open_in_memory().unwrap();
+    let mut handler = AgentHandler::new(&journal);
+    let (jobs, queue) = mutation_queue();
+    handler.configure_jobs(jobs);
+
+    let receipt = handler.handle(&unapproved_install()).unwrap();
+    let execution_id = receipt["execution_id"].as_str().unwrap();
+    handler.handle(&cancel_request(execution_id)).unwrap();
+    handler.execute_job(queue.try_recv().unwrap());
+
+    let body = handler.handle(&inspect_request(execution_id)).unwrap();
+    assert_eq!(body["status"], "cancelled");
+    assert!(body["result"].is_null());
+    let last = body["events"].as_array().unwrap().last().unwrap();
+    assert!(
+        last["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("Cancelled before it started")
+    );
+}
+
+#[test]
+fn job_whose_deadline_passed_in_the_queue_times_out_without_running() {
+    let journal = Journal::open_in_memory().unwrap();
+    let mut handler = AgentHandler::new(&journal);
+    let (jobs, queue) = mutation_queue();
+    handler.configure_jobs(jobs);
+
+    let mut req = unapproved_install();
+    req.timeout_seconds = Some(1);
+    let receipt = handler.handle(&req).unwrap();
+    let execution_id = receipt["execution_id"].as_str().unwrap();
+    std::thread::sleep(Duration::from_millis(1100));
+    handler.execute_job(queue.try_recv().unwrap());
+
+    let body = handler.handle(&inspect_request(execution_id)).unwrap();
+    assert_eq!(body["status"], "timed_out");
+    assert_eq!(body["result"]["error"]["code"], "timeout");
+}
+
+#[test]
+fn full_queue_refuses_with_retryable_agent_unavailable() {
+    let journal = Journal::open_in_memory().unwrap();
+    let mut handler = AgentHandler::new(&journal);
+    let (jobs, _queue) = std::sync::mpsc::sync_channel(0);
+    handler.configure_jobs(jobs);
+
+    let receipt = handler.handle(&unapproved_install()).unwrap();
+    let execution_id = receipt["execution_id"].as_str().unwrap();
+    let body = handler.handle(&inspect_request(execution_id)).unwrap();
+    assert_eq!(body["status"], "failed");
+    assert_eq!(body["result"]["error"]["code"], "agent_unavailable");
+    assert_eq!(body["result"]["error"]["retryable"], true);
+}
+
+#[test]
+fn worker_thread_completes_jobs_over_its_own_journal_connection() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("agent.db");
+    let journal = Journal::open(&path).unwrap();
+    let mut handler = AgentHandler::new(&journal);
+    let (jobs, queue) = mutation_queue();
+    handler.configure_jobs(jobs);
+
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let worker = {
+        let shutdown = Arc::clone(&shutdown);
+        let path = path.clone();
+        std::thread::spawn(move || {
+            let journal = Journal::open(&path).unwrap();
+            AgentHandler::new(&journal).serve_jobs(&queue, &shutdown);
+        })
+    };
+
+    let receipt = handler.handle(&unapproved_install()).unwrap();
+    let execution_id = receipt["execution_id"].as_str().unwrap();
+    let started = Instant::now();
+    let body = loop {
+        let body = handler.handle(&inspect_request(execution_id)).unwrap();
+        if body["status"] != "accepted" && body["status"] != "running" {
+            break body;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "worker never finished"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(body["status"], "failed");
+    assert_eq!(body["result"]["error"]["code"], "invalid_parameters");
+
+    shutdown.store(true, Ordering::Relaxed);
+    worker.join().unwrap();
 }

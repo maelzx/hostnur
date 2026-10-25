@@ -2042,6 +2042,36 @@ suites after any agent edit.
   (page-snapshot exposure); `control_state`/`server` backup scopes; `arguments` JSON
   error propagation.
 
+### Session 050 — Agent async mutations + request-timeout enforcement (2026-10-25)
+
+- **Async long mutations (top Phase 21 item)**: every journaled mutation
+  (`service.control`, `package.*`, `backup.*`, `firewall.*`, `application.start/stop/
+  restart`, `database.provision/rotate/import`, `schedule.apply`, `certificate.issue`)
+  is now only *accepted* on the serve loop and queued (bounded, 32) to a single
+  **serialized mutation worker** thread with its own journal connection (apt/ufw/
+  systemd/nginx changes are not interleaved). Reads (`server.snapshot`, `inspect`, …)
+  stay responsive during a long `package.upgrade`/`backup.create`. A full queue fails
+  the execution with retryable `agent_unavailable`; a job cancelled while queued never
+  runs; a worker panic records a failed outcome instead of stalling the queue.
+  Deploys keep their own worker pool.
+- **Timeouts enforced**: `timeout_seconds` becomes a thread-scoped operation deadline
+  (`process::with_deadline`) that caps every subprocess and refuses new ones once
+  passed; applied to queued mutations and deploy workers. Expiry → status
+  `timed_out`, result code `timeout`. (S3 transfers keep their own ureq timeout.)
+- **Restart safety**: startup resolves executions left `accepted`/`running` by a
+  previous process to `failed` + `execution_unknown` ("Interrupted…") before serving.
+- **Panel**: tasks store the requested `timeout_seconds` (new column); it is sent on
+  submit and `deadline_at` now starts at **submission** (approval wait isn't charged).
+  The socket transport no longer stretches its read timeout to `timeout_seconds`.
+  Failed tasks now take `error_code`/`error_message` from the agent's result error
+  object (timeouts/refusals/interruptions are visible).
+- Checks: Rust **148 unit + 18 dispatch** tests (9 new) + clippy `-D warnings` + fmt;
+  PHP **269 tests** (2 new) + pint. **Not run**: root `*_vm` suites; no real-host
+  validation yet (re-run a full `package.upgrade` on the droplet while loading the
+  dashboard).
+- Remaining from session 049: restore symlink-walk defense, S3 restore streaming,
+  secret-valued Livewire properties, `control_state`/`server` backup scopes.
+
 ### Session 044 — UI/UX revamp + truthful application status (2026-10-15)
 
 - **UI/UX revamp** (using the `ui-ux-pro-max` skill): redesigned the sign-in page
