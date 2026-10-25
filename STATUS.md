@@ -10,8 +10,8 @@ DB queue, MFA), Rust root agent over a Unix socket, public/private HTTPS Git
 deploys of Laravel apps as per-app Linux users with PHP-FPM + Nginx, rollback,
 Let's Encrypt and uploaded certificates, MariaDB provisioning, services,
 packages, firewall, schedules, encrypted (age) backups to S3, curl installer
-and Debian packages. Releases up to `v0.1.5` are tagged; `main` has two
-host-verified security/TLS fixes on top (`8e64f5b`, `a4b0f2b`) that need `v0.1.6`.
+and Debian packages. Releases up to `v0.1.6` are tagged; `v0.1.6` carries the session 054
+TLS-redeploy and isolation fixes and was verified on the host as an upgrade.
 
 Session 054 ran the first full pass on a fresh droplet from the GitHub
 release (`v0.1.4` install, in-place upgrade to `v0.1.5`): most rows are now
@@ -31,10 +31,10 @@ validated on a host; see `plan.md` session 054 for the evidence.
 | 8 | Server overview, packages, services, schedules | Validated (045) |
 | 9 | Jobs inspectable after browser disconnect / process interruption | Validated (054): restart mid-deploy → `execution_unknown`, processes killed, redeploy OK |
 | 10 | Agent is not an arbitrary root command runner | Validated (054): full abuse suite refused; SSH-lockout rule fixed in `v0.1.5` |
-| 11 | Socket/path checks, cross-app secret isolation | Validated (054) after fixing a HIGH leak (`a4b0f2b`: app users could read panel `.env`/DB and other apps' trees) — needs `v0.1.6` |
+| 11 | Socket/path checks, cross-app secret isolation | Validated (054) after fixing a HIGH leak (`a4b0f2b`: app users could read panel `.env`/DB and other apps' trees); re-verified as a `v0.1.5 → v0.1.6` upgrade |
 | 12 | Audit attribution, log/secret redaction | Validated (054); failed-login audit not exercised |
 | 13 | SQLite queue/audit contention within limits | Validated (054): 0 lock errors under 4 writers + 10-way HTTP on 1 vCPU |
-| 14 | Upgrade preserves panel data, settings, credentials | Validated `v0.1.4 → v0.1.5` (054) |
+| 14 | Upgrade preserves panel data, settings, credentials | Validated `v0.1.4 → v0.1.5 → v0.1.6` (054) |
 | 15 | Restore and recovery on a separate VM | Restore hardened (053); drill pending — needs a restore VM |
 | 16 | Published artifacts verifiably authentic | Blocked on the signing-key decision |
 | 17 | Support matrix and operator docs match tested behaviour | Pending (after the host pass) |
@@ -46,9 +46,7 @@ validated on a host; see `plan.md` session 054 for the evidence.
    `/etc/hostnur/tls/<site>` or reloads nginx, so app certificates lapse ~90
    days after issue. Likely an agent hook command passed as certbot's
    `--deploy-hook` at issuance (and back-filled into existing renewal configs).
-2. Tag **`v0.1.6`** with `8e64f5b` + `a4b0f2b` (+ the renewal fix) and re-run the
-   isolation matrix and an upgrade from `v0.1.5` on a droplet.
-3. Remaining code items, none blocking:
+2. Remaining code items, none blocking:
    - secret values held in public Livewire properties (wizard secrets,
      certificate key, DB credential fields);
    - deploy/rollback tasks still send no `timeout_seconds`;

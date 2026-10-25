@@ -2095,9 +2095,19 @@ from `main` (cross-built amd64) for re-verification. Apps: AssetKOM (panel path 
 - **Not covered**: failed-login / lockout audit (needs a credential entry the owner must
   perform), restore on a separate VM, SSH deploy keys, signed artifacts.
 - **Owner decision**: the installer leaves ufw inactive.
+- **`v0.1.6` re-check (same host)**: reset the panel tree, app roots and `www-data`
+  group membership to the loose `v0.1.5` state (app user could read the panel `.env`),
+  then upgraded with the release installer (exit 0, agent `0.1.6`). The upgrade alone
+  locked the panel (`hostnur-panel:www-data 0750`, `.env`/DB `0600`, `database/`
+  `0700`); admin + MFA, 53 audit events and the app were preserved. The next deploy of
+  each app tightened its root to `root:<app group> 0750` and added `www-data` to the
+  group (the `crash` deploy then failed its health gate on the known missing
+  `sessions` table, after the reconcile). Two-app read matrix all denied; AssetKOM
+  HTTPS `/up` and `/login` 200 with its own certificate after redeploy; panel login
+  and static assets 200.
 - Test state left on the host: age keypair at `/root/backup-identity.txt` with
-  `backup_recipient` set; the `crash` app; agent binary from `main` (`a4b0f2b`)
-  with the `v0.1.5` binary kept at `/usr/local/bin/hostnur-agent.v0.1.5`.
+  `backup_recipient` set; the `crash` app; everything from the `v0.1.6` release
+  (old binary kept at `/usr/local/bin/hostnur-agent.v0.1.5`).
 
 ### Session 053 — Backup safety: staged restore, control/server scopes, retention (2026-10-25)
 
