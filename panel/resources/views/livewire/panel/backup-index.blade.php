@@ -85,6 +85,9 @@
                     @foreach ($backups as $backup)
                         <li class="flex items-center justify-between gap-3 py-2" wire:key="backup-{{ $backup->id }}">
                             <x-ui.request-status :state="$backup->state" />
+                            @if ($backup->verification_status === 'pruned')
+                                <span class="text-xs text-slate-500">pruned by retention</span>
+                            @endif
                             @if ($backup->task)
                                 <a href="{{ route('panel.tasks.show', ['task' => $backup->task->id]) }}" class="text-xs font-medium text-indigo-700 hover:underline">task</a>
                             @endif

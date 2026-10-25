@@ -130,7 +130,9 @@ final class BackupService
                 idempotencyKey: $idempotencyKey,
                 operation: 'backup.create',
                 resource: new ResourceRef(ResourceKind::Backup, $backup->getKey()),
-                parameters: ['policy' => $policy->getKey()],
+                // The agent prunes this policy's expired local artifacts after a
+                // successful backup and reports which ones it removed.
+                parameters: ['policy' => $policy->getKey(), 'retention_days' => $policy->retention_days],
                 timeoutSeconds: 1800,
             ));
 
@@ -157,6 +159,16 @@ final class BackupService
             }
 
             $backup->forceFill($updates)->save();
+
+            $pruned = $backup->task->result['pruned'] ?? null;
+
+            if ($updates['state'] === RequestState::Succeeded && is_array($pruned) && array_is_list($pruned)) {
+                Backup::query()
+                    ->where('backup_policy_id', $backup->backup_policy_id)
+                    ->whereKeyNot($backup->getKey())
+                    ->whereIn('id', array_filter($pruned, 'is_string'))
+                    ->update(['verification_status' => 'pruned']);
+            }
         }
 
         return $backup;

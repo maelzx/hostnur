@@ -300,6 +300,35 @@ class ServerAdministrationTest extends TestCase
         }
     }
 
+    public function test_backups_send_retention_and_record_what_the_agent_pruned(): void
+    {
+        config(['hostnur.agent_mode' => 'fake']);
+        Queue::fake();
+        $admin = $this->admin();
+        $this->recent($admin);
+        $service = app(BackupService::class);
+        $policy = $service->savePolicy($admin, ['scope' => 'server', 'expression' => '0 3 * * *', 'timezone' => 'UTC', 'retention_days' => 7]);
+        $other = $service->savePolicy($admin, ['scope' => 'server', 'expression' => '0 4 * * *', 'timezone' => 'UTC', 'retention_days' => 30]);
+
+        $old = $service->requestBackup($admin, $policy, 'backup-old');
+        $foreign = $service->requestBackup($admin, $other, 'backup-foreign');
+        $new = $service->requestBackup($admin, $policy, 'backup-new');
+
+        $this->assertSame(['policy' => $policy->getKey(), 'retention_days' => 7], $new->task->parameters);
+
+        // The agent reports it pruned the old backup (and, wrongly, a foreign one).
+        $new->task->forceFill([
+            'status' => 'succeeded',
+            'finished_at' => now(),
+            'result' => ['pruned' => [$old->getKey(), $foreign->getKey()]],
+        ])->save();
+        $service->syncState($new->refresh());
+
+        $this->assertSame('pruned', $old->refresh()->verification_status);
+        $this->assertNotSame('pruned', $foreign->refresh()->verification_status);
+        $this->assertNotSame('pruned', $new->refresh()->verification_status);
+    }
+
     public function test_backup_policies_and_simulated_backups_are_never_recoverable(): void
     {
         config(['hostnur.agent_mode' => 'fake']);

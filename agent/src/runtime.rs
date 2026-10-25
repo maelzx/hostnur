@@ -185,6 +185,7 @@ fn build_handler<'j>(journal: &'j Journal, config: &AgentConfig) -> AgentHandler
     let policy = RuntimePolicy::default().allow_versions("php", &extra_php);
     let mut handler = AgentHandler::with_deploy(journal, deploy, policy);
     handler.configure_secrets_dir(config.state_dir.join("secrets"));
+    handler.configure_control_paths(config.panel_dir.clone(), PathBuf::from("/etc/hostnur"));
     handler.configure_acme(config.acme_email.clone(), config.acme_staging);
     handler.configure_backup(config.backup_recipient.clone(), config.backup_dir.clone());
     handler.configure_s3(crate::s3::S3Config::load(std::path::Path::new(

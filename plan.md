@@ -2042,6 +2042,36 @@ suites after any agent edit.
   (page-snapshot exposure); `control_state`/`server` backup scopes; `arguments` JSON
   error propagation.
 
+### Session 053 — Backup safety: staged restore, control/server scopes, retention (2026-10-25)
+
+- **Restore can no longer be redirected (session 048 HIGH)**: `backup.restore` never
+  writes into the live app-writable `shared/`. `backup::restore_shared` streams
+  file → age → gzip → tar into a fresh root-only staging dir beside it (inside the
+  root-owned app dir, out of the app account's reach), keeps permission bits but
+  strips setuid/setgid/sticky, re-applies the layout modes (`shared` 0750,
+  `secrets` 0700), `lchown`s to the app account (restored files were root-owned
+  before) and swaps it in by rename; the replaced tree is kept as
+  `.shared-before-<backup>` (reported as `previous`), and a failed swap restores it.
+- **Streaming restore**: the sealed artifact is no longer read and decrypted into
+  memory (multi-GB restore OOM risk).
+- **New capture scopes**: `control_state` = panel SQLite (`VACUUM INTO` snapshot) +
+  panel `.env` (APP_KEY) + agent journal snapshot + agent secret store +
+  `/etc/hostnur` (agent/S3 config, installed TLS); `server` = `control_state` +
+  every managed app's `shared/` + a dump of every ready MariaDB database (a failed
+  dump fails the backup). The panel's **Server** policy (mapped to `server`) failed
+  with "not supported" before. Archive layout: `control/{panel,agent,etc-hostnur}`,
+  `databases/<db>.sql`, `apps/<id>/shared`. New agent config `panel_dir` (default
+  `/opt/hostnur-panel`). Restore for these scopes is manual for now (decrypt with the
+  operator identity: `age -d -i key.txt X.tar.gz.age | tar -xz`) — part of the
+  separate-VM drill (P19.5).
+- **Retention (P19.6, local)**: `backup.create` takes `retention_days` (1–3650); after
+  a successful backup the agent deletes that policy's local sealed artifacts +
+  manifests older than the retention (never the new one) and returns `pruned`; the
+  panel marks those backups `pruned`. Remote (S3) retention is left to a bucket
+  lifecycle rule. Still open: SFTP destination, S3 GET-based restore.
+- Checks: Rust 152 unit (4 new) + 29 dispatch (5 new) + clippy/fmt; PHP 278 (1 new) +
+  pint. Not run on a real host.
+
 ### Session 052 — Panel-driven end-to-end driver (`hostnur:smoke`) (2026-10-25)
 
 - Addresses session 047's "panel UI path not exercised end-to-end (MFA blocks

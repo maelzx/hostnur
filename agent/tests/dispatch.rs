@@ -729,3 +729,283 @@ fn rollback_rejects_a_non_uuid_release() {
     let body = handler.handle(&req).unwrap();
     assert_eq!(body["error"]["code"], "invalid_parameters");
 }
+
+struct ControlFixture {
+    _dir: tempfile::TempDir,
+    root: std::path::PathBuf,
+    identity: String,
+}
+
+fn control_fixture() -> ControlFixture {
+    use age::secrecy::ExposeSecret;
+
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    std::fs::create_dir_all(root.join("panel/database")).unwrap();
+    let panel = rusqlite::Connection::open(root.join("panel/database/database.sqlite")).unwrap();
+    panel
+        .execute_batch(
+            "CREATE TABLE users (email TEXT); INSERT INTO users VALUES ('a@example.com');",
+        )
+        .unwrap();
+    std::fs::write(root.join("panel/.env"), "APP_KEY=base64:test\n").unwrap();
+    std::fs::create_dir_all(root.join("etc")).unwrap();
+    std::fs::write(root.join("etc/agent.toml"), "version = 1\n").unwrap();
+    std::os::unix::fs::symlink("/etc/passwd", root.join("etc/linked")).unwrap();
+    std::fs::create_dir_all(root.join("secrets")).unwrap();
+    std::fs::write(root.join("secrets/db-password"), "pw").unwrap();
+
+    let identity = age::x25519::Identity::generate();
+    ControlFixture {
+        _dir: dir,
+        root,
+        identity: identity.to_string().expose_secret().to_string(),
+    }
+}
+
+fn control_handler<'j>(journal: &'j Journal, fixture: &ControlFixture) -> AgentHandler<'j> {
+    let identity: age::x25519::Identity = fixture.identity.parse().unwrap();
+    let mut handler = AgentHandler::new(journal);
+    handler.configure_backup(
+        Some(identity.to_public().to_string()),
+        fixture.root.join("backups"),
+    );
+    handler.configure_control_paths(fixture.root.join("panel"), fixture.root.join("etc"));
+    handler.configure_secrets_dir(fixture.root.join("secrets"));
+    handler
+}
+
+fn create_backup(handler: &AgentHandler<'_>, scope: &str) -> (String, Value) {
+    create_backup_with(handler, scope, Map::new())
+}
+
+fn create_backup_with(
+    handler: &AgentHandler<'_>,
+    scope: &str,
+    create_parameters: Map<String, Value>,
+) -> (String, Value) {
+    let backup = hostnur_agent::ids::new_uuid_v4();
+    let mut parameters = Map::new();
+    parameters.insert("backup".into(), json!(backup.as_str()));
+    parameters.insert("scope".into(), json!(scope));
+    let registered = handler
+        .handle(&request("agent.register_backup", parameters))
+        .unwrap();
+    assert_eq!(registered["registered"], true);
+
+    let mut req = request("backup.create", create_parameters);
+    req.idempotency_key = hostnur_agent::ids::new_uuid_v4();
+    req.resource = Some(hostnur_agent::contract::ResourceRef {
+        kind: "backup".to_string(),
+        id: backup.as_str().to_string(),
+    });
+    let receipt = handler.handle(&req).unwrap();
+    let execution_id = receipt["execution_id"].as_str().unwrap().to_string();
+    (
+        backup.as_str().to_string(),
+        handler.handle(&inspect_request(&execution_id)).unwrap(),
+    )
+}
+
+/// Decrypt a sealed artifact and list its archive member paths.
+fn sealed_members(path: &std::path::Path, identity: &str) -> Vec<String> {
+    let sealed = std::fs::read(path).unwrap();
+    let plaintext = hostnur_agent::backup::open(identity, &sealed).unwrap();
+    let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(&plaintext[..]));
+    archive
+        .entries()
+        .unwrap()
+        .map(|entry| {
+            entry
+                .unwrap()
+                .path()
+                .unwrap()
+                .display()
+                .to_string()
+                .trim_end_matches('/')
+                .to_string()
+        })
+        .collect()
+}
+
+#[test]
+fn control_state_backup_captures_the_control_plane_and_cleans_up() {
+    let fixture = control_fixture();
+    let journal = Journal::open(&fixture.root.join("agent.db")).unwrap();
+    let handler = control_handler(&journal, &fixture);
+
+    let (backup, body) = create_backup(&handler, "control_state");
+    assert_eq!(body["status"], "succeeded", "{body}");
+    assert_eq!(body["result"]["scope"], "control_state");
+    assert_eq!(body["result"]["consistency"], "snapshot");
+    assert_eq!(
+        body["result"]["contents"]["control"],
+        json!([
+            "panel_database",
+            "panel_env",
+            "agent_journal",
+            "agent_secrets",
+            "agent_config"
+        ])
+    );
+
+    let backups = fixture.root.join("backups");
+    let members = sealed_members(
+        &backups.join(format!("{backup}.tar.gz.age")),
+        &fixture.identity,
+    );
+    for expected in [
+        "control/panel/database.sqlite",
+        "control/panel/.env",
+        "control/agent/agent.db",
+        "control/agent/secrets/db-password",
+        "control/etc-hostnur/agent.toml",
+    ] {
+        assert!(
+            members.iter().any(|member| member == expected),
+            "{expected} missing from {members:?}"
+        );
+    }
+    // Links are never followed into the archive.
+    assert!(!members.iter().any(|member| member.ends_with("linked")));
+
+    // Only the sealed artifact and its manifest remain: no staging, no plaintext.
+    let mut left: Vec<String> = std::fs::read_dir(&backups)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    left.sort();
+    assert_eq!(
+        left,
+        [
+            format!("{backup}.manifest.json"),
+            format!("{backup}.tar.gz.age")
+        ]
+    );
+}
+
+#[test]
+fn control_state_snapshot_of_the_panel_database_is_readable() {
+    let fixture = control_fixture();
+    let journal = Journal::open(&fixture.root.join("agent.db")).unwrap();
+    let handler = control_handler(&journal, &fixture);
+    let (backup, body) = create_backup(&handler, "control_state");
+    assert_eq!(body["status"], "succeeded");
+
+    let sealed = std::fs::read(fixture.root.join(format!("backups/{backup}.tar.gz.age"))).unwrap();
+    let plaintext = hostnur_agent::backup::open(&fixture.identity, &sealed).unwrap();
+    let out = tempfile::tempdir().unwrap();
+    tar::Archive::new(flate2::read::GzDecoder::new(&plaintext[..]))
+        .unpack(out.path())
+        .unwrap();
+    let restored =
+        rusqlite::Connection::open(out.path().join("control/panel/database.sqlite")).unwrap();
+    let email: String = restored
+        .query_row("SELECT email FROM users", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(email, "a@example.com");
+}
+
+#[test]
+fn server_backup_includes_control_state_and_a_databases_directory() {
+    let fixture = control_fixture();
+    let journal = Journal::open(&fixture.root.join("agent.db")).unwrap();
+    let handler = control_handler(&journal, &fixture);
+
+    let (backup, body) = create_backup(&handler, "server");
+    assert_eq!(body["status"], "succeeded", "{body}");
+    assert_eq!(body["result"]["contents"]["databases"], 0);
+    assert_eq!(body["result"]["contents"]["applications"], 0);
+
+    let members = sealed_members(
+        &fixture.root.join(format!("backups/{backup}.tar.gz.age")),
+        &fixture.identity,
+    );
+    assert!(members.iter().any(|member| member == "control/panel/.env"));
+    assert!(members.iter().any(|member| member == "databases"));
+}
+
+fn policy_parameters(policy: &str, retention_days: Value) -> Map<String, Value> {
+    let mut parameters = Map::new();
+    parameters.insert("policy".into(), json!(policy));
+    parameters.insert("retention_days".into(), retention_days);
+    parameters
+}
+
+#[test]
+fn retention_prunes_only_the_policys_expired_local_artifacts() {
+    let fixture = control_fixture();
+    let journal = Journal::open(&fixture.root.join("agent.db")).unwrap();
+    let handler = control_handler(&journal, &fixture);
+    let policy = "3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+    let other_policy = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
+    let backups = fixture.root.join("backups");
+    let age_by = |id: &str, days: u64| {
+        let old = std::time::SystemTime::now() - Duration::from_secs(days * 86_400);
+        std::fs::File::options()
+            .write(true)
+            .open(backups.join(format!("{id}.tar.gz.age")))
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+    };
+
+    let (expired, _) = create_backup_with(
+        &handler,
+        "control_state",
+        policy_parameters(policy, json!(7)),
+    );
+    let (recent, _) = create_backup_with(
+        &handler,
+        "control_state",
+        policy_parameters(policy, json!(7)),
+    );
+    let (foreign, _) = create_backup_with(
+        &handler,
+        "control_state",
+        policy_parameters(other_policy, json!(7)),
+    );
+    age_by(&expired, 10);
+    age_by(&recent, 3);
+    age_by(&foreign, 10);
+
+    let (latest, body) = create_backup_with(
+        &handler,
+        "control_state",
+        policy_parameters(policy, json!(7)),
+    );
+    assert_eq!(body["status"], "succeeded", "{body}");
+    assert_eq!(body["result"]["pruned"], json!([expired]));
+
+    assert!(!backups.join(format!("{expired}.tar.gz.age")).exists());
+    assert!(!backups.join(format!("{expired}.manifest.json")).exists());
+    for kept in [&recent, &foreign, &latest] {
+        assert!(
+            backups.join(format!("{kept}.tar.gz.age")).exists(),
+            "{kept} was pruned"
+        );
+    }
+}
+
+#[test]
+fn retention_days_out_of_range_is_rejected_before_any_work() {
+    let fixture = control_fixture();
+    let journal = Journal::open(&fixture.root.join("agent.db")).unwrap();
+    let handler = control_handler(&journal, &fixture);
+
+    for days in [json!(0), json!(3651), json!(-1)] {
+        let (backup, body) = create_backup_with(
+            &handler,
+            "control_state",
+            policy_parameters("3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", days),
+        );
+        assert_eq!(body["status"], "failed");
+        assert_eq!(body["result"]["error"]["code"], "invalid_parameters");
+        assert!(
+            !fixture
+                .root
+                .join(format!("backups/{backup}.tar.gz.age"))
+                .exists()
+        );
+    }
+}

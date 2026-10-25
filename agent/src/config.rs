@@ -35,7 +35,7 @@ const MAX_SOCKET_PATH_BYTES: usize = 107;
 
 /// Top-level settings accepted by this schema version. Anything else is an
 /// unknown setting and is rejected.
-const KNOWN_KEYS: [&str; 15] = [
+const KNOWN_KEYS: [&str; 16] = [
     "version",
     "socket_path",
     "state_dir",
@@ -51,10 +51,14 @@ const KNOWN_KEYS: [&str; 15] = [
     "acme_staging",
     "backup_recipient",
     "backup_dir",
+    "panel_dir",
 ];
 
 /// Default local staging directory for sealed backup artifacts.
 pub const DEFAULT_BACKUP_DIR: &str = "/var/lib/hostnur/backups";
+
+/// Default panel installation directory (both install paths use it).
+pub const DEFAULT_PANEL_DIR: &str = "/opt/hostnur-panel";
 
 /// Validated agent configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,6 +87,8 @@ pub struct AgentConfig {
     pub backup_recipient: Option<String>,
     /// Local staging directory for sealed backup artifacts.
     pub backup_dir: PathBuf,
+    /// Panel installation directory, captured by control-state backups.
+    pub panel_dir: PathBuf,
 }
 
 impl AgentConfig {
@@ -140,6 +146,9 @@ impl AgentConfig {
         let backup_dir = optional_string(table, "backup_dir")?
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(DEFAULT_BACKUP_DIR));
+        let panel_dir = optional_string(table, "panel_dir")?
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(DEFAULT_PANEL_DIR));
 
         let config = AgentConfig {
             version: u32::try_from(version)
@@ -158,6 +167,7 @@ impl AgentConfig {
             acme_staging,
             backup_recipient,
             backup_dir,
+            panel_dir,
         };
         config.validate()?;
         Ok(config)
@@ -183,6 +193,7 @@ impl AgentConfig {
 
         validate_absolute_path("state_dir", &self.state_dir)?;
         validate_absolute_path("backup_dir", &self.backup_dir)?;
+        validate_absolute_path("panel_dir", &self.panel_dir)?;
 
         if let Some(recipient) = &self.backup_recipient
             && !recipient.is_empty()

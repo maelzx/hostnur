@@ -234,7 +234,8 @@
         "backup.create": {
             "resource": "backup",
             "parameters": {
-                "policy": { "type": "uuid", "required": false }
+                "policy": { "type": "uuid", "required": false },
+                "retention_days": { "type": "integer", "required": false }
             },
             "read_only": false,
             "retry": "capability_declared"

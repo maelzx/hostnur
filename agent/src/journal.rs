@@ -317,6 +317,8 @@ impl Journal {
             .map_err(|err| JournalError::Open(err.to_string()))?;
         // Additive migration for databases created before the result column.
         let _ = connection.execute("ALTER TABLE executions ADD COLUMN result TEXT", []);
+        // Additive migration: the policy a backup belongs to (for retention).
+        let _ = connection.execute("ALTER TABLE backups ADD COLUMN policy_id TEXT", []);
         connection
             .execute(
                 "INSERT INTO schema_meta(key, value) VALUES ('schema_version', ?1)
@@ -779,6 +781,40 @@ impl Journal {
             .map_err(|err| JournalError::Query(err.to_string()))
     }
 
+    /// Ids of every managed application, oldest first.
+    pub fn managed_application_ids(&self) -> Result<Vec<Uuid>, JournalError> {
+        self.ids("SELECT application_id FROM managed_applications ORDER BY created_at")
+    }
+
+    /// Ids of every database in the `ready` state, oldest first.
+    pub fn ready_database_ids(&self) -> Result<Vec<Uuid>, JournalError> {
+        self.ids("SELECT resource_id FROM databases WHERE state = 'ready' ORDER BY created_at")
+    }
+
+    fn ids(&self, sql: &str) -> Result<Vec<Uuid>, JournalError> {
+        let mut statement = self
+            .connection
+            .prepare(sql)
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|err| JournalError::Query(err.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+        rows.iter()
+            .map(|id| Uuid::parse(id).map_err(query_err))
+            .collect()
+    }
+
+    /// Write a transactionally consistent copy of the journal to `path`
+    /// (`VACUUM INTO`; the destination must not exist).
+    pub fn snapshot_to(&self, path: &Path) -> Result<(), JournalError> {
+        self.connection
+            .execute("VACUUM INTO ?1", params![path.display().to_string()])
+            .map(|_| ())
+            .map_err(|err| JournalError::Query(err.to_string()))
+    }
+
     /// Look up a managed application by its derived account name.
     pub fn managed_application_by_account(
         &self,
@@ -1053,6 +1089,37 @@ impl Journal {
             )
             .map_err(|err| JournalError::Query(err.to_string()))?;
         Ok(())
+    }
+
+    /// Record which panel backup policy produced a backup.
+    pub fn set_backup_policy(
+        &self,
+        backup_id: &Uuid,
+        policy_id: &Uuid,
+    ) -> Result<(), JournalError> {
+        self.connection
+            .execute(
+                "UPDATE backups SET policy_id = ?2, updated_at = ?3 WHERE backup_id = ?1",
+                params![backup_id.as_str(), policy_id.as_str(), clock::now_rfc3339()],
+            )
+            .map(|_| ())
+            .map_err(|err| JournalError::Query(err.to_string()))
+    }
+
+    /// Every backup recorded for a policy.
+    pub fn backups_for_policy(&self, policy_id: &Uuid) -> Result<Vec<Uuid>, JournalError> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT backup_id FROM backups WHERE policy_id = ?1 ORDER BY created_at")
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+        let rows = statement
+            .query_map(params![policy_id.as_str()], |row| row.get::<_, String>(0))
+            .map_err(|err| JournalError::Query(err.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| JournalError::Query(err.to_string()))?;
+        rows.iter()
+            .map(|id| Uuid::parse(id).map_err(query_err))
+            .collect()
     }
 
     pub fn backup(&self, backup_id: &Uuid) -> Result<Option<BackupRecord>, JournalError> {

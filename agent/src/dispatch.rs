@@ -157,6 +157,8 @@ pub struct AgentHandler<'a> {
     backup_recipient: Option<String>,
     backup_dir: PathBuf,
     s3: Option<crate::s3::S3Config>,
+    panel_dir: PathBuf,
+    config_dir: PathBuf,
     cpu_last_total: AtomicU64,
     cpu_last_idle: AtomicU64,
     jobs: Option<SyncSender<Job>>,
@@ -185,6 +187,8 @@ impl<'a> AgentHandler<'a> {
             backup_recipient: None,
             backup_dir: PathBuf::from("/var/lib/hostnur/backups"),
             s3: None,
+            panel_dir: PathBuf::from(crate::config::DEFAULT_PANEL_DIR),
+            config_dir: PathBuf::from("/etc/hostnur"),
             cpu_last_total: AtomicU64::new(0),
             cpu_last_idle: AtomicU64::new(0),
             jobs: None,
@@ -214,6 +218,8 @@ impl<'a> AgentHandler<'a> {
             backup_recipient: None,
             backup_dir: PathBuf::from("/var/lib/hostnur/backups"),
             s3: None,
+            panel_dir: PathBuf::from(crate::config::DEFAULT_PANEL_DIR),
+            config_dir: PathBuf::from("/etc/hostnur"),
             cpu_last_total: AtomicU64::new(0),
             cpu_last_idle: AtomicU64::new(0),
             jobs: None,
@@ -377,6 +383,12 @@ impl<'a> AgentHandler<'a> {
     /// Configure the S3-compatible backup destination, if any.
     pub fn configure_s3(&mut self, s3: Option<crate::s3::S3Config>) {
         self.s3 = s3;
+    }
+
+    /// Where control-state backups find the panel and the agent configuration.
+    pub fn configure_control_paths(&mut self, panel_dir: PathBuf, config_dir: PathBuf) {
+        self.panel_dir = panel_dir;
+        self.config_dir = config_dir;
     }
 
     /// Use the agent's configured root-only secret store.
@@ -1391,83 +1403,341 @@ impl<'a> AgentHandler<'a> {
         // Sealed artifacts (and the brief plaintext window) are operator-only.
         let _ = std::fs::set_permissions(&self.backup_dir, std::fs::Permissions::from_mode(0o700));
 
-        match record.scope.as_str() {
-            "application_data" => {
-                let Some(application_id) = record.application_id else {
+        let policy = request
+            .parameters
+            .get("policy")
+            .and_then(Value::as_str)
+            .and_then(|value| Uuid::parse(value).ok());
+        let retention_days = match request.parameters.get("retention_days") {
+            None | Some(Value::Null) => None,
+            Some(value) => match value.as_u64() {
+                Some(days @ 1..=3650) => Some(days),
+                _ => {
                     return error_body(
                         ContractErrorCode::InvalidParameters,
-                        "application is required for application_data scope",
+                        "retention_days must be between 1 and 3650",
                     );
-                };
+                }
+            },
+        };
 
+        let stage = self.backup_dir.join(format!(".stage-{backup_id}"));
+        let archive = self.backup_dir.join(format!("{backup_id}.tar.gz"));
+        let captured = self.capture_scope(&record, &stage, &archive);
+        let _ = std::fs::remove_dir_all(&stage);
+        let (consistency, contents) = match captured {
+            Ok(captured) => captured,
+            Err(body) => {
+                let _ = std::fs::remove_file(&archive);
+                return body;
+            }
+        };
+
+        let mut result = self.seal_and_ship(
+            &backup_id,
+            &record.scope,
+            consistency,
+            contents,
+            &archive,
+            &recipient,
+        );
+        if result.get("error").is_some() {
+            return result;
+        }
+
+        if let Some(policy) = &policy {
+            let _ = self.journal.set_backup_policy(&backup_id, policy);
+            if let Some(days) = retention_days {
+                result["pruned"] = match self.prune_backups(policy, &backup_id, days) {
+                    Ok(pruned) => json!(pruned),
+                    // The new backup exists; a prune failure is reported, not fatal.
+                    Err(message) => json!({"error": message}),
+                };
+            }
+        }
+        result
+    }
+
+    /// Delete a policy's local sealed artifacts (and manifests) older than
+    /// `days`, never the backup that was just created. Returns the pruned ids.
+    /// Remote copies follow the destination's own lifecycle rules.
+    fn prune_backups(&self, policy: &Uuid, keep: &Uuid, days: u64) -> Result<Vec<String>, String> {
+        let cutoff = std::time::SystemTime::now()
+            .checked_sub(Duration::from_secs(days.saturating_mul(86_400)))
+            .ok_or_else(|| "retention is out of range".to_string())?;
+
+        let mut pruned = Vec::new();
+        for id in self
+            .journal
+            .backups_for_policy(policy)
+            .map_err(|error| error.to_string())?
+        {
+            if &id == keep {
+                continue;
+            }
+            let sealed = self.backup_dir.join(format!("{}.tar.gz.age", id.as_str()));
+            let Ok(modified) = std::fs::symlink_metadata(&sealed).and_then(|meta| meta.modified())
+            else {
+                continue;
+            };
+            if modified >= cutoff {
+                continue;
+            }
+            std::fs::remove_file(&sealed).map_err(|error| error.to_string())?;
+            let _ = std::fs::remove_file(
+                self.backup_dir
+                    .join(format!("{}.manifest.json", id.as_str())),
+            );
+            pruned.push(id.as_str().to_string());
+        }
+        Ok(pruned)
+    }
+
+    /// Build the plaintext archive for a backup's scope at `archive`, staging
+    /// any snapshots in the root-only `stage` directory. Returns the manifest's
+    /// consistency label and a summary of what was captured.
+    ///
+    /// - `application_data`: the application's `shared/` tree.
+    /// - `control_state`: what rebuilding the control plane needs — panel
+    ///   database (consistent snapshot) and `.env` (holds `APP_KEY`), agent
+    ///   journal snapshot and secret store, and `/etc/hostnur`.
+    /// - `server`: `control_state` plus every managed application's `shared/`
+    ///   tree and a dump of every ready managed database.
+    fn capture_scope(
+        &self,
+        record: &crate::journal::BackupRecord,
+        stage: &Path,
+        archive: &Path,
+    ) -> Result<(&'static str, Value), Value> {
+        let failed = |message: String| error_body(ContractErrorCode::OperationFailed, &message);
+
+        match record.scope.as_str() {
+            "application_data" => {
+                let Some(application_id) = record.application_id.as_ref() else {
+                    return Err(error_body(
+                        ContractErrorCode::InvalidParameters,
+                        "application is required for application_data scope",
+                    ));
+                };
                 let shared = self.apps_root.join(application_id.as_str()).join("shared");
-                let archive = self.backup_dir.join(format!("{backup_id}.tar.gz"));
-                if let Err(message) = crate::backup::archive_directory(&shared, &archive) {
-                    return error_body(ContractErrorCode::OperationFailed, &message);
+                crate::backup::archive_directory(&shared, archive).map_err(failed)?;
+                Ok((
+                    "best-effort",
+                    json!({"application": application_id.as_str()}),
+                ))
+            }
+            "control_state" => {
+                let control = self.stage_control_state(stage)?;
+                crate::backup::archive_paths(&[(stage, "control")], archive).map_err(failed)?;
+                Ok(("snapshot", json!({"control": control})))
+            }
+            "server" => {
+                let control = self.stage_control_state(stage)?;
+                let databases = self.stage_databases(&stage.join("databases"))?;
+
+                let (Some(apps_base), Some(apps_name)) = (
+                    self.apps_root.parent(),
+                    self.apps_root.file_name().and_then(|name| name.to_str()),
+                ) else {
+                    return Err(failed("the applications root has no parent".to_string()));
+                };
+                let mut applications = Vec::new();
+                for id in self
+                    .journal
+                    .managed_application_ids()
+                    .map_err(|error| failed(error.to_string()))?
+                {
+                    if self.apps_root.join(id.as_str()).join("shared").is_dir() {
+                        applications.push(format!("{apps_name}/{}/shared", id.as_str()));
+                    }
                 }
 
-                let sealed_path = self.backup_dir.join(format!("{backup_id}.tar.gz.age"));
-                let (sealed_bytes, hash) =
-                    match crate::backup::seal_file(&archive, &sealed_path, &recipient) {
-                        Ok(value) => value,
-                        Err(message) => {
-                            let _ = std::fs::remove_file(&archive);
-                            return error_body(ContractErrorCode::OperationFailed, &message);
-                        }
-                    };
-                let archive_len = std::fs::metadata(&archive)
-                    .map(|meta| meta.len())
-                    .unwrap_or(0);
-                let _ = std::fs::remove_file(&archive);
-
-                let manifest = crate::backup::manifest(
-                    backup_id.as_str(),
-                    "application_data",
-                    &recipient,
-                    "best-effort",
-                    &clock::now_rfc3339(),
-                    archive_len,
-                    sealed_bytes,
-                    &hash,
+                let mut members: Vec<(&Path, &str)> =
+                    vec![(stage, "control"), (stage, "databases")];
+                members.extend(
+                    applications
+                        .iter()
+                        .map(|relative| (apps_base, relative.as_str())),
                 );
+                crate::backup::archive_paths(&members, archive).map_err(failed)?;
+                Ok((
+                    "best-effort",
+                    json!({"control": control, "databases": databases, "applications": applications.len()}),
+                ))
+            }
+            other => Err(error_body(
+                ContractErrorCode::UnsupportedOperation,
+                &format!("backup scope `{other}` is not supported yet"),
+            )),
+        }
+    }
 
-                let manifest_path = match crate::backup::write_manifest(&self.backup_dir, &manifest)
-                {
-                    Ok(path) => path,
-                    Err(message) => {
-                        return error_body(ContractErrorCode::OperationFailed, &message);
-                    }
-                };
+    /// Stage the control-plane recovery set under `stage/control`; returns the
+    /// names of the parts that were present and captured.
+    fn stage_control_state(&self, stage: &Path) -> Result<Vec<&'static str>, Value> {
+        use std::os::unix::fs::DirBuilderExt;
 
-                let mut destination = Value::Null;
-                if let Some(s3) = &self.s3 {
-                    let artifact_key = format!("{backup_id}.tar.gz.age");
-                    let manifest_key = format!("{backup_id}.manifest.json");
-                    let artifact_bytes = match std::fs::read(&sealed_path) {
-                        Ok(bytes) => bytes,
-                        Err(error) => {
-                            return error_body(
-                                ContractErrorCode::OperationFailed,
-                                &format!("could not read sealed artifact: {error}"),
-                            );
-                        }
-                    };
-                    let manifest_bytes = match std::fs::read(&manifest_path) {
-                        Ok(bytes) => bytes,
-                        Err(error) => {
-                            return error_body(
-                                ContractErrorCode::OperationFailed,
-                                &format!("could not read manifest: {error}"),
-                            );
-                        }
-                    };
+        let failed = |message: String| error_body(ContractErrorCode::OperationFailed, &message);
+        let control = stage.join("control");
+        let _ = std::fs::remove_dir_all(stage);
+        for dir in [
+            control.clone(),
+            control.join("panel"),
+            control.join("agent"),
+        ] {
+            std::fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(&dir)
+                .map_err(|error| failed(error.to_string()))?;
+        }
 
-                    let uploaded = crate::s3::put_object(
-                        s3,
-                        &artifact_key,
-                        &artifact_bytes,
-                        &clock::now_rfc3339(),
-                    )
+        let mut captured = Vec::new();
+        let panel_database = self.panel_dir.join("database/database.sqlite");
+        if panel_database.is_file() {
+            crate::backup::snapshot_sqlite(&panel_database, &control.join("panel/database.sqlite"))
+                .map_err(|message| failed(format!("panel database snapshot: {message}")))?;
+            captured.push("panel_database");
+        }
+        let panel_env = self.panel_dir.join(".env");
+        if panel_env.is_file() {
+            crate::backup::copy_tree(&panel_env, &control.join("panel/.env")).map_err(failed)?;
+            captured.push("panel_env");
+        }
+        self.journal
+            .snapshot_to(&control.join("agent/agent.db"))
+            .map_err(|error| failed(format!("agent journal snapshot: {error}")))?;
+        captured.push("agent_journal");
+        if self.secrets_dir.is_dir() {
+            crate::backup::copy_tree(&self.secrets_dir, &control.join("agent/secrets"))
+                .map_err(failed)?;
+            captured.push("agent_secrets");
+        }
+        if self.config_dir.is_dir() {
+            crate::backup::copy_tree(&self.config_dir, &control.join("etc-hostnur"))
+                .map_err(failed)?;
+            captured.push("agent_config");
+        }
+        Ok(captured)
+    }
+
+    /// Dump every ready managed database into `dir` (0700, files 0600);
+    /// returns how many were dumped. Any failure fails the backup: a server
+    /// backup that silently misses a database is not a recovery point.
+    fn stage_databases(&self, dir: &Path) -> Result<usize, Value> {
+        use std::io::Write;
+        use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+
+        let failed = |message: String| error_body(ContractErrorCode::OperationFailed, &message);
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(dir)
+            .map_err(|error| failed(error.to_string()))?;
+
+        let ids = self
+            .journal
+            .ready_database_ids()
+            .map_err(|error| failed(error.to_string()))?;
+        for id in &ids {
+            let Some(record) = self
+                .journal
+                .database(id)
+                .map_err(|error| failed(error.to_string()))?
+            else {
+                continue;
+            };
+            let password =
+                crate::secrets::read_secret(&self.secrets_dir, id.as_str()).map_err(|_| {
+                    failed(format!(
+                        "credential for {} is not available",
+                        record.db_name
+                    ))
+                })?;
+            let dump = self
+                .db
+                .export(&record.db_name, &record.username, &password)
+                .map_err(database_error)?;
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(dir.join(format!("{}.sql", record.db_name)))
+                .map_err(|error| failed(error.to_string()))?;
+            file.write_all(&dump)
+                .map_err(|error| failed(error.to_string()))?;
+        }
+        Ok(ids.len())
+    }
+
+    /// Seal the plaintext `archive` to the operator recipient, write its
+    /// manifest and upload both to S3 when configured. The plaintext archive is
+    /// removed whatever happens.
+    fn seal_and_ship(
+        &self,
+        backup_id: &Uuid,
+        scope: &str,
+        consistency: &str,
+        contents: Value,
+        archive: &Path,
+        recipient: &str,
+    ) -> Value {
+        let sealed_path = self.backup_dir.join(format!("{backup_id}.tar.gz.age"));
+        let (sealed_bytes, hash) = match crate::backup::seal_file(archive, &sealed_path, recipient)
+        {
+            Ok(value) => value,
+            Err(message) => {
+                let _ = std::fs::remove_file(archive);
+                return error_body(ContractErrorCode::OperationFailed, &message);
+            }
+        };
+        let archive_len = std::fs::metadata(archive)
+            .map(|meta| meta.len())
+            .unwrap_or(0);
+        let _ = std::fs::remove_file(archive);
+
+        let manifest = crate::backup::manifest(
+            backup_id.as_str(),
+            scope,
+            recipient,
+            consistency,
+            &clock::now_rfc3339(),
+            archive_len,
+            sealed_bytes,
+            &hash,
+        );
+
+        let manifest_path = match crate::backup::write_manifest(&self.backup_dir, &manifest) {
+            Ok(path) => path,
+            Err(message) => {
+                return error_body(ContractErrorCode::OperationFailed, &message);
+            }
+        };
+
+        let mut destination = Value::Null;
+        if let Some(s3) = &self.s3 {
+            let artifact_key = format!("{backup_id}.tar.gz.age");
+            let manifest_key = format!("{backup_id}.manifest.json");
+            let artifact_bytes = match std::fs::read(&sealed_path) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    return error_body(
+                        ContractErrorCode::OperationFailed,
+                        &format!("could not read sealed artifact: {error}"),
+                    );
+                }
+            };
+            let manifest_bytes = match std::fs::read(&manifest_path) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    return error_body(
+                        ContractErrorCode::OperationFailed,
+                        &format!("could not read manifest: {error}"),
+                    );
+                }
+            };
+
+            let uploaded =
+                crate::s3::put_object(s3, &artifact_key, &artifact_bytes, &clock::now_rfc3339())
                     .and_then(|_| {
                         crate::s3::put_object(
                             s3,
@@ -1478,39 +1748,35 @@ impl<'a> AgentHandler<'a> {
                         .map(|_| ())
                     });
 
-                    match uploaded {
-                        Ok(()) => {
-                            destination = json!({
-                                "kind": "s3",
-                                "bucket": s3.bucket,
-                                "artifact_key": s3.object_key(&artifact_key),
-                                "manifest_key": s3.object_key(&manifest_key),
-                            });
-                        }
-                        Err(message) => {
-                            return error_body(
-                                ContractErrorCode::OperationFailed,
-                                &format!("S3 upload failed: {message}"),
-                            );
-                        }
-                    }
+            match uploaded {
+                Ok(()) => {
+                    destination = json!({
+                        "kind": "s3",
+                        "bucket": s3.bucket,
+                        "artifact_key": s3.object_key(&artifact_key),
+                        "manifest_key": s3.object_key(&manifest_key),
+                    });
                 }
-
-                json!({
-                    "protocol_version": 1,
-                    "artifact_id": backup_id.as_str(),
-                    "scope": "application_data",
-                    "sealed_bytes": sealed_bytes,
-                    "sha256": hash,
-                    "manifest": manifest_path.display().to_string(),
-                    "destination": destination,
-                })
+                Err(message) => {
+                    return error_body(
+                        ContractErrorCode::OperationFailed,
+                        &format!("S3 upload failed: {message}"),
+                    );
+                }
             }
-            other => error_body(
-                ContractErrorCode::UnsupportedOperation,
-                &format!("backup scope `{other}` is not supported yet"),
-            ),
         }
+
+        json!({
+            "protocol_version": 1,
+            "artifact_id": backup_id.as_str(),
+            "scope": scope,
+            "consistency": consistency,
+            "contents": contents,
+            "sealed_bytes": sealed_bytes,
+            "sha256": hash,
+            "manifest": manifest_path.display().to_string(),
+            "destination": destination,
+        })
     }
 
     fn restore_backup(&self, request: &OperationRequest) -> Value {
@@ -1584,14 +1850,41 @@ impl<'a> AgentHandler<'a> {
                     );
                 };
 
-                let target = self.apps_root.join(application_id.as_str()).join("shared");
+                let owner = match self.journal.managed_application(&application_id) {
+                    Ok(Some(app)) => match (app.account_uid, app.account_gid) {
+                        (Some(uid), Some(gid)) => (uid, gid),
+                        _ => {
+                            return error_body(
+                                ContractErrorCode::ResourceNotFound,
+                                "the application account is not provisioned",
+                            );
+                        }
+                    },
+                    Ok(None) => {
+                        return error_body(
+                            ContractErrorCode::ResourceNotFound,
+                            "the application is not managed by this agent",
+                        );
+                    }
+                    Err(error) => {
+                        return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+                    }
+                };
 
-                match crate::backup::restore_archive(&sealed_path, identity, &target) {
-                    Ok(entries) => json!({
+                let app_dir = self.apps_root.join(application_id.as_str());
+                match crate::backup::restore_shared(
+                    &sealed_path,
+                    identity,
+                    &app_dir,
+                    backup_id.as_str(),
+                    owner,
+                ) {
+                    Ok(restored) => json!({
                         "protocol_version": 1,
                         "restored": true,
-                        "entries": entries,
-                        "target": target.display().to_string(),
+                        "entries": restored.entries,
+                        "target": restored.target.display().to_string(),
+                        "previous": restored.previous.map(|path| path.display().to_string()),
                     }),
                     Err(message) => error_body(ContractErrorCode::OperationFailed, &message),
                 }
