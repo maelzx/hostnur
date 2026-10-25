@@ -5,7 +5,7 @@
 //! lifecycle behaviour can be tested without launching a daemon or sending real
 //! signals.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
@@ -107,6 +107,8 @@ pub fn run(config: &AgentConfig) -> Result<(), AgentError> {
     let journal = Journal::open(&config.state_dir.join("agent.db"))
         .map_err(|err| AgentError::new(ErrorCode::Journal, format!("opening journal: {err}")))?;
 
+    prepare_certificate_renewal();
+
     let listener = Listener::bind(&config.socket_path, config.socket_mode)
         .map_err(|err| AgentError::new(ErrorCode::Transport, format!("binding socket: {err}")))?;
 
@@ -183,6 +185,39 @@ pub fn run(config: &AgentConfig) -> Result<(), AgentError> {
 
 /// The operation handler for `config`. The serve loop and the mutation worker
 /// each build one over their own journal connection.
+/// Make certbot renewals reach the managed sites: install the deploy hook and
+/// give lineage markers to certificates issued before markers existed.
+/// Failures are logged, not fatal: the agent still serves operations.
+fn prepare_certificate_renewal() {
+    use crate::tls::{TLS_DIR, renewal};
+
+    let hook = std::env::current_exe()
+        .map_err(|error| crate::tls::TlsError::Io(error.to_string()))
+        .and_then(|agent| renewal::install_hook(Path::new(renewal::DEPLOY_HOOKS_DIR), &agent));
+    if let Err(error) = hook {
+        logging::log(
+            Level::Warn,
+            "startup",
+            "tls.renewal_hook_failed",
+            &format!("could not install the certbot deploy hook: {error}"),
+            None,
+            None,
+        );
+    }
+    for (site, lineage) in
+        renewal::adopt_lineages(Path::new(TLS_DIR), Path::new(renewal::LETSENCRYPT_LIVE))
+    {
+        logging::log(
+            Level::Info,
+            "startup",
+            "tls.lineage_adopted",
+            &format!("{site} now follows renewals of {}", lineage.display()),
+            None,
+            None,
+        );
+    }
+}
+
 fn build_handler<'j>(journal: &'j Journal, config: &AgentConfig) -> AgentHandler<'j> {
     let deploy = DeployRuntime {
         db_path: config.state_dir.join("agent.db"),

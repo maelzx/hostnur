@@ -638,6 +638,10 @@ impl<'a> AgentHandler<'a> {
                 return error_body(ContractErrorCode::OperationFailed, &error.to_string());
             }
         };
+        // A supplied certificate is no longer the copy of a certbot lineage.
+        if let Err(error) = crate::tls::renewal::clear_lineage(&dest) {
+            return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+        }
 
         let tls_site = match render_tls_site(&site, &webroot, &installed.fullchain, &installed.key)
         {
@@ -734,6 +738,10 @@ impl<'a> AgentHandler<'a> {
                 return error_body(ContractErrorCode::OperationFailed, &error.to_string());
             }
         };
+        // certbot renews the lineage; the deploy hook follows this marker.
+        if let Err(error) = crate::tls::renewal::record_lineage(&dest, &outcome.live_dir) {
+            return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+        }
 
         let tls_site = match render_tls_site(&site, &webroot, &installed.fullchain, &installed.key)
         {

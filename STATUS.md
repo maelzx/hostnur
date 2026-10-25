@@ -27,7 +27,7 @@ validated on a host; see `plan.md` session 054 for the evidence.
 | 4 | Uploads/secrets survive redeploy and rollback | Redeploy + rollback validated via panel (054); TLS kept on redeploy fixed (`8e64f5b`) |
 | 5 | Health, logs, restarts, queue workers, scheduler | Built; partly validated (045/047) |
 | 6 | Invalid Nginx change cannot replace a working config | Validated (054): refused, site and `current` untouched; health gate also refuses a 500 release |
-| 7 | TLS issue/renew + uploaded certificates | Issue + uploaded install validated (054). **Defect: app certs are not refreshed after renewal** |
+| 7 | TLS issue/renew + uploaded certificates | Validated (054): issue, uploaded install, and a forced Let's Encrypt renewal reaching nginx via the agent's certbot deploy hook (on `main`, needs `v0.1.7`) |
 | 8 | Server overview, packages, services, schedules | Validated (045) |
 | 9 | Jobs inspectable after browser disconnect / process interruption | Validated (054): restart mid-deploy → `execution_unknown`, processes killed, redeploy OK |
 | 10 | Agent is not an arbitrary root command runner | Validated (054): full abuse suite refused; SSH-lockout rule fixed in `v0.1.5` |
@@ -41,11 +41,7 @@ validated on a host; see `plan.md` session 054 for the evidence.
 
 ## Next steps
 
-1. **Fix app certificate renewal** (row 7): certbot renews
-   `/etc/letsencrypt/live/<host>` but nothing copies it into
-   `/etc/hostnur/tls/<site>` or reloads nginx, so app certificates lapse ~90
-   days after issue. Likely an agent hook command passed as certbot's
-   `--deploy-hook` at issuance (and back-filled into existing renewal configs).
+1. Tag **`v0.1.7`** (bump `agent/Cargo.toml` first) for the certificate renewal fix.
 2. Remaining code items, none blocking:
    - secret values held in public Livewire properties (wizard secrets,
      certificate key, DB credential fields);

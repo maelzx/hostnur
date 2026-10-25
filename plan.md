@@ -2084,11 +2084,20 @@ from `main` (cross-built amd64) for re-verification. Apps: AssetKOM (panel path 
   group before the layout tightens (every deploy reconciles, so older hosts tighten
   on their next deploy). Verified on the host with a two-app read matrix (all denied)
   while panel, AssetKOM and static assets keep serving; root `provision_vm` suite passes.
-- **Open defects**: (1) app certificates are never refreshed after renewal — certbot's
-  timer renews `/etc/letsencrypt/live/<host>` but nothing copies it into
-  `/etc/hostnur/tls/<site>` or reloads nginx (no deploy hook for app certs; the 049
-  hook covers only the panel), so an app certificate lapses ~90 days after issue;
-  (2) installer prints "Create the first administrator" on upgrades (cosmetic);
+- **Fixed after `v0.1.6` (on `main`)**: app certificates were never refreshed after
+  renewal — certbot renewed `/etc/letsencrypt/live/<host>` but nothing copied it into
+  `/etc/hostnur/tls/<site>` or reloaded nginx, so app certificates would lapse ~90 days
+  after issue. Each site now records its source lineage in a `lineage` marker (written
+  at issue, cleared by a supplied-certificate install so renewals never replace an
+  upload); the agent installs `/etc/letsencrypt/renewal-hooks/deploy/hostnur` at
+  startup (`exec <agent> renew-hook`) and back-fills markers for sites whose installed
+  chain is byte-identical to a live lineage. `hostnur-agent renew-hook` validates the
+  renewed lineage (key match, not expired, covers the host; path must be a direct child
+  of `/etc/letsencrypt/live`) before copying it to every site that names it, then runs
+  `nginx -t` + reload. Verified on the host: marker adopted at startup, a forced LE
+  renewal ran the hook, and the new serial was served for AssetKOM; the panel's lineage
+  is a no-op; bad or missing `RENEWED_LINEAGE` exits non-zero without touching a site.
+- **Open defects**: (2) installer prints "Create the first administrator" on upgrades (cosmetic);
   (3) supplied-certificate install writes the full chain into `cert.pem`/`chain.pem`
   as well (nginx uses only `fullchain.pem`, cosmetic); (4) failed releases are kept in
   `releases/` (disk growth).
@@ -2106,8 +2115,9 @@ from `main` (cross-built amd64) for re-verification. Apps: AssetKOM (panel path 
   HTTPS `/up` and `/login` 200 with its own certificate after redeploy; panel login
   and static assets 200.
 - Test state left on the host: age keypair at `/root/backup-identity.txt` with
-  `backup_recipient` set; the `crash` app; everything from the `v0.1.6` release
-  (old binary kept at `/usr/local/bin/hostnur-agent.v0.1.5`).
+  `backup_recipient` set; the `crash` app; the `v0.1.6` release with the agent
+  from `main` (renewal fix); previous binaries kept as `/usr/local/bin/hostnur-agent.v0.1.5`
+  and `.v0.1.6`.
 
 ### Session 053 — Backup safety: staged restore, control/server scopes, retention (2026-10-25)
 

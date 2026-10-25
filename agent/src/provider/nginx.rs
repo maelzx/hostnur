@@ -291,6 +291,13 @@ impl NginxManager {
         Ok(())
     }
 
+    /// Validate the whole configuration, then reload (files changed outside a
+    /// site apply, such as renewed certificates).
+    pub fn reload_checked(&self) -> Result<(), NginxError> {
+        self.test_config()?;
+        self.reload()
+    }
+
     fn test_config(&self) -> Result<(), NginxError> {
         self.run_nginx(&["-t"])
             .map_err(NginxError::ConfigTestFailed)

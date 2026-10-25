@@ -4,7 +4,7 @@
 //! validation and lifecycle logic lives in `config`/`runtime` so it can be
 //! tested directly.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use crate::config::AgentConfig;
@@ -45,6 +45,7 @@ pub fn run(args: &[String]) -> ExitCode {
         }
         "check-config" => command_check_config(&args[1..]),
         "run" => command_run(&args[1..]),
+        "renew-hook" => command_renew_hook(),
         other => {
             eprintln!("error: unknown command `{other}`\n\n{}", help());
             ExitCode::from(EXIT_USAGE)
@@ -148,6 +149,39 @@ fn default_config_path() -> PathBuf {
     }
 }
 
+/// certbot deploy hook: copy the renewed lineage (`RENEWED_LINEAGE`) to the
+/// managed sites that use it and reload Nginx. Runs as root under certbot.
+fn command_renew_hook() -> ExitCode {
+    use crate::tls::{CertificateManager, TLS_DIR, renewal};
+
+    let Some(lineage) = std::env::var_os("RENEWED_LINEAGE").filter(|value| !value.is_empty())
+    else {
+        eprintln!("error: RENEWED_LINEAGE is not set (run by certbot as a deploy hook)");
+        return ExitCode::from(EXIT_USAGE);
+    };
+    let nginx = crate::provider::NginxManager::default();
+    match renewal::refresh_renewed(
+        Path::new(&lineage),
+        Path::new(renewal::LETSENCRYPT_LIVE),
+        Path::new(TLS_DIR),
+        &CertificateManager::default(),
+        || nginx.reload_checked().map_err(|error| error.to_string()),
+    ) {
+        Ok(sites) if sites.is_empty() => {
+            println!("no Hostnur site uses {}", Path::new(&lineage).display());
+            ExitCode::from(EXIT_OK)
+        }
+        Ok(sites) => {
+            println!("refreshed {} and reloaded nginx", sites.join(", "));
+            ExitCode::from(EXIT_OK)
+        }
+        Err(error) => {
+            eprintln!("error: renewed certificate not installed: {error}");
+            ExitCode::from(EXIT_FAILURE)
+        }
+    }
+}
+
 fn version_line() -> String {
     format!(
         "{} {VERSION} (protocol {PROTOCOL_VERSION})",
@@ -160,7 +194,8 @@ fn command_help() -> String {
         "Usage: hostnur-agent <command> [options]\n\n\
          Commands:\n  \
          run                            Start the agent process (idle in this build)\n  \
-         check-config [--config PATH]   Validate configuration and exit\n\n\
+         check-config [--config PATH]   Validate configuration and exit\n  \
+         renew-hook                     certbot deploy hook (reads RENEWED_LINEAGE)\n\n\
          Options:\n  \
          --config PATH                  Config file ({CONFIG_ENV} or {DEFAULT_CONFIG_PATH})"
     )

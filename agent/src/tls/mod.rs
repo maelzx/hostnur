@@ -3,6 +3,7 @@
 
 pub mod certbot;
 pub mod certificate;
+pub mod renewal;
 
 pub use certbot::{CertbotClient, CertbotOutcome, CertbotRequest, live_paths};
 pub use certificate::{CertInfo, CertificateManager, CertificatePaths, from_live_dir};
