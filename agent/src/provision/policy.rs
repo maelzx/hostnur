@@ -20,8 +20,15 @@ pub const ACCOUNT_HEX_LEN: usize = 12;
 /// POSIX user/group name length limit.
 pub const MAX_ACCOUNT_NAME: usize = 32;
 
-/// Directory/file modes for the managed layout.
-pub const MODE_ROOT_DIR: u32 = 0o755;
+/// Web server account that serves static files and talks to the FPM sockets.
+/// It joins each application group so it can enter the application root.
+pub const WEB_SERVER_ACCOUNT: &str = "www-data";
+
+/// Directory/file modes for the managed layout. The application root is
+/// group-owned by the application group, so other applications (and other
+/// local users) cannot enter it at all; only the app account and the web
+/// server, a member of the group, can.
+pub const MODE_ROOT_DIR: u32 = 0o750;
 pub const MODE_RELEASES: u32 = 0o755;
 pub const MODE_SHARED: u32 = 0o750;
 pub const MODE_SECRETS: u32 = 0o700;

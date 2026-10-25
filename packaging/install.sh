@@ -231,6 +231,13 @@ find "$PANEL_DIR/storage" "$PANEL_DIR/bootstrap/cache" -type d -exec chmod 0775 
 if [ -f "$PANEL_DIR/database/database.sqlite" ]; then
   chown "$PANEL_USER:$PANEL_GROUP" "$PANEL_DIR/database/database.sqlite"
 fi
+# Only the panel identity and the web server (for public/) may enter the panel
+# tree; the environment (APP_KEY) and the database stay private to the panel.
+chown "$PANEL_USER:www-data" "$PANEL_DIR"
+chmod 0750 "$PANEL_DIR"
+chmod 0600 "$PANEL_DIR/.env"
+chmod 0700 "$PANEL_DIR/database"
+find "$PANEL_DIR/database" -maxdepth 1 -name 'database.sqlite*' -exec chmod 0600 {} +
 
 # Apply migrations and refresh caches on both first install and update.
 su -s /bin/sh "$PANEL_USER" -c "cd '$PANEL_DIR' && php artisan migrate --force" \

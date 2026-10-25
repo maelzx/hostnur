@@ -25,6 +25,8 @@ pub trait Accounts {
     fn lookup(&self, name: &str) -> Option<AccountIds>;
     fn create(&self, name: &str) -> Result<AccountIds, ProvisionError>;
     fn delete(&self, name: &str) -> Result<(), ProvisionError>;
+    /// Make the web server a member of the application group (idempotent).
+    fn grant_web_access(&self, name: &str) -> Result<(), ProvisionError>;
 }
 
 /// Real account management via `groupadd`/`useradd`/`userdel`/`groupdel`.
@@ -34,6 +36,7 @@ pub struct SystemAccounts {
     pub useradd: PathBuf,
     pub userdel: PathBuf,
     pub groupdel: PathBuf,
+    pub usermod: PathBuf,
     pub shell: String,
     pub deadline: Duration,
 }
@@ -45,6 +48,7 @@ impl Default for SystemAccounts {
             useradd: PathBuf::from("/usr/sbin/useradd"),
             userdel: PathBuf::from("/usr/sbin/userdel"),
             groupdel: PathBuf::from("/usr/sbin/groupdel"),
+            usermod: PathBuf::from("/usr/sbin/usermod"),
             shell: "/usr/sbin/nologin".to_string(),
             deadline: Duration::from_secs(30),
         }
@@ -151,5 +155,47 @@ impl Accounts for SystemAccounts {
         let _ = self.run_tool(&self.userdel, &[name.to_string()]);
         let _ = self.run_tool(&self.groupdel, &[name.to_string()]);
         Ok(())
+    }
+
+    fn grant_web_access(&self, name: &str) -> Result<(), ProvisionError> {
+        if !policy::is_valid_account_name(name) {
+            return Err(ProvisionError::InvalidIdentifier);
+        }
+        let member = |group: &nix::unistd::Group| {
+            group
+                .mem
+                .iter()
+                .any(|member| member == policy::WEB_SERVER_ACCOUNT)
+        };
+        let group = nix::unistd::Group::from_name(name)
+            .ok()
+            .flatten()
+            .ok_or_else(|| ProvisionError::AccountMissing {
+                name: name.to_string(),
+            })?;
+        if member(&group) {
+            return Ok(());
+        }
+        self.run_tool(
+            &self.usermod,
+            &[
+                "--append".to_string(),
+                "--groups".to_string(),
+                name.to_string(),
+                policy::WEB_SERVER_ACCOUNT.to_string(),
+            ],
+        )?;
+        let joined = nix::unistd::Group::from_name(name)
+            .ok()
+            .flatten()
+            .is_some_and(|group| member(&group));
+        if joined {
+            Ok(())
+        } else {
+            Err(ProvisionError::AccountToolFailed {
+                tool: self.usermod.display().to_string(),
+                detail: format!("{} is not a member of {name}", policy::WEB_SERVER_ACCOUNT),
+            })
+        }
     }
 }

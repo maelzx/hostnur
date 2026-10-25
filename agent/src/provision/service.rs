@@ -257,6 +257,9 @@ impl<'a> ProvisioningService<'a> {
             }
         }
 
+        // Before the layout is tightened, so the web server never loses access.
+        accounts.grant_web_access(&name)?;
+
         self.journal
             .managed_application(application_id)?
             .ok_or(ProvisionError::RegistryMismatch)
@@ -301,8 +304,15 @@ impl<'a> ProvisioningService<'a> {
             .ok_or(ProvisionError::AccountMissing { name })?;
 
         let uuid = application_id.as_str();
+        // The root stays owned by the agent (root on a host) so the app account
+        // cannot rename `releases` or `current`; only its group grants entry.
+        let agent_uid = nix::unistd::geteuid().as_raw();
         let plan: LayoutPlan = vec![
-            (uuid.to_string(), policy::MODE_ROOT_DIR, None),
+            (
+                uuid.to_string(),
+                policy::MODE_ROOT_DIR,
+                Some((agent_uid, gid)),
+            ),
             (format!("{uuid}/releases"), policy::MODE_RELEASES, None),
             (
                 format!("{uuid}/shared"),
@@ -378,7 +388,10 @@ impl<'a> ProvisioningService<'a> {
                 self.provision_identity(application_id, None, None, accounts)?;
                 self.prepare_layout(application_id, root)
             }
-            Lifecycle::AccountCreated => self.prepare_layout(application_id, root),
+            Lifecycle::AccountCreated => {
+                self.provision_identity(application_id, None, None, accounts)?;
+                self.prepare_layout(application_id, root)
+            }
             Lifecycle::LayoutPrepared | Lifecycle::Ready => {
                 self.provision_identity(application_id, None, None, accounts)?;
                 match self.prepare_layout(application_id, root) {
@@ -557,6 +570,7 @@ mod tests {
             std::collections::HashMap<String, super::super::accounts::AccountIds>,
         >,
         next: std::cell::Cell<u32>,
+        web_members: std::cell::RefCell<HashSet<String>>,
     }
 
     fn current_uid() -> u32 {
@@ -574,6 +588,7 @@ mod tests {
             Self {
                 ids: std::cell::RefCell::new(std::collections::HashMap::new()),
                 next: std::cell::Cell::new(current_uid()),
+                web_members: std::cell::RefCell::new(HashSet::new()),
             }
         }
     }
@@ -596,6 +611,11 @@ mod tests {
 
         fn delete(&self, name: &str) -> Result<(), ProvisionError> {
             self.ids.borrow_mut().remove(name);
+            Ok(())
+        }
+
+        fn grant_web_access(&self, name: &str) -> Result<(), ProvisionError> {
+            self.web_members.borrow_mut().insert(name.to_string());
             Ok(())
         }
     }
@@ -700,6 +720,44 @@ mod tests {
 
         let releases = dir.path().join(app.as_str()).join("releases");
         assert_eq!(std::fs::metadata(&releases).unwrap().mode() & 0o777, 0o755);
+
+        // Only the app group (which the web server joins) may enter the root.
+        let app_root = std::fs::metadata(dir.path().join(app.as_str())).unwrap();
+        assert_eq!(app_root.mode() & 0o777, 0o750);
+        assert_eq!(app_root.uid(), nix::unistd::geteuid().as_raw());
+        assert_eq!(app_root.gid(), current_gid());
+        assert!(accounts.web_members.borrow().contains("hn_224065ac4bc7"));
+    }
+
+    #[test]
+    fn reconcile_tightens_a_root_from_an_older_release() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let journal = Journal::open_in_memory().unwrap();
+        let probe = FakeProbe::empty();
+        let accounts = FakeAccounts::new();
+        let service = ProvisioningService::new(&journal, &probe);
+        let app = id("224065ac-4bc7-4ba4-a06d-8c8bca950c32");
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = ManagedRoot::open(dir.path()).unwrap();
+        service
+            .provision_identity(&app, None, None, &accounts)
+            .unwrap();
+        service.prepare_layout(&app, &root).unwrap();
+
+        // Releases up to 0.1.5 left the application root world-enterable.
+        let app_root = dir.path().join(app.as_str());
+        std::fs::set_permissions(&app_root, std::fs::Permissions::from_mode(0o755)).unwrap();
+        accounts.web_members.borrow_mut().clear();
+
+        let reconciled = service.reconcile(&app, &root, &accounts).unwrap();
+        assert_eq!(reconciled.lifecycle_state, "ready");
+        assert_eq!(
+            std::fs::metadata(&app_root).unwrap().permissions().mode() & 0o777,
+            policy::MODE_ROOT_DIR
+        );
+        assert!(accounts.web_members.borrow().contains("hn_224065ac4bc7"));
     }
 
     #[test]
