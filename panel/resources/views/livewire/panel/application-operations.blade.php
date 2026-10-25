@@ -94,7 +94,7 @@
                 <div class="mt-4">
                     <x-ui.confirm title="Roll back to this release?" confirm-label="Roll back" method="rollback" variant="danger">
                         <x-slot:trigger>Request rollback</x-slot:trigger>
-                        Only a known compatible application release is permitted. Database changes are not reversed.
+                        Rolls back application code to a known release. Database changes (migrations) made since then are not reversed; recovering data needs a backup restore.
                     </x-ui.confirm>
                 </div>
             @endif

@@ -46,8 +46,8 @@ use crate::transport::RequestHandler;
 
 /// Operations this build actually advertises and can serve. Must stay in sync
 /// with the match arms in `RequestHandler::handle` (minus the conditional
-/// `application.deploy`, added in `capabilities`).
-pub const SUPPORTED_OPERATIONS: [&str; 34] = [
+/// `application.deploy` and `application.rollback`, added in `capabilities`).
+pub const SUPPORTED_OPERATIONS: [&str; 35] = [
     "agent.capabilities",
     "agent.inspect",
     "agent.cancel",
@@ -78,6 +78,7 @@ pub const SUPPORTED_OPERATIONS: [&str; 34] = [
     "agent.register_database",
     "agent.remove_database",
     "certificate.issue",
+    "certificate.install",
     "agent.register_certificate",
     "agent.register_backup",
     "backup.create",
@@ -378,6 +379,11 @@ impl<'a> AgentHandler<'a> {
         self.s3 = s3;
     }
 
+    /// Use the agent's configured root-only secret store.
+    pub fn configure_secrets_dir(&mut self, dir: PathBuf) {
+        self.secrets_dir = dir;
+    }
+
     /// Hand journaled mutations to a mutation worker instead of running them
     /// inside the serve loop. Without a queue they run inline (tests).
     pub fn configure_jobs(&mut self, jobs: SyncSender<Job>) {
@@ -418,6 +424,33 @@ impl<'a> AgentHandler<'a> {
         }
         let application_id = string("application").and_then(|value| Uuid::parse(value).ok());
 
+        // Operator-supplied material travels on this direct call rather than in
+        // a task, so the private key never lands in the panel's task rows or
+        // the agent's execution journal.
+        match (string("certificate_pem"), string("private_key")) {
+            (None, None) => {}
+            (Some(pem), Some(key)) => {
+                if !pem.contains("-----BEGIN CERTIFICATE-----")
+                    || !key.contains("-----BEGIN")
+                    || !key.contains("PRIVATE KEY-----")
+                {
+                    return error_body(
+                        ContractErrorCode::InvalidParameters,
+                        "certificate_pem and private_key must be PEM encoded",
+                    );
+                }
+                if let Err(error) = self.stage_certificate(certificate_id, pem, key) {
+                    return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+                }
+            }
+            _ => {
+                return error_body(
+                    ContractErrorCode::InvalidParameters,
+                    "certificate_pem and private_key must be supplied together",
+                );
+            }
+        }
+
         let record = CertificateRecord {
             certificate_id: certificate_id.to_string(),
             application_id,
@@ -428,6 +461,189 @@ impl<'a> AgentHandler<'a> {
             Ok(()) => json!({"protocol_version": 1, "registered": true, "hostname": hostname}),
             Err(error) => error_body(ContractErrorCode::OperationFailed, &error.to_string()),
         }
+    }
+
+    /// The managed site a certificate record serves: its nginx site name, the
+    /// site definition and its ACME webroot (created if missing).
+    fn certificate_site(
+        &self,
+        record: &CertificateRecord,
+    ) -> Result<(String, ManagedSite, PathBuf), Value> {
+        // Resolve the owning application by the domain's server_name.
+        let application_id = match record.application_id.clone() {
+            Some(id) => id,
+            None => match self
+                .journal
+                .application_source_by_server_name(&record.hostname)
+            {
+                Ok(Some(source)) => source.application_id,
+                Ok(None) => {
+                    return Err(error_body(
+                        ContractErrorCode::ResourceNotFound,
+                        "no application is registered for this domain",
+                    ));
+                }
+                Err(error) => {
+                    return Err(error_body(
+                        ContractErrorCode::OperationFailed,
+                        &error.to_string(),
+                    ));
+                }
+            },
+        };
+
+        let name = self.site_name(&application_id);
+        let socket = PathBuf::from(format!("/run/php/{name}.sock"));
+        let docroot = self
+            .apps_root
+            .join(application_id.as_str())
+            .join("current/public");
+        let webroot = self.acme_webroot.join(&name);
+        if let Err(error) = std::fs::create_dir_all(webroot.join(".well-known/acme-challenge")) {
+            return Err(error_body(
+                ContractErrorCode::OperationFailed,
+                &error.to_string(),
+            ));
+        }
+
+        let site = ManagedSite {
+            name: name.clone(),
+            server_name: record.hostname.clone(),
+            root: docroot,
+            fpm_socket: Some(socket),
+            kind: SiteKind::Laravel,
+        };
+        Ok((name, site, webroot))
+    }
+
+    /// Where an operator-supplied certificate waits between registration and
+    /// `certificate.install`: root-only, inside the agent's secret store.
+    fn staged_certificate_dir(&self, certificate_id: &str) -> PathBuf {
+        self.secrets_dir.join("certificates").join(certificate_id)
+    }
+
+    /// Stage supplied material (`fullchain.pem`, `privkey.pem`, both 0600 in a
+    /// fresh 0700 directory), replacing anything staged before.
+    fn stage_certificate(&self, certificate_id: &str, pem: &str, key: &str) -> std::io::Result<()> {
+        use std::io::Write;
+        use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+
+        let dir = self.staged_certificate_dir(certificate_id);
+        if let Some(parent) = dir.parent() {
+            std::fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(parent)?;
+        }
+        match std::fs::remove_dir_all(&dir) {
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error),
+            _ => {}
+        }
+        std::fs::DirBuilder::new().mode(0o700).create(&dir)?;
+        for (file, contents) in [("fullchain.pem", pem), ("privkey.pem", key)] {
+            let mut handle = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(dir.join(file))?;
+            handle.write_all(contents.as_bytes())?;
+            handle.sync_all()?;
+        }
+        Ok(())
+    }
+
+    /// Install a staged operator-supplied certificate for a registered domain:
+    /// validate it (key match, expiry, hostname), copy it into the managed TLS
+    /// directory and re-render the site with `:443`. The staged copy is removed
+    /// once installed.
+    fn certificate_install(&self, request: &OperationRequest) -> Value {
+        let Some(resource) = request.resource.as_ref() else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "domain resource is required",
+            );
+        };
+        if resource.kind != "domain" {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "resource must be a domain",
+            );
+        }
+        let record = match self.journal.certificate(&resource.id) {
+            Ok(Some(record)) => record,
+            Ok(None) => {
+                return error_body(
+                    ContractErrorCode::ResourceNotFound,
+                    "certificate is not registered",
+                );
+            }
+            Err(error) => {
+                return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+            }
+        };
+
+        let staged = self.staged_certificate_dir(&record.certificate_id);
+        let staged_cert = staged.join("fullchain.pem");
+        let staged_key = staged.join("privkey.pem");
+        if !staged_cert.is_file() || !staged_key.is_file() {
+            return error_body(
+                ContractErrorCode::ResourceNotFound,
+                "no supplied certificate is staged for this domain; register it again",
+            );
+        }
+
+        // Validate (key match, expiry, hostname) before touching the host.
+        let info = match self
+            .certs
+            .validate(&staged_cert, &staged_key, &record.hostname)
+        {
+            Ok(info) => info,
+            Err(crate::tls::TlsError::Certificate(message)) => {
+                return error_body(ContractErrorCode::InvalidParameters, &message);
+            }
+            Err(error) => {
+                return error_body(
+                    ContractErrorCode::InvalidParameters,
+                    &format!("the supplied certificate could not be read: {error}"),
+                );
+            }
+        };
+
+        let (name, site, webroot) = match self.certificate_site(&record) {
+            Ok(resolved) => resolved,
+            Err(body) => return body,
+        };
+        let dest = PathBuf::from(format!("/etc/hostnur/tls/{name}"));
+        let source = crate::tls::CertificatePaths {
+            fullchain: staged_cert.clone(),
+            key: staged_key.clone(),
+            cert: staged_cert.clone(),
+            chain: staged_cert.clone(),
+        };
+        let installed = match self.certs.install(&source, &dest) {
+            Ok(installed) => installed,
+            Err(error) => {
+                return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+            }
+        };
+
+        let tls_site = match render_tls_site(&site, &webroot, &installed.fullchain, &installed.key)
+        {
+            Ok(contents) => contents,
+            Err(error) => {
+                return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+            }
+        };
+        if let Err(error) = self.tls_nginx.apply(&name, &tls_site) {
+            return error_body(ContractErrorCode::OperationFailed, &error.to_string());
+        }
+
+        let mut updated = record.clone();
+        updated.state = "installed".to_string();
+        let _ = self.journal.set_certificate(&updated);
+        let _ = std::fs::remove_dir_all(&staged);
+
+        json!({"protocol_version": 1, "installed": true, "hostname": record.hostname, "not_after": info.not_after})
     }
 
     fn certificate_issue(&self, request: &OperationRequest) -> Value {
@@ -463,46 +679,11 @@ impl<'a> AgentHandler<'a> {
             );
         };
 
-        // Resolve the owning application by the domain's server_name.
-        let application_id = match record.application_id.clone() {
-            Some(id) => id,
-            None => match self
-                .journal
-                .application_source_by_server_name(&record.hostname)
-            {
-                Ok(Some(source)) => source.application_id,
-                Ok(None) => {
-                    return error_body(
-                        ContractErrorCode::ResourceNotFound,
-                        "no application is registered for this domain",
-                    );
-                }
-                Err(error) => {
-                    return error_body(ContractErrorCode::OperationFailed, &error.to_string());
-                }
-            },
+        let (name, site, webroot) = match self.certificate_site(&record) {
+            Ok(resolved) => resolved,
+            Err(body) => return body,
         };
-
         let hostname = record.hostname.clone();
-        let name = self.site_name(&application_id);
-        let socket = PathBuf::from(format!("/run/php/{name}.sock"));
-        let docroot = self
-            .apps_root
-            .join(application_id.as_str())
-            .join("current/public");
-        let webroot = self.acme_webroot.join(&name);
-
-        if let Err(error) = std::fs::create_dir_all(webroot.join(".well-known/acme-challenge")) {
-            return error_body(ContractErrorCode::OperationFailed, &error.to_string());
-        }
-
-        let site = ManagedSite {
-            name: name.clone(),
-            server_name: hostname.clone(),
-            root: docroot,
-            fpm_socket: Some(socket),
-            kind: SiteKind::Laravel,
-        };
 
         // Serve the HTTP-01 challenge on :80 first.
         let challenge = match render_http_challenge_site(&site, &webroot) {
@@ -1009,6 +1190,7 @@ impl<'a> AgentHandler<'a> {
             "database.import" => self.import_database(request),
             "schedule.apply" => self.schedule_apply(request),
             "certificate.issue" => self.certificate_issue(request),
+            "certificate.install" => self.certificate_install(request),
             _ => error_body(
                 ContractErrorCode::UnsupportedOperation,
                 "the operation is not implemented by this agent build",
@@ -1740,6 +1922,57 @@ impl<'a> AgentHandler<'a> {
         })
     }
 
+    fn rollback_release(&self, request: &OperationRequest) -> Value {
+        let Some(runtime) = self.deploy.as_ref() else {
+            return error_body(
+                ContractErrorCode::UnsupportedOperation,
+                "deployment is not enabled in this agent build",
+            );
+        };
+        let application_id = match application_resource(request) {
+            Ok(id) => id,
+            Err(message) => return error_body(ContractErrorCode::InvalidParameters, message),
+        };
+        let Some(release_id) = request
+            .parameters
+            .get("release")
+            .and_then(Value::as_str)
+            .and_then(|value| Uuid::parse(value).ok())
+        else {
+            return error_body(
+                ContractErrorCode::InvalidParameters,
+                "release must be a UUID",
+            );
+        };
+
+        // Rollbacks share the deploy workers' slots: both switch releases and
+        // reload the application's runtime.
+        let Some(ticket) = DeployTicket::try_acquire() else {
+            return error_body(
+                ContractErrorCode::AgentUnavailable,
+                "the deployment concurrency limit is reached; retry shortly",
+            );
+        };
+        let acceptance = match self.journal.accept(request) {
+            Ok(acceptance) => acceptance,
+            Err(error) => return error_body(ContractErrorCode::Conflict, &error.to_string()),
+        };
+
+        if !acceptance.reused {
+            let runtime = runtime.clone();
+            let execution_id = acceptance.execution_id.clone();
+            let deadline = request_deadline(request);
+            std::thread::spawn(move || {
+                let _ticket = ticket;
+                crate::process::with_deadline(deadline, || {
+                    runtime.run_rollback_worker(execution_id, application_id, release_id);
+                });
+            });
+        }
+
+        to_value(receipt_from_acceptance(&acceptance))
+    }
+
     fn capabilities(&self) -> Value {
         let mut operations: Vec<String> = SUPPORTED_OPERATIONS
             .iter()
@@ -1747,6 +1980,7 @@ impl<'a> AgentHandler<'a> {
             .collect();
         if self.deploy.is_some() {
             operations.push("application.deploy".to_string());
+            operations.push("application.rollback".to_string());
         }
         to_value(CapabilitySnapshot {
             protocol_version: 1,
@@ -1980,6 +2214,7 @@ impl RequestHandler for AgentHandler<'_> {
             "agent.cancel" => self.cancel(request),
             "agent.register_application" => self.register_application(request),
             "application.deploy" => self.deploy_release(request),
+            "application.rollback" => self.rollback_release(request),
             "service.control" => self.complete_operation(request),
             "package.install" => self.complete_operation(request),
             "package.upgrade" => self.complete_operation(request),
@@ -2008,6 +2243,7 @@ impl RequestHandler for AgentHandler<'_> {
             "schedule.apply" => self.complete_operation(request),
             "agent.register_certificate" => self.register_certificate(request),
             "certificate.issue" => self.complete_operation(request),
+            "certificate.install" => self.complete_operation(request),
             _ => error_body(
                 ContractErrorCode::UnsupportedOperation,
                 "the operation is not implemented by this agent build",

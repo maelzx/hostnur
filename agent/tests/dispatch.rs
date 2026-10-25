@@ -5,8 +5,12 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+use hostnur_agent::deploy::DeployRuntime;
 use hostnur_agent::dispatch::{AgentHandler, mutation_queue};
+use hostnur_agent::git::GitRunner;
 use hostnur_agent::journal::Journal;
+use hostnur_agent::provider::{FpmManager, NginxManager, RuntimePolicy};
+use hostnur_agent::provision::SystemAccounts;
 use hostnur_agent::transport::RequestHandler;
 use serde_json::{Map, Value, json};
 
@@ -125,7 +129,7 @@ fn cancel_then_inspect_reflects_terminal_state() {
 }
 
 #[test]
-fn unimplemented_mutation_returns_unsupported_operation() {
+fn rollback_without_a_deploy_runtime_is_unsupported() {
     let journal = Journal::open_in_memory().unwrap();
     let handler = AgentHandler::new(&journal);
 
@@ -494,4 +498,234 @@ fn worker_thread_completes_jobs_over_its_own_journal_connection() {
 
     shutdown.store(true, Ordering::Relaxed);
     worker.join().unwrap();
+}
+
+fn self_signed(dir: &std::path::Path, host: &str) -> (String, String) {
+    let key = dir.join("key.pem");
+    let cert = dir.join("cert.pem");
+    let status = std::process::Command::new("/usr/bin/openssl")
+        .args(["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout"])
+        .arg(&key)
+        .arg("-out")
+        .arg(&cert)
+        .args(["-days", "30", "-subj", &format!("/CN={host}")])
+        .args(["-addext", &format!("subjectAltName=DNS:{host}")])
+        .status()
+        .expect("openssl available");
+    assert!(status.success());
+    (
+        std::fs::read_to_string(cert).unwrap(),
+        std::fs::read_to_string(key).unwrap(),
+    )
+}
+
+fn register_certificate(
+    handler: &AgentHandler<'_>,
+    hostname: &str,
+    material: Option<(&str, &str)>,
+) -> Value {
+    let mut parameters = Map::new();
+    parameters.insert("certificate".into(), json!(DOMAIN_ID));
+    parameters.insert("hostname".into(), json!(hostname));
+    parameters.insert(
+        "application".into(),
+        json!("224065ac-4bc7-4ba4-a06d-8c8bca950c32"),
+    );
+    if let Some((pem, key)) = material {
+        parameters.insert("certificate_pem".into(), json!(pem));
+        parameters.insert("private_key".into(), json!(key));
+    }
+    handler
+        .handle(&request("agent.register_certificate", parameters))
+        .unwrap()
+}
+
+fn install_certificate(handler: &AgentHandler<'_>) -> Value {
+    let mut parameters = Map::new();
+    parameters.insert("certificate".into(), json!("panel-certificate-1"));
+    let mut req = request("certificate.install", parameters);
+    req.idempotency_key = hostnur_agent::ids::new_uuid_v4();
+    req.resource = Some(hostnur_agent::contract::ResourceRef {
+        kind: "domain".to_string(),
+        id: DOMAIN_ID.to_string(),
+    });
+    let receipt = handler.handle(&req).unwrap();
+    let execution_id = receipt["execution_id"].as_str().unwrap().to_string();
+    handler.handle(&inspect_request(&execution_id)).unwrap()
+}
+
+const DOMAIN_ID: &str = "7a0c5e1d-3b2f-4c8a-9e6d-1f2a3b4c5d6e";
+
+#[test]
+fn supplied_certificate_material_must_come_together_and_be_pem() {
+    let journal = Journal::open_in_memory().unwrap();
+    let handler = AgentHandler::new(&journal);
+
+    let mut parameters = Map::new();
+    parameters.insert("certificate".into(), json!(DOMAIN_ID));
+    parameters.insert("hostname".into(), json!("app.example.com"));
+    parameters.insert(
+        "certificate_pem".into(),
+        json!("-----BEGIN CERTIFICATE-----"),
+    );
+    let body = handler
+        .handle(&request("agent.register_certificate", parameters))
+        .unwrap();
+    assert_eq!(body["error"]["code"], "invalid_parameters");
+
+    let body = register_certificate(&handler, "app.example.com", Some(("not a pem", "nor this")));
+    assert_eq!(body["error"]["code"], "invalid_parameters");
+}
+
+#[test]
+fn supplied_certificate_is_staged_root_only_and_replaced_on_reregistration() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let secrets = tempfile::tempdir().unwrap();
+    let journal = Journal::open_in_memory().unwrap();
+    let mut handler = AgentHandler::new(&journal);
+    handler.configure_secrets_dir(secrets.path().to_path_buf());
+    let (pem, key) = self_signed(secrets.path(), "app.example.com");
+
+    let body = register_certificate(&handler, "app.example.com", Some((&pem, &key)));
+    assert_eq!(body["registered"], true);
+
+    let staged = secrets.path().join("certificates").join(DOMAIN_ID);
+    let mode =
+        |path: &std::path::Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(&staged), 0o700);
+    assert_eq!(mode(&staged.join("fullchain.pem")), 0o600);
+    assert_eq!(mode(&staged.join("privkey.pem")), 0o600);
+    assert_eq!(
+        std::fs::read_to_string(staged.join("privkey.pem")).unwrap(),
+        key
+    );
+
+    // Registering again replaces the staged pair instead of failing.
+    let body = register_certificate(&handler, "app.example.com", Some((&pem, &key)));
+    assert_eq!(body["registered"], true);
+}
+
+#[test]
+fn certificate_install_requires_staged_material() {
+    let secrets = tempfile::tempdir().unwrap();
+    let journal = Journal::open_in_memory().unwrap();
+    let mut handler = AgentHandler::new(&journal);
+    handler.configure_secrets_dir(secrets.path().to_path_buf());
+
+    let body = install_certificate(&handler);
+    assert_eq!(body["status"], "failed");
+    assert_eq!(body["result"]["error"]["code"], "resource_not_found");
+
+    register_certificate(&handler, "app.example.com", None);
+    let body = install_certificate(&handler);
+    assert_eq!(body["status"], "failed");
+    assert_eq!(body["result"]["error"]["code"], "resource_not_found");
+    assert!(
+        body["result"]["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("staged")
+    );
+}
+
+#[test]
+fn certificate_install_rejects_material_for_another_hostname_before_touching_the_host() {
+    let secrets = tempfile::tempdir().unwrap();
+    let journal = Journal::open_in_memory().unwrap();
+    let mut handler = AgentHandler::new(&journal);
+    handler.configure_secrets_dir(secrets.path().to_path_buf());
+    let (pem, key) = self_signed(secrets.path(), "other.example.com");
+
+    register_certificate(&handler, "app.example.com", Some((&pem, &key)));
+    let body = install_certificate(&handler);
+    assert_eq!(body["status"], "failed");
+    assert_eq!(body["result"]["error"]["code"], "invalid_parameters");
+    assert!(
+        body["result"]["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("does not cover")
+    );
+}
+
+fn deploy_runtime(db_path: std::path::PathBuf, root: &std::path::Path) -> DeployRuntime {
+    DeployRuntime {
+        db_path,
+        apps_root: root.join("apps"),
+        accounts: SystemAccounts::default(),
+        git: GitRunner::default(),
+        nginx: NginxManager::default(),
+        fpm: FpmManager::default(),
+        allow_protocol: "https".to_string(),
+        secrets_dir: root.join("secrets"),
+    }
+}
+
+#[test]
+fn rollback_is_advertised_with_deploy_and_reports_an_unknown_release() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("agent.db");
+    let journal = Journal::open(&path).unwrap();
+    let handler = AgentHandler::with_deploy(
+        &journal,
+        deploy_runtime(path.clone(), dir.path()),
+        RuntimePolicy::default(),
+    );
+
+    let capabilities = handler
+        .handle(&request("agent.capabilities", Map::new()))
+        .unwrap();
+    let operations = capabilities["operations"].as_array().unwrap();
+    assert!(operations.contains(&json!("application.rollback")));
+
+    let mut parameters = Map::new();
+    parameters.insert(
+        "release".into(),
+        json!("00000000-0000-4000-8000-000000000000"),
+    );
+    let mut req = request("application.rollback", parameters);
+    req.resource = Some(hostnur_agent::contract::ResourceRef {
+        kind: "application".to_string(),
+        id: "224065ac-4bc7-4ba4-a06d-8c8bca950c32".to_string(),
+    });
+    let receipt = handler.handle(&req).unwrap();
+    assert_eq!(receipt["status"], "accepted");
+    let execution_id = receipt["execution_id"].as_str().unwrap();
+
+    let started = Instant::now();
+    let body = loop {
+        let body = handler.handle(&inspect_request(execution_id)).unwrap();
+        if body["status"] != "accepted" && body["status"] != "running" {
+            break body;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "rollback never finished"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(body["status"], "failed");
+    assert_eq!(body["result"]["error"]["code"], "resource_not_found");
+}
+
+#[test]
+fn rollback_rejects_a_non_uuid_release() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("agent.db");
+    let journal = Journal::open(&path).unwrap();
+    let handler = AgentHandler::with_deploy(
+        &journal,
+        deploy_runtime(path.clone(), dir.path()),
+        RuntimePolicy::default(),
+    );
+    let mut parameters = Map::new();
+    parameters.insert("release".into(), json!("../../etc"));
+    let mut req = request("application.rollback", parameters);
+    req.resource = Some(hostnur_agent::contract::ResourceRef {
+        kind: "application".to_string(),
+        id: "224065ac-4bc7-4ba4-a06d-8c8bca950c32".to_string(),
+    });
+    let body = handler.handle(&req).unwrap();
+    assert_eq!(body["error"]["code"], "invalid_parameters");
 }

@@ -63,7 +63,9 @@
             "parameters": {
                 "certificate": { "type": "string", "required": true, "max": 64 },
                 "hostname": { "type": "string", "required": true, "max": 253 },
-                "application": { "type": "uuid", "required": false }
+                "application": { "type": "uuid", "required": false },
+                "certificate_pem": { "type": "string", "required": false, "max": 65536 },
+                "private_key": { "type": "string", "required": false, "max": 65536 }
             },
             "read_only": false,
             "retry": "capability_declared"
@@ -191,14 +193,6 @@
             "resource": "schedule",
             "parameters": {
                 "revision": { "type": "integer", "required": true }
-            },
-            "read_only": false,
-            "retry": "no_blind_replay"
-        },
-        "domain.apply": {
-            "resource": "domain",
-            "parameters": {
-                "revision": { "type": "uuid", "required": true }
             },
             "read_only": false,
             "retry": "no_blind_replay"

@@ -31,9 +31,8 @@ boundary. Contract sources live in [`../contracts/v1/`](../contracts/v1/):
 | `service.control` | service (agent snapshot) | `action` enum start/stop/restart | `valid/request-service-control.json` | recent auth + task approval | no raw systemd unit |
 | `package.install` | none | `package` string (approved catalog ID) | — | recent auth + task approval | not arbitrary APT flags/repos |
 | `schedule.apply` | schedule (panel registry) | `revision` uuid | — | recent auth + task approval | logical owner is the app |
-| `domain.apply` | domain (panel registry) | `revision` uuid | — | recent auth + task approval | not arbitrary Nginx text/path |
 | `certificate.issue` | domain (panel registry) | `provider` enum `http01` | — | recent auth + task approval | no wildcard/DNS-01 |
-| `certificate.install` | domain (panel registry) | `certificate` string ref | — | recent auth + task approval | secret references, not plaintext keys |
+| `certificate.install` | domain (panel registry) | `certificate` string ref | — | recent auth + task approval | installs material staged by `agent.register_certificate` (`certificate_pem`/`private_key`); keys never travel in task parameters |
 | `database.provision` | none | `request` uuid (panel registry) | — | recent auth + task approval | panel-generated credentials only |
 | `backup.create` | backup (panel registry) | `policy` uuid | — | recent auth + task approval | simulated ≠ recoverable |
 
@@ -84,5 +83,5 @@ reports unavailable until phase 11; `fake` is local/testing-only, labelled
   `unsupported_operation`; systemd/socket VM gates (P11.6) remain.
 - Real consistency/restore, TLS issuance/renewal, package installation and OS
   provisioning happen only through the agent in later phases.
-- Some operations (`domain.apply`, `certificate.install`) are cataloged but not yet
-  driven from a dedicated UI slice.
+- Domains reach Nginx through deployment (`server_name`) and certificate
+  issue/install; there is no separate `domain.apply` operation (removed, session 051).

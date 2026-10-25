@@ -133,7 +133,8 @@ final class DeploymentService
         ]);
 
         if ($deployment->wasRecentlyCreated) {
-            $this->requestTask($actor, $application, $deployment, ['release' => $release->getKey()]);
+            // The agent names releases by its own release id (the deploy result).
+            $this->requestTask($actor, $application, $deployment, ['release' => $release->release_reference]);
             $this->audit->record($actor, AuditAction::ApplicationRollbackRequested, AuditOutcome::Requested, [
                 'resource_kind' => 'application',
                 'resource_id' => $application->getKey(),
@@ -181,7 +182,12 @@ final class DeploymentService
 
         if ($state === DeploymentState::Succeeded) {
             if ($deployment->operation === 'application.deploy' && $deployment->release_reference === null) {
-                $updates['release_reference'] = (string) Str::uuid();
+                // A real deploy reports the release it activated; that id is what
+                // a later rollback must name. Simulated runs get a placeholder.
+                $release = is_array($task->result) ? ($task->result['release'] ?? null) : null;
+                $updates['release_reference'] = is_string($release) && Str::isUuid($release)
+                    ? $release
+                    : (string) Str::uuid();
             }
 
             if ($deployment->operation === 'application.rollback' && $deployment->previous_release_reference !== null) {

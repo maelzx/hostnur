@@ -50,10 +50,11 @@ class CertificateIndex extends Component
             $this->certificate_pem,
             $this->private_key,
             $this->passphrase !== '' ? $this->passphrase : null,
+            $this->ingestKey,
         );
 
         $this->reset('certificate_pem', 'private_key', 'passphrase');
-        session()->flash('status', 'Certificate stored; the key is encrypted and write-only.');
+        session()->flash('status', 'Certificate stored (the key is encrypted and write-only); installation requested.');
         $this->redirect(route('panel.certificates.index'));
     }
 

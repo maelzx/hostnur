@@ -221,15 +221,23 @@ class ServerAdministrationTest extends TestCase
 
     public function test_certificate_ingestion_validates_with_openssl_and_hides_the_key(): void
     {
+        Queue::fake();
         $admin = $this->admin();
+        $this->recent($admin);
         $application = $this->application();
         $domain = ApplicationDomain::create(['application_id' => $application->getKey(), 'hostname' => 'app.example.com', 'https_policy' => 'auto']);
 
         [$pem, $keyPem] = $this->selfSigned('app.example.com');
 
-        $certificate = app(CertificateService::class)->ingestUserSupplied($admin, $domain, $pem, $keyPem, null);
+        $certificate = app(CertificateService::class)->ingestUserSupplied($admin, $domain, $pem, $keyPem, null, 'ingest-1');
 
-        $this->assertSame(RequestState::Succeeded, $certificate->state);
+        // Installation runs as a task that carries identifiers only.
+        $this->assertSame(RequestState::Requested, $certificate->state);
+        $task = $certificate->task;
+        $this->assertSame('certificate.install', $task->operation);
+        $this->assertSame($domain->getKey(), $task->resource_id);
+        $this->assertSame(['certificate' => (string) $certificate->getKey()], $task->parameters);
+        $this->assertStringNotContainsString('PRIVATE KEY', (string) DB::table('tasks')->where('id', $task->getKey())->value('parameters'));
         $this->assertArrayNotHasKey('private_key', $certificate->toArray());
         $this->assertStringNotContainsString('PRIVATE KEY', json_encode($certificate));
 
@@ -237,7 +245,7 @@ class ServerAdministrationTest extends TestCase
         $this->assertStringNotContainsString('PRIVATE KEY', (string) $raw);
 
         try {
-            app(CertificateService::class)->ingestUserSupplied($admin, $domain, $pem, $this->selfSigned('other.example.com')[1], null);
+            app(CertificateService::class)->ingestUserSupplied($admin, $domain, $pem, $this->selfSigned('other.example.com')[1], null, 'ingest-2');
             $this->fail('Expected a mismatched key to be rejected.');
         } catch (ValidationException) {
             $this->assertTrue(true);

@@ -325,4 +325,26 @@ class DeploymentTest extends TestCase
             ->assertSee('Run database migrations')
             ->assertSee('Workers / scheduler');
     }
+
+    public function test_rollback_names_the_release_the_agent_reported(): void
+    {
+        config(['hostnur.agent_mode' => 'fake']);
+        Queue::fake();
+        $admin = $this->admin();
+        app(RecentAuthentication::class)->confirm($admin);
+        $application = $this->readyApplication($admin);
+
+        $deployment = $this->deployments()->deploy($admin, $application, (string) Str::uuid(), false);
+        $agentRelease = (string) Str::uuid();
+        $deployment->task->forceFill([
+            'status' => 'succeeded',
+            'finished_at' => now(),
+            'result' => ['release' => $agentRelease, 'commit' => 'abc1234'],
+        ])->save();
+        $this->deployments()->refresh($deployment->refresh());
+        $this->assertSame($agentRelease, $deployment->refresh()->release_reference);
+
+        $rollback = $this->deployments()->rollback($admin, $application, $deployment->getKey(), (string) Str::uuid());
+        $this->assertSame(['release' => $agentRelease], $rollback->task->parameters);
+    }
 }

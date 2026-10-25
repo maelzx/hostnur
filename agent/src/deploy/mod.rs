@@ -717,20 +717,23 @@ impl DeployRuntime {
             execution_id.clone(),
         ) {
             Ok((release_id, commit)) => {
-                let _ = journal.append_event(
-                    &execution_id,
-                    &format!("Activated release {release_id} ({commit})."),
-                );
                 if cancelled_midrun {
                     let _ = journal.append_event(
                         &execution_id,
                         "A cancellation was requested during the run, but activation had already begun; the true outcome is recorded.",
                     );
                 }
-                if let Err(error) = journal.set_status(
+                // The release id is what a later `application.rollback` names.
+                let result = serde_json::json!({
+                    "release": release_id.as_str(),
+                    "commit": commit,
+                })
+                .to_string();
+                if let Err(error) = journal.finish_execution(
                     &execution_id,
                     crate::contract::OperationStatus::Succeeded,
-                    Some(100),
+                    Some(&result),
+                    &format!("Activated release {release_id} ({commit})."),
                 ) {
                     Self::log_terminal_write_failure(&execution_id, &error);
                 }
@@ -765,6 +768,105 @@ impl DeployRuntime {
         );
     }
 
+    /// Roll an application back to a previously activated release for an
+    /// accepted execution. Code only: database changes made by later releases
+    /// are not reverted, and the journal says so.
+    pub fn run_rollback_worker(&self, execution_id: Uuid, application_id: Uuid, release_id: Uuid) {
+        let journal = match Journal::open(&self.db_path) {
+            Ok(journal) => journal,
+            Err(error) => {
+                crate::logging::log(
+                    crate::logging::Level::Error,
+                    "deploy",
+                    "worker.journal_unavailable",
+                    &format!("execution {execution_id} could not be started: {error}"),
+                    Some("journal"),
+                    None,
+                );
+                return;
+            }
+        };
+        let _ = journal.set_status(
+            &execution_id,
+            crate::contract::OperationStatus::Running,
+            Some(5),
+        );
+        let _ = journal.append_event(
+            &execution_id,
+            &format!("Rollback to release {release_id} started."),
+        );
+
+        let (status, result, event) = match self.rollback(&journal, &application_id, &release_id) {
+            Ok(health) => {
+                let _ = journal.append_event(
+                    &execution_id,
+                    "Code only: database changes made by later releases were not reverted.",
+                );
+                (
+                    crate::contract::OperationStatus::Succeeded,
+                    serde_json::json!({
+                        "release": release_id.as_str(),
+                        "health": {"status": health.status, "healthy": health.healthy},
+                    }),
+                    format!("Switched to release {release_id}; the health check passed."),
+                )
+            }
+            Err(error) => {
+                let (code, message) = match &error {
+                    DeployError::MissingLayout => (
+                        "resource_not_found",
+                        "the release is not present on the host".to_string(),
+                    ),
+                    DeployError::Health(_) => (
+                        "operation_failed",
+                        "the release failed its health check; the previous release was restored"
+                            .to_string(),
+                    ),
+                    other => ("operation_failed", other.to_string()),
+                };
+                (
+                    crate::contract::OperationStatus::Failed,
+                    serde_json::json!({"error": {"code": code, "message": message, "retryable": false}}),
+                    format!("Rollback failed: {error}"),
+                )
+            }
+        };
+        if let Err(error) =
+            journal.finish_execution(&execution_id, status, Some(&result.to_string()), &event)
+        {
+            Self::log_terminal_write_failure(&execution_id, &error);
+        }
+    }
+
+    fn rollback(
+        &self,
+        journal: &Journal,
+        application_id: &Uuid,
+        release_id: &Uuid,
+    ) -> Result<HealthResult, DeployError> {
+        let source = journal
+            .application_source(application_id)
+            .map_err(|error| DeployError::Io(error.to_string()))?
+            .ok_or(DeployError::MissingLayout)?;
+        let root = ManagedRoot::open(&self.apps_root)
+            .map_err(|error| DeployError::Io(error.to_string()))?;
+        self.deployer(journal, &root)
+            .rollback(application_id, release_id, &source.server_name)
+    }
+
+    fn deployer<'j>(&'j self, journal: &'j Journal, root: &'j ManagedRoot) -> Deployer<'j> {
+        Deployer {
+            journal,
+            accounts: &self.accounts,
+            root,
+            git: self.git.clone(),
+            nginx: self.nginx.clone(),
+            fpm: self.fpm.clone(),
+            apps_root: self.apps_root.clone(),
+            secrets_dir: self.secrets_dir.clone(),
+        }
+    }
+
     fn execute(
         &self,
         journal: &Journal,
@@ -780,16 +882,7 @@ impl DeployRuntime {
             .ok_or(DeployError::MissingLayout)?;
         let root = ManagedRoot::open(&self.apps_root)
             .map_err(|error| DeployError::Io(error.to_string()))?;
-        let deployer = Deployer {
-            journal,
-            accounts: &self.accounts,
-            root: &root,
-            git: self.git.clone(),
-            nginx: self.nginx.clone(),
-            fpm: self.fpm.clone(),
-            apps_root: self.apps_root.clone(),
-            secrets_dir: self.secrets_dir.clone(),
-        };
+        let deployer = self.deployer(journal, &root);
         let release_id = crate::ids::new_uuid_v4();
         let input = DeployInput {
             application_id: application_id.clone(),

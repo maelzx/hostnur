@@ -71,29 +71,74 @@ final class CertificateService
         });
     }
 
-    public function ingestUserSupplied(User $actor, ApplicationDomain $domain, string $pem, string $key, ?string $passphrase): Certificate
+    /**
+     * Store an operator-supplied certificate and request its installation.
+     * The key reaches the agent on the direct registration call (staged
+     * root-only there); the install task carries only identifiers, so the key
+     * never lands in task parameters or the agent's journal.
+     */
+    public function ingestUserSupplied(User $actor, ApplicationDomain $domain, string $pem, string $key, ?string $passphrase, string $idempotencyKey): Certificate
     {
         $inspected = $this->inspect($pem, $key, $passphrase, $domain->hostname);
 
-        $certificate = Certificate::create([
-            'application_domain_id' => $domain->getKey(),
-            'hostname' => $domain->hostname,
-            'source' => CertificateSource::UserSupplied,
-            'certificate_pem' => $pem,
-            'private_key' => $key,
-            'passphrase' => $passphrase,
-            'issued_at' => $inspected['issued_at'],
-            'expires_at' => $inspected['expires_at'],
-            'state' => RequestState::Succeeded,
-        ]);
+        return DB::transaction(function () use ($actor, $domain, $pem, $key, $passphrase, $idempotencyKey, $inspected): Certificate {
+            $certificate = Certificate::create([
+                'application_domain_id' => $domain->getKey(),
+                'hostname' => $domain->hostname,
+                'source' => CertificateSource::UserSupplied,
+                'certificate_pem' => $pem,
+                'private_key' => $key,
+                'passphrase' => $passphrase,
+                'issued_at' => $inspected['issued_at'],
+                'expires_at' => $inspected['expires_at'],
+                'state' => RequestState::Requested,
+            ]);
 
-        $this->audit->record($actor, AuditAction::CertificateIngested, AuditOutcome::Success, [
-            'resource_kind' => 'application',
-            'resource_id' => $domain->application_id,
-            'metadata' => ['operation' => 'certificate.ingest'],
-        ]);
+            $this->registerWithAgent($domain, [
+                'certificate_pem' => $pem,
+                'private_key' => $this->unencryptedKey($key, $passphrase),
+            ]);
 
-        return $certificate;
+            $task = $this->tasks->requestApproved($actor, new OperationRequest(
+                protocolVersion: (int) config('hostnur.protocol_version', 1),
+                requestId: (string) Str::uuid(),
+                idempotencyKey: $idempotencyKey,
+                operation: 'certificate.install',
+                resource: new ResourceRef(ResourceKind::Domain, $domain->getKey()),
+                parameters: ['certificate' => (string) $certificate->getKey()],
+                timeoutSeconds: 120,
+            ));
+
+            $certificate->forceFill(['task_id' => $task->getKey()])->save();
+
+            $this->audit->record($actor, AuditAction::CertificateIngested, AuditOutcome::Requested, [
+                'resource_kind' => 'application',
+                'resource_id' => $domain->application_id,
+                'metadata' => ['operation' => 'certificate.install'],
+            ]);
+
+            return $certificate;
+        });
+    }
+
+    /**
+     * Nginx reads the key without a passphrase, so an encrypted key is
+     * decrypted here (it was already verified against the certificate).
+     */
+    private function unencryptedKey(string $key, ?string $passphrase): string
+    {
+        if ($passphrase === null) {
+            return $key;
+        }
+
+        $resource = openssl_pkey_get_private($key, $passphrase);
+        $exported = '';
+
+        if ($resource === false || ! openssl_pkey_export($resource, $exported)) {
+            throw ValidationException::withMessages(['private_key' => 'The private key could not be decrypted.']);
+        }
+
+        return $exported;
     }
 
     public function syncState(Certificate $certificate): Certificate
@@ -114,7 +159,7 @@ final class CertificateService
 
             $updates = [
                 'state' => RequestState::Succeeded,
-                'observed_state' => 'issued',
+                'observed_state' => $certificate->source === CertificateSource::UserSupplied ? 'installed' : 'issued',
                 'observed_provenance' => $simulated ? 'fake' : 'real',
             ];
 
@@ -202,7 +247,10 @@ final class CertificateService
      * Register the certificate request (domain id + hostname + application) with
      * the agent so `certificate.issue` can resolve the domain. Real mode only.
      */
-    private function registerWithAgent(ApplicationDomain $domain): void
+    /**
+     * @param  array<string, string>  $material  optional supplied PEM/key
+     */
+    private function registerWithAgent(ApplicationDomain $domain, array $material = []): void
     {
         if (config('hostnur.agent_mode') !== 'real') {
             return;
@@ -219,6 +267,7 @@ final class CertificateService
                     'certificate' => (string) $domain->getKey(),
                     'hostname' => $domain->hostname,
                     'application' => $domain->application_id,
+                    ...$material,
                 ],
                 timeoutSeconds: null,
             ));

@@ -2042,6 +2042,40 @@ suites after any agent edit.
   (page-snapshot exposure); `control_state`/`server` backup scopes; `arguments` JSON
   error propagation.
 
+### Session 051 — Rollback, supplied-certificate install, `domain.apply` removed (2026-10-25)
+
+Closes the three catalog operations the agent did not implement (session 048 HIGH).
+
+- **`application.rollback`**: dispatched to a deploy-style worker (shares the deploy
+  concurrency slots, honours the request deadline) that runs the existing
+  `Deployer::rollback` (switch `current`, reload, health probe, automatic restore of
+  the previous release on failure). Advertised alongside `application.deploy`.
+  Result `{release, health}`; unknown release → `resource_not_found`; the journal
+  records that database changes were **not** reverted.
+  **Release identity fixed**: the deploy worker now finishes with result
+  `{release, commit}` (atomically); the panel stores that agent release id as
+  `release_reference` (simulated runs keep a placeholder) and rollback sends it as
+  `release` — previously the panel sent its own deployment row id, which matched
+  nothing on the host. Deployments recorded before this change cannot be rolled back
+  by reference (their reference is panel-generated).
+- **`certificate.install`** (uploaded certificates): the PEM + key travel on the
+  direct `agent.register_certificate` call (new optional `certificate_pem`/
+  `private_key`, both or neither), staged `0600` in a fresh `0700`
+  `<state_dir>/secrets/certificates/<id>/`; the install **task carries ids only**, so
+  the key never lands in panel task rows or the agent journal. Install validates
+  (key match, expiry, SAN/CN hostname) **before** touching the host, copies into
+  `/etc/hostnur/tls/<site>`, re-renders the site with `:443` and removes the staged
+  copy. Panel ingestion now registers the material (decrypting passphrase-protected
+  keys for nginx) and requests the task in one transaction; the certificate stays
+  `requested` until the task finishes (`observed_state` `installed`).
+- **`domain.apply` removed** from the catalog/docs: nothing called it; domains reach
+  nginx via deploy (`server_name`) and certificate issue/install.
+- Also: the handler's secret store now follows `state_dir` (was a hardcoded default,
+  diverging from the deploy runtime's when `state_dir` is customised).
+- Checks: Rust 148 unit + **24 dispatch** (6 new) + clippy/fmt; PHP **270** (1 new,
+  1 updated) + pint. **Not run**: root `*_vm` suites; no real-host rollback or
+  uploaded-cert install yet — validate both on the droplet.
+
 ### Session 050 — Agent async mutations + request-timeout enforcement (2026-10-25)
 
 - **Async long mutations (top Phase 21 item)**: every journaled mutation
